@@ -272,8 +272,8 @@ const deleteFromStorage = async (path) => {
   } catch(e) { console.warn("deleteFromStorage:", e.message); }
 };
 
-const defaultData={plans:[{id:1,name:"Push Pull Legs",color:"#FF6B35",days:["Montag","Mittwoch","Freitag"],exercises:[{name:"Bankdrücken",photo:null},{name:"Schulterdrücken",photo:null},{name:"Kniebeugen",photo:null},{name:"Kreuzheben",photo:null}]},{id:2,name:"Upper / Lower",color:"#00D9C0",days:["Dienstag","Donnerstag"],exercises:[{name:"Klimmzüge",photo:null},{name:"Rudern",photo:null},{name:"Beinpresse",photo:null}]}],workouts:[{id:1,date:"2025-03-10",planId:1,name:"Push Day",duration:65,exercises:[{name:"Bankdrücken",sets:[{reps:8,weight:80},{reps:8,weight:80},{reps:6,weight:85}]},{name:"Schulterdrücken",sets:[{reps:10,weight:50},{reps:10,weight:50}]}],photo:null,note:"Starke Session!"},{id:2,date:"2025-03-12",planId:1,name:"Pull Day",duration:55,exercises:[{name:"Klimmzüge",sets:[{reps:10,weight:0},{reps:9,weight:0},{reps:8,weight:0}]}],photo:null,note:""},{id:3,date:"2025-03-14",planId:2,name:"Upper Body",duration:72,exercises:[{name:"Bankdrücken",sets:[{reps:8,weight:82.5},{reps:8,weight:82.5},{reps:7,weight:82.5}]}],photo:null,note:""},{id:4,date:"2025-03-08",planId:1,name:"Leg Day",duration:60,exercises:[{name:"Kniebeugen",sets:[{reps:8,weight:100},{reps:8,weight:100},{reps:6,weight:105}]}],photo:null,note:""},{id:5,date:"2025-03-06",planId:2,name:"Pull",duration:50,exercises:[{name:"Klimmzüge",sets:[{reps:12,weight:0},{reps:10,weight:0}]},{name:"Rudern",sets:[{reps:10,weight:60},{reps:10,weight:60}]}],photo:null,note:""}],weightHistory:[],photos:[],measurements:[]};
-const defaultUser={firstName:"",lastName:"",email:"",weight:"",height:"",goal:"Muskelaufbau",avatar:null,notificationsEnabled:true,reminderTime:"08:00",calorieGoal:2500,proteinGoal:150,workDays:["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],workStart:"08:00",workEnd:"17:00",break1Start:"09:30",break1End:"10:00",break2Start:"12:30",break2End:"13:15",checkinEveryLogin:false,waterGoal:2500};
+const defaultData={plans:[{id:1,name:"Push Pull Legs",color:"#FF6B35",days:["Montag","Mittwoch","Freitag"],exercises:[{name:"Bankdrücken",photo:null},{name:"Schulterdrücken",photo:null},{name:"Kniebeugen",photo:null},{name:"Kreuzheben",photo:null}]},{id:2,name:"Upper / Lower",color:"#00D9C0",days:["Dienstag","Donnerstag"],exercises:[{name:"Klimmzüge",photo:null},{name:"Rudern",photo:null},{name:"Beinpresse",photo:null}]}],workouts:[{id:1,date:"2025-03-10",planId:1,name:"Push Day",duration:65,exercises:[{name:"Bankdrücken",sets:[{reps:8,weight:80},{reps:8,weight:80},{reps:6,weight:85}]},{name:"Schulterdrücken",sets:[{reps:10,weight:50},{reps:10,weight:50}]}],photo:null,note:"Starke Session!"},{id:2,date:"2025-03-12",planId:1,name:"Pull Day",duration:55,exercises:[{name:"Klimmzüge",sets:[{reps:10,weight:0},{reps:9,weight:0},{reps:8,weight:0}]}],photo:null,note:""},{id:3,date:"2025-03-14",planId:2,name:"Upper Body",duration:72,exercises:[{name:"Bankdrücken",sets:[{reps:8,weight:82.5},{reps:8,weight:82.5},{reps:7,weight:82.5}]}],photo:null,note:""},{id:4,date:"2025-03-08",planId:1,name:"Leg Day",duration:60,exercises:[{name:"Kniebeugen",sets:[{reps:8,weight:100},{reps:8,weight:100},{reps:6,weight:105}]}],photo:null,note:""},{id:5,date:"2025-03-06",planId:2,name:"Pull",duration:50,exercises:[{name:"Klimmzüge",sets:[{reps:12,weight:0},{reps:10,weight:0}]},{name:"Rudern",sets:[{reps:10,weight:60},{reps:10,weight:60}]}],photo:null,note:""}],weightHistory:[],photos:[],measurements:[],deletedPlanIds:[],deletedWorkoutIds:[],deletedWeightDates:[]};
+const defaultUser={firstName:"",lastName:"",email:"",weight:"",height:"",goal:"Muskelaufbau",avatar:null,notificationsEnabled:true,reminderTime:"08:00",calorieGoal:2500,proteinGoal:150,workDays:["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],workStart:"08:00",workEnd:"17:00",break1Start:"09:30",break1End:"10:00",break2Start:"12:30",break2End:"13:15",checkinEveryLogin:false,waterGoal:2500,supplements:[]};
 const defaultPRs={"bankdrücken":{name:"Bankdrücken",weight:85,reps:6,date:"2025-03-10"},"kniebeugen":{name:"Kniebeugen",weight:105,reps:6,date:"2025-03-08"}};
 const readFile=file=>new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsDataURL(file);});
 const todayStr=()=>new Date().toISOString().split("T")[0];
@@ -593,7 +593,7 @@ function ChecklistRow({item, onClick}){
     }}>
       <ChecklistDot done={item.done}/>
       <div style={{minWidth:0}}>
-        <div style={{fontSize:12, fontWeight:700, color: item.done?"#888":"#F0EDE8", textDecoration:item.done?"line-through":"none", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{item.label}</div>
+        <div style={{fontSize:12, fontWeight:700, color: item.done?"#888":"#F0EDE8", textDecoration:item.done?"line-through":"none", lineHeight:1.3, wordBreak:"break-word"}}>{item.label}</div>
         {!item.done && <div style={{fontSize:10, fontWeight:700, marginTop:2, color: item.time ? "#666" : "#FF6B35"}}>{item.time ? `⏰ ${item.time} Uhr` : "Offen"}</div>}
         {item.done && <div style={{fontSize:10, fontWeight:700, marginTop:2, color:"#06D6A0"}}>Erledigt</div>}
       </div>
@@ -626,7 +626,7 @@ function ChecklistChip({item, onClick}){
     }}>
       <ChecklistDot done={item.done} size={16}/>
       <div style={{minWidth:0}}>
-        <div style={{fontSize:11, fontWeight:700, color: item.done?"#888":"#F0EDE8", textDecoration:item.done?"line-through":"none", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{item.label}</div>
+        <div style={{fontSize:11, fontWeight:700, color: item.done?"#888":"#F0EDE8", textDecoration:item.done?"line-through":"none", lineHeight:1.3, wordBreak:"break-word"}}>{item.label}</div>
         <div style={{fontSize:9, fontWeight:700, color: item.done?"#06D6A0":"#FF6B35"}}>{item.done?"Erledigt":(item.time?`⏰ ${item.time} Uhr`:"Offen")}</div>
       </div>
     </div>
@@ -635,9 +635,15 @@ function ChecklistChip({item, onClick}){
 function WaterGlass({ml, goal, size=110}){
   const pct=Math.min(ml/Math.max(goal,1)*100,100);
   return (
-    <div style={{width:size*0.62, height:size, border:"3px solid rgba(255,255,255,0.18)", borderTop:"none", borderRadius:"0 0 18px 18px", position:"relative", overflow:"hidden", background:"rgba(255,255,255,0.02)", flexShrink:0}}>
-      <div style={{position:"absolute", bottom:0, left:0, right:0, height:`${pct}%`, background:"linear-gradient(180deg, #4DD0E1 0%, #2196F3 100%)", transition:"height 0.5s cubic-bezier(0.16,1,0.3,1)"}}/>
-      <div style={{position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:13, color:"#fff", textShadow:"0 1px 4px rgba(0,0,0,0.7)"}}>{Math.round(pct)}%</div>
+    <div style={{width:size*0.68, height:size, position:"relative", flexShrink:0, clipPath:"polygon(12% 3%, 88% 3%, 78% 97%, 22% 97%)"}}>
+      <div style={{position:"absolute", inset:0, background:"linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.01) 100%)", border:"2.5px solid rgba(255,255,255,0.22)"}}/>
+      <div style={{position:"absolute", left:0, right:0, bottom:0, height:`${pct}%`, overflow:"hidden", transition:"height 0.6s cubic-bezier(0.16,1,0.3,1)"}}>
+        <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, #67E8F9 0%, #2196F3 55%, #1565C0 100%)"}}/>
+        <div style={{position:"absolute", top:-7, left:"-30%", width:"160%", height:18, borderRadius:"45%", background:"rgba(255,255,255,0.4)", animation:"waterWave 3.2s ease-in-out infinite"}}/>
+        <div style={{position:"absolute", top:-4, left:"-30%", width:"160%", height:18, borderRadius:"42%", background:"rgba(255,255,255,0.22)", animation:"waterWave 4.1s ease-in-out infinite reverse"}}/>
+      </div>
+      <div style={{position:"absolute", top:"10%", left:"15%", width:"8%", height:"60%", background:"linear-gradient(180deg, rgba(255,255,255,0.45), rgba(255,255,255,0))", borderRadius:6}}/>
+      <div style={{position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:size*0.13, color:"#fff", textShadow:"0 1px 4px rgba(0,0,0,0.8)"}}>{Math.round(pct)}%</div>
     </div>
   );
 }
@@ -1035,7 +1041,13 @@ function FitForge(){
   const mergeData = (local, remote) => {
     if (!local) return remote;
     if (!remote) return local;
-    
+
+    // Tombstones: an id/date deleted on EITHER side must stay deleted, even though
+    // simple union-merging below would otherwise resurrect it from the other side.
+    const deletedPlanIds = [...new Set([...(local.deletedPlanIds||[]), ...(remote.deletedPlanIds||[])])];
+    const deletedWorkoutIds = [...new Set([...(local.deletedWorkoutIds||[]), ...(remote.deletedWorkoutIds||[])])];
+    const deletedWeightDates = [...new Set([...(local.deletedWeightDates||[]), ...(remote.deletedWeightDates||[])])];
+
     const mergedWorkouts = [...(local.workouts || [])];
     (remote.workouts || []).forEach(rw => {
       if (rw && rw.id) {
@@ -1045,7 +1057,8 @@ function FitForge(){
         }
       }
     });
-    mergedWorkouts.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const filteredWorkouts = mergedWorkouts.filter(w => !deletedWorkoutIds.includes(w.id));
+    filteredWorkouts.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     const mergedPlans = [...(local.plans || [])];
     (remote.plans || []).forEach(rp => {
@@ -1062,6 +1075,7 @@ function FitForge(){
         }
       }
     });
+    const filteredPlans = mergedPlans.filter(p => !deletedPlanIds.includes(p.id));
 
     const mergedWeightHistory = [...(local.weightHistory || [])];
     (remote.weightHistory || []).forEach(rw => {
@@ -1072,13 +1086,15 @@ function FitForge(){
         }
       }
     });
-    mergedWeightHistory.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const filteredWeightHistory = mergedWeightHistory.filter(h => !deletedWeightDates.includes(h.date));
+    filteredWeightHistory.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     return {
       ...local,
-      workouts: mergedWorkouts,
-      plans: mergedPlans,
-      weightHistory: mergedWeightHistory
+      workouts: filteredWorkouts,
+      plans: filteredPlans,
+      weightHistory: filteredWeightHistory,
+      deletedPlanIds, deletedWorkoutIds, deletedWeightDates
     };
   };
   
@@ -1182,6 +1198,35 @@ function FitForge(){
   const mealTypesDoneToday = CHECKIN_MEAL_TYPES.map(mt=>todaysMeals.some(m=>m.mealType===mt));
   const trainingDoneToday = data.workouts.some(w=>w.date===checklistToday);
 
+  const waterGoal = parseInt(user.waterGoal)||2500;
+  const todayWaterLog = nutrition[checklistToday]?.waterLog || [];
+  const waterTotalToday = todayWaterLog.reduce((a,w)=>a+w.ml,0);
+  const addWaterToday = ml => {
+    if(!ml || ml<=0) return;
+    setNutrition(n=>{
+      const d = n[checklistToday] || {calories:0,protein:0,carbs:0,fat:0,meals:[],waterLog:[]};
+      return {...n, [checklistToday]: {...d, waterLog:[...(d.waterLog||[]), {id:Date.now(), ml, time:new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}]}};
+    });
+  };
+  const delWaterToday = id => {
+    setNutrition(n=>{
+      const d = n[checklistToday];
+      if(!d) return n;
+      return {...n, [checklistToday]: {...d, waterLog:(d.waterLog||[]).filter(w=>w.id!==id)}};
+    });
+  };
+
+  const todaysSupplementsTaken = nutrition[checklistToday]?.supplementsTaken || [];
+  const toggleSupplementToday = supplementId => {
+    setNutrition(n=>{
+      const d = n[checklistToday] || {calories:0,protein:0,carbs:0,fat:0,meals:[],waterLog:[],supplementsTaken:[]};
+      const taken = d.supplementsTaken || [];
+      const next = taken.includes(supplementId) ? taken.filter(x=>x!==supplementId) : [...taken, supplementId];
+      return {...n, [checklistToday]: {...d, supplementsTaken: next}};
+    });
+  };
+
+  const cTodayFull = FULL_WEEKDAYS[new Date().getDay()===0?6:new Date().getDay()-1];
   const cWeekKey = getMonday(new Date()).toISOString().split("T")[0];
   const cTodayIdx = (new Date().getDay()+6)%7;
   const cDayEntries = weekPlans[cWeekKey]?.entries?.[cTodayIdx] || [];
@@ -1194,7 +1239,6 @@ function FitForge(){
     if(cPlan){ cTrainingPlanName=cPlan.name; cTrainingPlanId=cPlan.id; }
   }
   if(!cTrainingPlanName){
-    const cTodayFull = FULL_WEEKDAYS[new Date().getDay()===0?6:new Date().getDay()-1];
     const cFallbackPlan = data.plans.find(p=>(p.days||[]).includes(cTodayFull));
     if(cFallbackPlan){ cTrainingPlanName=cFallbackPlan.name; cTrainingPlanId=cFallbackPlan.id; }
   }
@@ -1202,13 +1246,29 @@ function FitForge(){
   const cMealEntries = cDayEntries.filter(e=>e.type==="meal");
   const mealPlanFor = mt => cMealEntries.find(e=>e.mealPreset===mt || (mt==="Snack" && (e.mealPreset==="Pre-Workout" || e.mealPreset==="Post-Workout")));
 
+  const cStretchEntry = cDayEntries.find(e=>e.type==="stretching");
+  const stretchingDoneToday = !!nutrition[checklistToday]?.stretchingDone;
+  const toggleStretchingToday = () => {
+    setNutrition(n=>{
+      const d = n[checklistToday] || {calories:0,protein:0,carbs:0,fat:0,meals:[],waterLog:[],supplementsTaken:[]};
+      return {...n, [checklistToday]: {...d, stretchingDone: !d.stretchingDone}};
+    });
+  };
+
+  const todaysSupplements = (user.supplements||[]).filter(sp=>(sp.days||[]).includes(cTodayFull));
+  const supplementItems = todaysSupplements.length>0
+    ? todaysSupplements.map(sp=>({key:"supp-"+sp.id, group:"supplement", done:todaysSupplementsTaken.includes(sp.id), label:sp.amount?`${sp.name} · ${sp.amount}`:sp.name, supplementId:sp.id}))
+    : [{key:"supp-generic", group:"supplement", done:todaysSupplementsTaken.includes("generic"), label:"Supplements eingenommen", supplementId:"generic"}];
+
   const checklist = [
     {key:"weight", group:"weight", done:weightDoneToday, label:"Gewicht eintragen", onView:"fortschritt"},
     ...CHECKIN_MEAL_TYPES.map((mt,i)=>{
       const planned = mealPlanFor(mt);
       return {key:"meal-"+mt, group:"meal", done:mealTypesDoneToday[i], label: planned ? `${mt}: ${planned.mealName||planned.mealPreset}` : mt, time: planned?.startTime||null, mealType:mt, onView:"nutrition"};
     }),
-    {key:"training", group:"training", done:trainingDoneToday, label:cTrainingPlanName?`Training: ${cTrainingPlanName}`:"Training absolvieren", time:cTrainingTime, planId:cTrainingPlanId, onView:"log"}
+    {key:"training", group:"training", done:trainingDoneToday, label:cTrainingPlanName?`Training: ${cTrainingPlanName}`:"Training absolvieren", time:cTrainingTime, planId:cTrainingPlanId, onView:"log"},
+    {key:"stretching", group:"stretching", done:stretchingDoneToday, label:cStretchEntry?.stretchName?`Dehnen: ${cStretchEntry.stretchName}`:"Dehnen / Stretching", time:cStretchEntry?.startTime||null},
+    ...supplementItems
   ];
 
   useEffect(()=>{
@@ -1683,6 +1743,14 @@ function FitForge(){
   const todayNut = nutrition[today] || {calories:0,protein:0,carbs:0,fat:0,meals:[]};
 
   const onChecklistItemClick = (item) => {
+    if(item.group==="supplement"){
+      toggleSupplementToday(item.supplementId);
+      return;
+    }
+    if(item.group==="stretching"){
+      toggleStretchingToday();
+      return;
+    }
     setPresetPlanId(item.group==="training" ? item.planId : null);
     setAutoOpenAdd(item.group==="weight" ? "fortschritt" : item.group==="meal" ? "nutrition" : null);
     setPresetMealType(item.group==="meal" ? item.mealType : null);
@@ -1763,7 +1831,7 @@ function FitForge(){
               <button style={{...s.avatarBtn,...(profileOpen?s.avatarOn:{})}} onClick={()=>{setProfileOpen(o=>!o);setNotifOpen(false);}}>
                 {user.avatar?<img src={user.avatar} alt="av" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={s.initials}>{getInitials(user)}</span>}
               </button>
-              {profileOpen&&<div style={{...s.dropdown,width:250}} className="dropIn" onClick={e=>e.stopPropagation()}>
+              {profileOpen&&<div style={{...s.dropdown,width:250, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}} className="dropIn" onClick={e=>e.stopPropagation()}>
                 <div style={{display:"flex",alignItems:"center",gap:12,padding:"16px 18px"}}>
                   <div style={{width:44,height:44,borderRadius:"50%",background:"linear-gradient(135deg,#FF6B35,#FF8C60)",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
                     {user.avatar?<img src={user.avatar} alt="av" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}}/>:<span style={{fontFamily:"'DM Sans',sans-serif",fontSize:15,fontWeight:800,color:"#fff"}}>{getInitials(user)}</span>}
@@ -1796,7 +1864,7 @@ function FitForge(){
         {(profileOpen||notifOpen)&&<div style={s.veil} onClick={closeAll}/>}
         {toast&&<div style={{...s.toast,...(toast.type==="error"?s.toastErr:{})}} className="dropIn">{toast.type==="success"?IC.check:IC.x} {toast.msg}</div>}
         <div key={animK} className="pageEnter">
-          {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick}/>}
+          {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday}/>}
           {view==="plans"&&<Plans data={data} setData={setData} onNew={()=>setPlanModal(true)} onEdit={p=>{setEditPlan(p);setPlanModal(true);}} notify={showToast} library={library}/>}
           {view==="library"&&<LibraryPage library={library} setLibrary={setLibrary} notify={showToast}/>}
           {view==="wochenplan"&&<WochenplanPage weekPlans={weekPlans} setWeekPlans={setWeekPlans} data={data} user={user} library={library} notify={showToast}/>}
@@ -1864,10 +1932,11 @@ function FitForge(){
     </div>
   );
 }
-function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick}){
+function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick,waterGoal,waterTotal,waterLog,onAddWater,onDelWater}){
   const cwDays = new Set(thisWeek.map(w => new Date(w.date).toDateString())).size;
   const cwSessions = thisWeek.length;
-  const last=[...data.workouts].sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
+  const last3=[...data.workouts].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,3);
+  const [waterAmount,setWaterAmount]=useState("");
   const today=new Date(),tn=FULL_WEEKDAYS[today.getDay()===0?6:today.getDay()-1];
   const todayPlan=data.plans.find(p=>p.days.includes(tn));
   const calGoal=parseInt(user.calorieGoal)||2500,protGoal=parseInt(user.proteinGoal)||150;
@@ -1897,7 +1966,7 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
         </div>
         <div style={{display:"flex", flexDirection: isMobile ? "column" : "row", gap:10, alignItems: isMobile ? "stretch" : "flex-start"}}>
           <ChecklistRow item={checklist.find(c=>c.group==="weight")} onClick={onChecklistItemClick}/>
-          <div style={{flex: isMobile ? "initial" : 1.6, minWidth:0, width: isMobile ? "100%" : "auto"}}>
+          <div style={{flex: isMobile ? "initial" : 1.3, minWidth:0, width: isMobile ? "100%" : "auto"}}>
             <ChecklistGroupHeader label="Mahlzeiten" items={checklist.filter(c=>c.group==="meal")}/>
             <div style={{display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:6}}>
               {checklist.filter(c=>c.group==="meal").map(item=>(
@@ -1906,9 +1975,73 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
             </div>
           </div>
           <ChecklistRow item={checklist.find(c=>c.group==="training")} onClick={onChecklistItemClick}/>
+          <ChecklistRow item={checklist.find(c=>c.group==="stretching")} onClick={onChecklistItemClick}/>
+          <div style={{flex: isMobile ? "initial" : 1, minWidth:0, width: isMobile ? "100%" : "auto"}}>
+            <ChecklistGroupHeader label="Supplements" items={checklist.filter(c=>c.group==="supplement")}/>
+            <div style={{display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:6}}>
+              {checklist.filter(c=>c.group==="supplement").map(item=>(
+                <ChecklistChip key={item.key} item={item} onClick={onChecklistItemClick}/>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
-      <div style={{...s.statsRow, gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : s.statsRow.gridTemplateColumns}}>
+      <div className="glass-card" style={{marginBottom:18}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h2 style={s.secTitle}>Ernährung heute</h2></div>
+        <div style={{display:"flex",justifyContent:"space-around",alignItems:"center", gap: isMobile ? 8 : 0, overflowX: isMobile ? "auto" : "visible", paddingBottom: isMobile ? 8 : 0}}>
+          <DonutChart value={tnC} max={calGoal} color="#FF6B35" size={isMobile ? 56 : 68} label={`${tnC} kcal`}/>
+          <DonutChart value={tnP} max={protGoal} color="#00D9C0" size={isMobile ? 56 : 68} label={`${Math.round(tnP)}g Prot`}/>
+          <DonutChart value={tnCa} max={Math.round(calGoal*0.5/4)} color="#FFD166" size={isMobile ? 56 : 68} label={`${Math.round(tnCa)}g Carb`}/>
+          <DonutChart value={tnF} max={Math.round(calGoal*0.3/9)} color="#A78BFA" size={isMobile ? 56 : 68} label={`${Math.round(tnF)}g Fett`}/>
+        </div>
+      </div>
+      <div className="glass-card" style={{marginBottom:18}}>
+        <h2 style={{...s.secTitle,marginBottom:14}}>Diese Woche</h2>
+        <div style={s.weekGrid}>{WEEKDAYS.map((day,i)=>{
+          const full=FULL_WEEKDAYS[i];
+          const done=thisWeek.some(w=>{const d=new Date(w.date);return(d.getDay()===0?6:d.getDay()-1)===i;});
+          const isToday=(today.getDay()===0?6:today.getDay()-1)===i;
+          const hasPlan=data.plans.some(p=>p.days.includes(full));
+          return(<div key={day} style={{
+            ...s.dayCell,
+            background: done ? "rgba(255, 107, 53, 0.12)" : "rgba(255, 255, 255, 0.05)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            borderColor: done?"#FF6B35":(isToday?"#FF6B35":"rgba(255, 255, 255, 0.08)"),
+            borderWidth: isToday ? 2 : 1,
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+            padding: isMobile ? "8px 2px" : "10px 4px"
+          }}><span style={{fontSize:9,fontWeight:600,color:done?"#fff":"rgba(255,255,255,0.4)"}}>{day}</span>{done&&<span style={{color:"#FF6B35",display:"flex", transform: "scale(0.8)"}}>{IC.check}</span>}{!done&&hasPlan&&<span style={{width:4,height:4,borderRadius:"50%",background:"rgba(255,255,255,0.2)"}}/>}</div>);
+        })}</div>
+      </div>
+      <div className="glass-card" style={{marginBottom:18}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h2 style={s.secTitle}>💧 Flüssigkeit</h2><div style={{fontFamily:"'DM Sans',sans-serif",fontSize: isMobile ? 16 : 18,fontWeight:800,color:"#2196F3"}}>{waterTotal}<span style={{fontSize:11,color:"#666",fontWeight:400}}> / {waterGoal} ml</span></div></div>
+        <div style={{display:"flex", gap: isMobile ? 14 : 20, alignItems:"center"}}>
+          <WaterGlass ml={waterTotal} goal={waterGoal}/>
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{display:"flex", flexWrap:"wrap", gap:8, marginBottom:12}}>
+              {[250,330,500,750].map(ml=>(
+                <button key={ml} style={{background:"rgba(33,150,243,0.1)",border:"1px solid rgba(33,150,243,0.3)",borderRadius:9,padding:"7px 12px",color:"#4DD0E1",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'DM Sans',sans-serif"}} onClick={()=>onAddWater(ml)}>+{ml} ml</button>
+              ))}
+            </div>
+            <div style={{display:"flex", gap:8}}>
+              <input style={{...s.inp,flex:1}} type="number" value={waterAmount} onChange={e=>setWaterAmount(e.target.value)} placeholder="Eigene Menge (ml)"/>
+              <button style={{...s.secBtn,padding:"0 16px"}} onClick={()=>{onAddWater(parseInt(waterAmount)||0);setWaterAmount("");}}>{IC.plus}</button>
+            </div>
+            {(waterLog||[]).length>0 && (
+              <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:12}}>
+                {waterLog.map(w=>(
+                  <div key={w.id} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"4px 6px 4px 10px",fontSize:11,color:"#888"}}>
+                    {w.ml} ml · {w.time}
+                    <button style={{background:"transparent",border:"none",color:"#444",cursor:"pointer",padding:3,display:"flex"}} onClick={()=>onDelWater(w.id)}>{IC.x}</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <div style={{...s.statsRow, gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : s.statsRow.gridTemplateColumns, marginBottom:28}}>
         {[[data.workouts.length,"Trainings",IC.dumbbell,"#FF6B35"],[cwDays,"Tage diese Woche",IC.fire,"#FFD166"],[`${cwSessions}`,"Einheiten",IC.trophy,"#00D9C0"],[`${Math.round((totalVol||0)/1000)}k kg`,"Volumen",IC.bolt,"#A78BFA"]].map(([v,l,ic,c],i)=>(
           <div key={i} className="glass-stat">
             <div style={{color:c,display:"flex",marginBottom:8, transform: isMobile ? "scale(0.9)" : "none"}}>{ic}</div>
@@ -1917,37 +2050,7 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
           </div>
         ))}
       </div>
-      <div style={{display:"grid",gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",gap:18,marginBottom:28}}>
-        <div className="glass-card">
-          <h2 style={{...s.secTitle,marginBottom:14}}>Diese Woche</h2>
-          <div style={s.weekGrid}>{WEEKDAYS.map((day,i)=>{
-            const full=FULL_WEEKDAYS[i];
-            const done=thisWeek.some(w=>{const d=new Date(w.date);return(d.getDay()===0?6:d.getDay()-1)===i;});
-            const isToday=(today.getDay()===0?6:today.getDay()-1)===i;
-            const hasPlan=data.plans.some(p=>p.days.includes(full));
-            return(<div key={day} style={{
-              ...s.dayCell,
-              background: done ? "rgba(255, 107, 53, 0.12)" : "rgba(255, 255, 255, 0.05)",
-              backdropFilter: "blur(8px)",
-              WebkitBackdropFilter: "blur(8px)",
-              borderColor: done?"#FF6B35":(isToday?"#FF6B35":"rgba(255, 255, 255, 0.08)"),
-              borderWidth: isToday ? 2 : 1,
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
-              padding: isMobile ? "8px 2px" : "10px 4px"
-            }}><span style={{fontSize:9,fontWeight:600,color:done?"#fff":"rgba(255,255,255,0.4)"}}>{day}</span>{done&&<span style={{color:"#FF6B35",display:"flex", transform: "scale(0.8)"}}>{IC.check}</span>}{!done&&hasPlan&&<span style={{width:4,height:4,borderRadius:"50%",background:"rgba(255,255,255,0.2)"}}/>}</div>);
-          })}</div>
-        </div>
-        <div className="glass-card">
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h2 style={s.secTitle}>Ernährung heute</h2></div>
-          <div style={{display:"flex",justifyContent:"space-around",alignItems:"center", gap: isMobile ? 8 : 0, overflowX: isMobile ? "auto" : "visible", paddingBottom: isMobile ? 8 : 0}}>
-            <DonutChart value={tnC} max={calGoal} color="#FF6B35" size={isMobile ? 56 : 68} label={`${tnC} kcal`}/>
-            <DonutChart value={tnP} max={protGoal} color="#00D9C0" size={isMobile ? 56 : 68} label={`${Math.round(tnP)}g Prot`}/>
-            <DonutChart value={tnCa} max={Math.round(calGoal*0.5/4)} color="#FFD166" size={isMobile ? 56 : 68} label={`${Math.round(tnCa)}g Carb`}/>
-            <DonutChart value={tnF} max={Math.round(calGoal*0.3/9)} color="#A78BFA" size={isMobile ? 56 : 68} label={`${Math.round(tnF)}g Fett`}/>
-          </div>
-        </div>
-      </div>
-      {last&&(<div><h2 style={s.secTitle}>Letztes Training</h2><div className="glass-recent" onClick={()=>onView("history")}><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}><div style={{fontFamily:"'DM Sans',sans-serif",fontSize:16,fontWeight:700}}>{last.name}</div>{last.hiitMode && <div style={{display:"flex",color:"#FFD166"}} className="hiit-glow">{IC.bolt}</div>}</div><div style={{display:"flex",gap:4,color:"rgba(255,255,255,0.5)",fontSize:12,alignItems:"center", flexWrap:"wrap"}}>{IC.clock} {last.duration} Min · {last.exercises.length} Übungen · {fmtDate(last.date)}</div>{last.note&&<div style={{marginTop:8,color:"rgba(255,255,255,0.7)",fontSize:12,fontStyle:"italic"}}>„{last.note}"</div>}</div><div style={{fontSize:20,color:"rgba(255,255,255,0.3)", marginLeft: 10}}>→</div></div></div>)}
+      {last3.length>0&&(<div><h2 style={s.secTitle}>Letzte Trainings</h2>{last3.map(w=>(<div key={w.id} className="glass-recent" onClick={()=>onView("history")}><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}><div style={{fontFamily:"'DM Sans',sans-serif",fontSize:16,fontWeight:700}}>{w.name}</div>{w.hiitMode && <div style={{display:"flex",color:"#FFD166"}} className="hiit-glow">{IC.bolt}</div>}</div><div style={{display:"flex",gap:4,color:"rgba(255,255,255,0.5)",fontSize:12,alignItems:"center", flexWrap:"wrap"}}>{IC.clock} {w.duration} Min · {w.exercises.length} Übungen · {fmtDate(w.date)}</div>{w.note&&<div style={{marginTop:8,color:"rgba(255,255,255,0.7)",fontSize:12,fontStyle:"italic"}}>„{w.note}"</div>}</div><div style={{fontSize:20,color:"rgba(255,255,255,0.3)", marginLeft: 10}}>→</div></div>))}</div>)}
     </div>
   </div>);}
 
@@ -1988,7 +2091,7 @@ function ProgressPage({data,setData,user,notify,isMobile,autoOpenAdd}){
   };
 
   const delWeight=(date)=>{
-    setData(d=>({...d, weightHistory:d.weightHistory.filter(h=>h.date!==date)}));
+    setData(d=>({...d, weightHistory:d.weightHistory.filter(h=>h.date!==date), deletedWeightDates:[...(d.deletedWeightDates||[]),date]}));
     notify("Eintrag gelöscht");
   };
 
@@ -2715,7 +2818,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
   );
 }
 function Plans({data,setData,onNew,onEdit,notify}){
-  const del=id=>{setData(d=>({...d,plans:d.plans.filter(p=>p.id!==id)}));notify("Plan gelöscht");};
+  const del=id=>{setData(d=>({...d,plans:d.plans.filter(p=>p.id!==id),deletedPlanIds:[...(d.deletedPlanIds||[]),id]}));notify("Plan gelöscht");};
   return(<div style={s.page}><div style={s.pageHead}><div><h1 style={s.pageTitle}>Trainingspläne</h1><p style={s.pageSub}>{data.plans.length} aktive Pläne</p></div><button className="mobile-small-btn" style={s.primaryBtn} onClick={onNew}>{IC.plus} <span className="mobile-hide">Neuer Plan</span></button></div>
     <div style={s.plansGrid}>{data.plans.map(plan=>{
       const exs=plan.exercises.map(e=>typeof e==="string"?{name:e,photo:null}:e);
@@ -2758,6 +2861,7 @@ const calcDist = (lat1, lon1, lat2, lon2) => {
 
 function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activeWorkout,setActiveWorkout,presetPlanId,isMobile}){
 
+  const resolvePhoto = ex => library.find(l=>l.id===ex.libId || l.name===ex.name)?.thumbnail || ex.photo;
 
   const [step,setStep]=useState(activeWorkout?.step || 1);
   const [planId,setPlanId]=useState(activeWorkout?.planId || presetPlanId || data.plans[0]?.id || null);
@@ -3442,7 +3546,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
               </div>
             )}
             <div style={{width:44,height:44,background:"rgba(255,255,255,0.05)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
-              {e.photo ? <img src={e.photo} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : IC.dumbbell}
+              {resolvePhoto(e) ? <img src={resolvePhoto(e)} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : IC.dumbbell}
             </div>
             <div style={{flex:1, display:"flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent:"space-between", gap: isMobile ? 8 : 10, minWidth:0}}>
               <div style={{fontSize:14, fontWeight:700, color:"#F0EDE8", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{e.name}</div>
@@ -3633,7 +3737,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
             {curExData.trackGPS ? (
               <div ref={mapRef} style={{width:"100%", height:"100%"}}></div>
             ) : (
-              curExData.photo?<img src={curExData.photo} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:<div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:"#333"}}>{IC.dumbbell}</div>
+              resolvePhoto(curExData)?<img src={resolvePhoto(curExData)} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:<div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:"#333"}}>{IC.dumbbell}</div>
             )}
             <button style={{position:"absolute",bottom:12,right:12,background:"rgba(255,107,33,0.9)",borderRadius:"50%",width:36,height:36,border:"none",color:"#fff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, zIndex: 1000}} onClick={()=>setShowInfo(true)}>i</button>
           </div>
@@ -4131,7 +4235,7 @@ function GpsAnalytics({ path, targetPace }) {
 function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isMobile}){
 
   const sorted=[...data.workouts].sort((a,b)=>new Date(b.date)-new Date(a.date));
-  const del=id=>{setData(d=>({...d,workouts:d.workouts.filter(w=>w.id!==id)}));setSelWO(null);notify("Training gelöscht");};
+  const del=id=>{setData(d=>({...d,workouts:d.workouts.filter(w=>w.id!==id),deletedWorkoutIds:[...(d.deletedWorkoutIds||[]),id]}));setSelWO(null);notify("Training gelöscht");};
   const [compMode, setCompMode] = useState(false);
   const [compSel, setCompSel] = useState([]);
   const [showComp, setShowComp] = useState(false);
@@ -5001,6 +5105,15 @@ function DailyCheckinModal({checklist, onItemClick, onClose}){
             </div>
           </div>
           <ChecklistRow item={checklist.find(c=>c.group==="training")} onClick={onItemClick}/>
+          <ChecklistRow item={checklist.find(c=>c.group==="stretching")} onClick={onItemClick}/>
+          <div>
+            <ChecklistGroupHeader label="Supplements" items={checklist.filter(c=>c.group==="supplement")}/>
+            <div style={{display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:8}}>
+              {checklist.filter(c=>c.group==="supplement").map(item=>(
+                <ChecklistChip key={item.key} item={item} onClick={onItemClick}/>
+              ))}
+            </div>
+          </div>
         </div>
         <button style={{...s.secBtn, width:"100%", marginTop:18, boxSizing:"border-box"}} onClick={onClose}>Später</button>
       </div>
@@ -5194,6 +5307,7 @@ function ProfilePage({user,setUser,notify,isMobile}){
   const [form,setForm]=useState({...user});
   const [uploading,setUploading]=useState(false);
   const fileRef=useRef();
+  const [newSupp,setNewSupp]=useState({name:"",amount:"",days:[]});
 
   const handleAv=async e=>{
     const f=e.target.files[0];
@@ -5213,12 +5327,13 @@ function ProfilePage({user,setUser,notify,isMobile}){
   const save=()=>{setUser(form);notify("Profil gespeichert! ✅");};
 
   return(<div style={s.page}><div style={s.pageHead}><div><h1 style={s.pageTitle}>Mein Profil</h1><p style={s.pageSub}>Daten & Einstellungen</p></div></div><div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:22}}>
-  <div style={s.card}><h3 style={s.cardTitle}>Persönliche Daten</h3><div style={{display:"flex",alignItems:"center",gap:18,marginBottom:24}}><div className="avCircle" style={{width:76,height:76,borderRadius:"50%",background:"rgba(255,255,255,0.04)",border:"2px dashed rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",overflow:"hidden",flexShrink:0}} onClick={()=>fileRef.current.click()}>{form.avatar?<img src={form.avatar} alt="av" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}}/>:<span style={{fontSize:28,fontFamily:"'DM Sans',sans-serif",fontWeight:800,color:"#FF6B35"}}>{getInitials(form)}</span>}<div className="avOverlay" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s"}}>{IC.camera}</div></div><input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleAv}/><div><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:800,fontSize:16}}>{form.firstName||form.lastName?`${form.firstName} ${form.lastName}`.trim():"Dein Name"}</div></div></div>
+  <div style={{...s.card, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}}><h3 style={s.cardTitle}>Persönliche Daten</h3><div style={{display:"flex",alignItems:"center",gap:18,marginBottom:24}}><div className="avCircle" style={{width:76,height:76,borderRadius:"50%",background:"rgba(255,255,255,0.04)",border:"2px dashed rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",overflow:"hidden",flexShrink:0}} onClick={()=>fileRef.current.click()}>{form.avatar?<img src={form.avatar} alt="av" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}}/>:<span style={{fontSize:28,fontFamily:"'DM Sans',sans-serif",fontWeight:800,color:"#FF6B35"}}>{getInitials(form)}</span>}<div className="avOverlay" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s"}}>{IC.camera}</div></div><input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleAv}/><div><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:800,fontSize:16}}>{form.firstName||form.lastName?`${form.firstName} ${form.lastName}`.trim():"Dein Name"}</div></div></div>
   <div style={{...s.formGrid, gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}><div style={s.fg}><label style={s.lbl}>Vorname</label><input style={s.inp} value={form.firstName} onChange={e=>setForm(f=>({...f,firstName:e.target.value}))} placeholder="Max"/></div><div style={s.fg}><label style={s.lbl}>Nachname</label><input style={s.inp} value={form.lastName} onChange={e=>setForm(f=>({...f,lastName:e.target.value}))} placeholder="Mustermann"/></div></div>
   <div style={s.fg}><label style={s.lbl}>E-Mail</label><input style={s.inp} type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="max@beispiel.de"/></div>
   <div style={{...s.formGrid, gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}><div style={s.fg}><label style={s.lbl}>Gewicht (kg)</label><input style={s.inp} type="number" value={form.weight} onChange={e=>setForm(f=>({...f,weight:e.target.value}))} placeholder="80"/></div><div style={s.fg}><label style={s.lbl}>Größe (cm)</label><input style={s.inp} type="number" value={form.height} onChange={e=>setForm(f=>({...f,height:e.target.value}))} placeholder="180"/></div></div>
   <div style={s.fg}><label style={s.lbl}>Fitnessziel</label><select style={s.inp} value={form.goal} onChange={e=>setForm(f=>({...f,goal:e.target.value}))}>{["Muskelaufbau","Gewichtsverlust","Ausdauer","Fitness & Gesundheit","Kraft steigern"].map(g=><option key={g}>{g}</option>)}</select></div>
-  <div style={{...s.card,marginTop:22}}><h3 style={{...s.cardTitle,color:"#FFB703",display:"flex",alignItems:"center",gap:8}}><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg> Arbeitswoche & Zeiten</h3>
+  </div>
+  <div style={{...s.card, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}}><h3 style={{...s.cardTitle,color:"#FFB703",display:"flex",alignItems:"center",gap:8}}><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg> Arbeitswoche & Zeiten</h3>
      <p style={{fontSize:12,color:"#666",marginBottom:16,marginTop:4}}>Diese Zeiten nutzt die KI, um dein Training optimal um deinen Job herum zu planen.</p>
      <div style={s.fg}><label style={s.lbl}>Arbeitstage</label><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{FULL_WEEKDAYS.map(d=><button key={d} onClick={()=>{const wd=form.workDays||[];const nd=wd.includes(d)?wd.filter(x=>x!==d):[...wd,d];setForm(f=>({...f,workDays:nd}))}} style={{...s.dayToggle,background:(form.workDays||[]).includes(d)?"#FFB70320":"rgba(255,255,255,0.04)",borderColor:(form.workDays||[]).includes(d)?"#FFB703":"rgba(255,255,255,0.08)",color:(form.workDays||[]).includes(d)?"#FFB703":"#888"}}>{d}</button>)}</div></div>
      <div style={{...s.formGrid, gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}><div style={s.fg}><label style={s.lbl}>Arbeitsbeginn</label><input style={s.inp} type="time" value={form.workStart||"08:00"} onChange={e=>setForm(f=>({...f,workStart:e.target.value}))}/></div><div style={s.fg}><label style={s.lbl}>Arbeitsende</label><input style={s.inp} type="time" value={form.workEnd||"17:00"} onChange={e=>setForm(f=>({...f,workEnd:e.target.value}))}/></div></div>
@@ -5227,9 +5342,44 @@ function ProfilePage({user,setUser,notify,isMobile}){
      <div style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:10,marginTop:6,display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14}}>🍱</span> Mittagspause (Pause 2)</div>
     <div style={{...s.formGrid, gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}><div style={s.fg}><label style={s.lbl}>Beginn</label><input style={s.inp} type="time" value={form.break2Start||"12:30"} onChange={e=>setForm(f=>({...f,break2Start:e.target.value}))}/></div><div style={s.fg}><label style={s.lbl}>Ende</label><input style={s.inp} type="time" value={form.break2End||"13:15"} onChange={e=>setForm(f=>({...f,break2End:e.target.value}))}/></div></div>
   </div>
+  <div style={{...s.card, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}}><h3 style={s.cardTitle}>Ernährungsziele</h3><div style={s.fg}><label style={s.lbl}>Tageskalorienziel</label><input style={s.inp} type="number" value={form.calorieGoal||""} onChange={e=>setForm(f=>({...f,calorieGoal:parseInt(e.target.value)||2500}))} placeholder="2500"/></div><div style={s.fg}><label style={s.lbl}>Proteinziel (g/Tag)</label><input style={s.inp} type="number" value={form.proteinGoal||""} onChange={e=>setForm(f=>({...f,proteinGoal:parseInt(e.target.value)||150}))} placeholder="150"/></div><div style={s.fg}><label style={s.lbl}>Trinkziel (ml/Tag)</label><input style={s.inp} type="number" value={form.waterGoal||""} onChange={e=>setForm(f=>({...f,waterGoal:parseInt(e.target.value)||2500}))} placeholder="2500"/></div><div style={{height:1,background:"rgba(255,255,255,0.08)",margin:"18px 0"}}/><h3 style={{...s.cardTitle,marginBottom:14}}>Benachrichtigungen</h3><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><div><div style={{fontWeight:700,fontSize:15}}>Erinnerungen</div><div style={{color:"#666",fontSize:11,marginTop:2}}>Wenn Training ansteht</div></div><div style={{...s.toggle,...(form.notificationsEnabled?s.toggleOn:{})}} onClick={()=>setForm(f=>({...f,notificationsEnabled:!f.notificationsEnabled}))}><div style={{...s.thumb,...(form.notificationsEnabled?s.thumbOn:{})}}/></div></div>{form.notificationsEnabled&&<div style={{...s.fg,marginTop:14}}><label style={s.lbl}>Erinnerungszeit</label><input style={s.inp} type="time" value={form.reminderTime||"08:00"} onChange={e=>setForm(f=>({...f,reminderTime:e.target.value}))}/></div>}<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0"}}><div><div style={{fontWeight:700,fontSize:15}}>Daily Check-in bei jedem Login</div><div style={{color:"#666",fontSize:11,marginTop:2}}>Statt nur einmal pro Tag, jedes Mal beim Öffnen der App anzeigen</div></div><div style={{...s.toggle,...(form.checkinEveryLogin?s.toggleOn:{})}} onClick={()=>setForm(f=>({...f,checkinEveryLogin:!f.checkinEveryLogin}))}><div style={{...s.thumb,...(form.checkinEveryLogin?s.thumbOn:{})}}/></div></div></div>
+  <div style={{...s.card, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}}>
+    <h3 style={{...s.cardTitle,marginBottom:14}}>💊 Supplements</h3>
+    <div style={{display:"flex", flexDirection:"column", gap:10, marginBottom:16}}>
+      {(form.supplements||[]).map(sp=>(
+        <div key={sp.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px"}}>
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{fontWeight:700,fontSize:13}}>{sp.name}{sp.amount?` · ${sp.amount}`:""}</div>
+            <div style={{fontSize:10,color:"#666",marginTop:2}}>{(sp.days||[]).length===7?"Täglich":(sp.days||[]).join(", ")||"Keine Tage gewählt"}</div>
+          </div>
+          <button style={{background:"transparent",border:"none",color:"#EF476F",cursor:"pointer",padding:4,display:"flex"}} onClick={()=>setForm(f=>({...f, supplements:(f.supplements||[]).filter(x=>x.id!==sp.id)}))}>{IC.trash}</button>
+        </div>
+      ))}
+      {!(form.supplements||[]).length && <div style={{color:"#666",fontSize:12,textAlign:"center",padding:"10px 0"}}>Noch keine Supplements eingetragen.</div>}
+    </div>
+    <div style={{borderTop:"1px solid rgba(255,255,255,0.08)", paddingTop:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:11,marginBottom:11}}>
+        <div style={s.fg}><label style={s.lbl}>Name</label><input style={s.inp} value={newSupp.name} onChange={e=>setNewSupp(v=>({...v,name:e.target.value}))} placeholder="z.B. Kreatin"/></div>
+        <div style={s.fg}><label style={s.lbl}>Menge</label><input style={s.inp} value={newSupp.amount} onChange={e=>setNewSupp(v=>({...v,amount:e.target.value}))} placeholder="z.B. 5g"/></div>
+      </div>
+      <div style={s.fg}>
+        <label style={s.lbl}>Tage</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {FULL_WEEKDAYS.map(d=>(
+            <button key={d} onClick={()=>setNewSupp(v=>({...v, days:(v.days||[]).includes(d)?(v.days||[]).filter(x=>x!==d):[...(v.days||[]),d]}))}
+              style={{...s.dayToggle, background:(newSupp.days||[]).includes(d)?"#A78BFA20":"rgba(255,255,255,0.04)", borderColor:(newSupp.days||[]).includes(d)?"#A78BFA":"rgba(255,255,255,0.08)", color:(newSupp.days||[]).includes(d)?"#A78BFA":"#888"}}>{d}</button>
+          ))}
+        </div>
+      </div>
+      <button style={{...s.secBtn, width:"100%"}} disabled={!newSupp.name.trim()} onClick={()=>{
+        if(!newSupp.name.trim())return;
+        setForm(f=>({...f, supplements:[...(f.supplements||[]), {id:Date.now(), name:newSupp.name.trim(), amount:newSupp.amount.trim(), days:newSupp.days||[]}]}));
+        setNewSupp({name:"",amount:"",days:[]});
+      }}>{IC.plus} Supplement hinzufügen</button>
+    </div>
   </div>
-  <div style={s.card}><h3 style={s.cardTitle}>Ernährungsziele</h3><div style={s.fg}><label style={s.lbl}>Tageskalorienziel</label><input style={s.inp} type="number" value={form.calorieGoal||""} onChange={e=>setForm(f=>({...f,calorieGoal:parseInt(e.target.value)||2500}))} placeholder="2500"/></div><div style={s.fg}><label style={s.lbl}>Proteinziel (g/Tag)</label><input style={s.inp} type="number" value={form.proteinGoal||""} onChange={e=>setForm(f=>({...f,proteinGoal:parseInt(e.target.value)||150}))} placeholder="150"/></div><div style={s.fg}><label style={s.lbl}>Trinkziel (ml/Tag)</label><input style={s.inp} type="number" value={form.waterGoal||""} onChange={e=>setForm(f=>({...f,waterGoal:parseInt(e.target.value)||2500}))} placeholder="2500"/></div><div style={{height:1,background:"rgba(255,255,255,0.08)",margin:"18px 0"}}/><h3 style={{...s.cardTitle,marginBottom:14}}>Benachrichtigungen</h3><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><div><div style={{fontWeight:700,fontSize:15}}>Erinnerungen</div><div style={{color:"#666",fontSize:11,marginTop:2}}>Wenn Training ansteht</div></div><div style={{...s.toggle,...(form.notificationsEnabled?s.toggleOn:{})}} onClick={()=>setForm(f=>({...f,notificationsEnabled:!f.notificationsEnabled}))}><div style={{...s.thumb,...(form.notificationsEnabled?s.thumbOn:{})}}/></div></div>{form.notificationsEnabled&&<div style={{...s.fg,marginTop:14}}><label style={s.lbl}>Erinnerungszeit</label><input style={s.inp} type="time" value={form.reminderTime||"08:00"} onChange={e=>setForm(f=>({...f,reminderTime:e.target.value}))}/></div>}<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0"}}><div><div style={{fontWeight:700,fontSize:15}}>Daily Check-in bei jedem Login</div><div style={{color:"#666",fontSize:11,marginTop:2}}>Statt nur einmal pro Tag, jedes Mal beim Öffnen der App anzeigen</div></div><div style={{...s.toggle,...(form.checkinEveryLogin?s.toggleOn:{})}} onClick={()=>setForm(f=>({...f,checkinEveryLogin:!f.checkinEveryLogin}))}><div style={{...s.thumb,...(form.checkinEveryLogin?s.thumbOn:{})}}/></div></div></div>
-</div><button style={{...s.primaryBtn,marginTop:22}} onClick={save}>💾 Speichern</button></div>);}
+  </div>
+  <button style={{...s.primaryBtn,marginTop:22}} onClick={save}>💾 Speichern</button></div>);}
 // ─── Docs Page ────────────────────────────────────────────────────────────────
 
 
@@ -6405,6 +6555,7 @@ const MEAL_PRESETS=["Frühstück","Mittagessen","Abendessen","Snack","Pre-Workou
 const ENTRY_TYPES={
   training:{color:"#3B82F6",bg:"#1e3a5f",label:"Training",icon:"🏋️"},
   meal:    {color:"#22C55E",bg:"#14532d",label:"Mahlzeit", icon:"🥗"},
+  stretching:{color:"#FF9F1C",bg:"#4a2c0a",label:"Dehnen", icon:"🧘"},
   rest:    {color:"#6B7280",bg:"#1f2937",label:"Ruhetag",  icon:"💤"},
   other:   {color:"#F59E0B",bg:"#451a03",label:"Sonstiges",icon:"📌"},
 };
@@ -6553,6 +6704,8 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify}){
           }
         } else if (e.type === 'meal') {
           summary = `🥗 Mahlzeit: ${e.mealPreset}${e.mealName ? ' (' + e.mealName + ')' : ''}`;
+        } else if (e.type === 'stretching') {
+          summary = `🧘 Dehnen${e.stretchName ? ': ' + e.stretchName : ''}`;
         }
 
         ics.push(`SUMMARY:${summary}`);
@@ -6708,6 +6861,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify}){
                           <div style={{fontSize:12,fontWeight:700,color:"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                             {entry.type==="training"?(plan?.name||"Trainingsplan")
                              :entry.type==="meal"?(entry.mealPreset||(entry.mealName||"Mahlzeit"))
+                             :entry.type==="stretching"?(entry.stretchName||"Dehnen")
                              :entry.type==="rest"?"Ruhetag"
                              :(entry.title||"Eintrag")}
                           </div>
@@ -6745,6 +6899,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify}){
           dayName={WP_DAY_NAMES[entryDay]}
           editEntry={editEntry}
           plans={data.plans}
+          library={library}
           dayEntries={getDayEntries(entryDay)}
           onSave={entry=>{
             if(editEntry){updateEntry(entryDay,editEntry.id,entry);}
@@ -6804,7 +6959,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify}){
   );
 }
 
-function WPEntryModal({dayName,editEntry,plans,dayEntries,onSave,onDelete,onClose}){
+function WPEntryModal({dayName,editEntry,plans,library=[],dayEntries,onSave,onDelete,onClose}){
   const [type,setType]=useState(editEntry?.type||"training");
   const [planId,setPlanId]=useState(editEntry?.planId||String(plans[0]?.id||""));
   const [mealPreset,setMealPreset]=useState(editEntry?.mealPreset||"Frühstück");
@@ -6814,6 +6969,8 @@ function WPEntryModal({dayName,editEntry,plans,dayEntries,onSave,onDelete,onClos
   const [endTime,setEndTime]=useState(editEntry?.endTime||"");
   const [notes,setNotes]=useState(editEntry?.notes||"");
   const [title,setTitle]=useState(editEntry?.title||"");
+  const stretchOptions = library.filter(ex=>(ex.types||[]).includes("Stretching / Dehnen")).map(ex=>ex.name);
+  const [stretchName,setStretchName]=useState(editEntry?.stretchName||stretchOptions[0]||"");
 
   // Prevent duplicate training plans on same day
   const usedPlanIds=dayEntries.filter(e=>e.type==="training"&&e.id!==editEntry?.id).map(e=>String(e.planId));
@@ -6823,6 +6980,7 @@ function WPEntryModal({dayName,editEntry,plans,dayEntries,onSave,onDelete,onClos
     const base={type,startTime,endTime,notes};
     if(type==="training"){if(!planId)return;base.planId=planId;}
     if(type==="meal"){base.mealPreset=mealPreset;base.mealName=mealName;base.calories=calories;}
+    if(type==="stretching"){base.stretchName=stretchName;}
     if(type==="other"){base.title=title;}
     onSave(base);
   };
@@ -6841,7 +6999,7 @@ function WPEntryModal({dayName,editEntry,plans,dayEntries,onSave,onDelete,onClos
         </div>
 
         {/* Type selector */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:18}}>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${Object.keys(ENTRY_TYPES).length},1fr)`,gap:6,marginBottom:18}}>
           {Object.entries(ENTRY_TYPES).map(([k,v])=>(
             <button key={k} onClick={()=>setType(k)} style={{background:type===k?v.bg:"rgba(255,255,255,0.04)",border:`1px solid ${type===k?v.color:"rgba(255,255,255,0.08)"}`,borderRadius:10,padding:"8px 4px",cursor:"pointer",textAlign:"center",transition:"all 0.15s",fontFamily:"'DM Sans',sans-serif"}}>
               <div style={{fontSize:16,marginBottom:3}}>{v.icon}</div>
@@ -6871,6 +7029,17 @@ function WPEntryModal({dayName,editEntry,plans,dayEntries,onSave,onDelete,onClos
             </div>
             <div style={s.fg}><label style={lbl}>Kalorien (optional)</label><input style={inp} type="number" placeholder="kcal" value={calories} onChange={e=>setCalories(e.target.value)}/></div>
           </>
+        )}
+
+        {type==="stretching"&&(
+          <div style={s.fg}>
+            <label style={lbl}>Übung</label>
+            {!stretchOptions.length?(
+              <div style={{background:"rgba(255,255,255,0.04)",borderRadius:9,padding:"12px",color:"#888",fontSize:13}}>Keine Übungen mit Tag „Stretching / Dehnen" in der Bibliothek. Füge das Tag bei einer Übung hinzu.</div>
+            ):(
+              <CustomSelect value={stretchName} onChange={setStretchName} options={stretchOptions} accentColor="#FF9F1C"/>
+            )}
+          </div>
         )}
 
         {type==="rest"&&(
@@ -7682,6 +7851,10 @@ const css=`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@40
     0% { filter: drop-shadow(0 0 3px rgba(255, 209, 102, 0.4)); opacity: 0.8; }
     50% { filter: drop-shadow(0 0 10px rgba(255, 209, 102, 0.8)); opacity: 1; }
     100% { filter: drop-shadow(0 0 3px rgba(255, 209, 102, 0.4)); opacity: 0.8; }
+  }
+  @keyframes waterWave {
+    0%, 100% { transform: translateX(0) translateY(0); }
+    50% { transform: translateX(4%) translateY(-2px); }
   }
   .glass-card {
     background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 60%), rgba(22, 22, 28, 0.35) !important;
