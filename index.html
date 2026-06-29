@@ -86,7 +86,7 @@ input[type="date"] { text-align: center; justify-content: center; align-items: c
 ::-webkit-scrollbar-track{background:#111114;}
 ::-webkit-scrollbar-thumb{background:#2A2A30;border-radius:3px;}
 .trainImg,.trainVideo{width:100%;height:220px;border-radius:15px;object-fit:contain;background:#222;margin-bottom:20px;box-shadow:0 10px 30px rgba(0,0,0,0.5);}
-@keyframes pageEnter{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+@keyframes pageEnter{from{opacity:0;transform:translateY(12px);}to{opacity:1;}}
 @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
 @keyframes dropIn{from{opacity:0;transform:scale(0.96) translateY(6px);}to{opacity:1;transform:scale(1) translateY(0);}}
 @keyframes spin{to{transform:rotate(360deg);}}
@@ -101,12 +101,15 @@ input[type="date"] { text-align: center; justify-content: center; align-items: c
 .histCard{transition:transform 0.3s cubic-bezier(0.16,1,0.3,1),box-shadow 0.3s,border-color 0.3s,background 0.3s;}.histCard:hover{transform:translateY(-5px)!important;border-color:rgba(255,255,255,0.2)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,0.14),0 20px 56px rgba(0,0,0,0.6),0 6px 20px rgba(0,0,0,0.3)!important;}
 .recentCard:hover{background:rgba(255,255,255,0.06)!important;}
 .notifRow:hover{background:rgba(255,255,255,0.05)!important;}
+.dropdownOptRow:hover{background:rgba(255,255,255,0.06)!important;}
 .avCircle:hover .avOverlay{opacity:1!important;}
 .iconBtn:hover{background:rgba(255,255,255,0.08)!important;color:#F0EDE8!important;}
 .cardIconBtn:hover{background:#1A1A1F!important;color:#F0EDE8!important;}
 .colorSwatch:hover{transform:scale(1.25);}
 .docCard:hover{transform:translateY(-3px);box-shadow:0 8px 28px rgba(0,0,0,0.5);}
 input:focus,select:not(.customSelect):focus,textarea:focus{border-color:#FF6B35!important;outline:none;}
+select.customSelect{appearance:none;-webkit-appearance:none;-moz-appearance:none;background-position:right 16px center;background-repeat:no-repeat;background-size:18px 18px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23F0EDE8' stroke-width='2.2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");cursor:pointer;}
+select.customSelect:focus{outline:none;border-color:#FF6B35!important;box-shadow:0 0 0 3px rgba(255,107,53,0.12);}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
 input[type=color]{-webkit-appearance:none;appearance:none;padding:0;}
 input[type=color]::-webkit-color-swatch-wrapper{padding:0;}
@@ -270,7 +273,7 @@ const deleteFromStorage = async (path) => {
 };
 
 const defaultData={plans:[{id:1,name:"Push Pull Legs",color:"#FF6B35",days:["Montag","Mittwoch","Freitag"],exercises:[{name:"Bankdrücken",photo:null},{name:"Schulterdrücken",photo:null},{name:"Kniebeugen",photo:null},{name:"Kreuzheben",photo:null}]},{id:2,name:"Upper / Lower",color:"#00D9C0",days:["Dienstag","Donnerstag"],exercises:[{name:"Klimmzüge",photo:null},{name:"Rudern",photo:null},{name:"Beinpresse",photo:null}]}],workouts:[{id:1,date:"2025-03-10",planId:1,name:"Push Day",duration:65,exercises:[{name:"Bankdrücken",sets:[{reps:8,weight:80},{reps:8,weight:80},{reps:6,weight:85}]},{name:"Schulterdrücken",sets:[{reps:10,weight:50},{reps:10,weight:50}]}],photo:null,note:"Starke Session!"},{id:2,date:"2025-03-12",planId:1,name:"Pull Day",duration:55,exercises:[{name:"Klimmzüge",sets:[{reps:10,weight:0},{reps:9,weight:0},{reps:8,weight:0}]}],photo:null,note:""},{id:3,date:"2025-03-14",planId:2,name:"Upper Body",duration:72,exercises:[{name:"Bankdrücken",sets:[{reps:8,weight:82.5},{reps:8,weight:82.5},{reps:7,weight:82.5}]}],photo:null,note:""},{id:4,date:"2025-03-08",planId:1,name:"Leg Day",duration:60,exercises:[{name:"Kniebeugen",sets:[{reps:8,weight:100},{reps:8,weight:100},{reps:6,weight:105}]}],photo:null,note:""},{id:5,date:"2025-03-06",planId:2,name:"Pull",duration:50,exercises:[{name:"Klimmzüge",sets:[{reps:12,weight:0},{reps:10,weight:0}]},{name:"Rudern",sets:[{reps:10,weight:60},{reps:10,weight:60}]}],photo:null,note:""}],weightHistory:[],photos:[],measurements:[]};
-const defaultUser={firstName:"",lastName:"",email:"",weight:"",height:"",goal:"Muskelaufbau",avatar:null,notificationsEnabled:true,reminderTime:"08:00",calorieGoal:2500,proteinGoal:150,workDays:["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],workStart:"08:00",workEnd:"17:00",break1Start:"09:30",break1End:"10:00",break2Start:"12:30",break2End:"13:15"};
+const defaultUser={firstName:"",lastName:"",email:"",weight:"",height:"",goal:"Muskelaufbau",avatar:null,notificationsEnabled:true,reminderTime:"08:00",calorieGoal:2500,proteinGoal:150,workDays:["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],workStart:"08:00",workEnd:"17:00",break1Start:"09:30",break1End:"10:00",break2Start:"12:30",break2End:"13:15",checkinEveryLogin:false,waterGoal:2500};
 const defaultPRs={"bankdrücken":{name:"Bankdrücken",weight:85,reps:6,date:"2025-03-10"},"kniebeugen":{name:"Kniebeugen",weight:105,reps:6,date:"2025-03-08"}};
 const readFile=file=>new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsDataURL(file);});
 const todayStr=()=>new Date().toISOString().split("T")[0];
@@ -279,6 +282,7 @@ const getInitials=u=>((u.firstName?.[0]||"")+(u.lastName?.[0]||"")).toUpperCase(
 const timeAgo=ts=>{const m=Math.floor((Date.now()-ts)/60000);if(m<1)return"Gerade eben";if(m<60)return`vor ${m} Min`;const h=Math.floor(m/60);if(h<24)return`vor ${h} Std`;return`vor ${Math.floor(h/24)} Tagen`;};
 const WEEKDAYS=["Mo","Di","Mi","Do","Fr","Sa","So"];
 const FULL_WEEKDAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
+const CHECKIN_MEAL_TYPES=["Frühstück","Mittagessen","Abendessen","Snack"];
 const EQUIPMENT_OPTIONS=["Kurzhantel","Langhantel","Ergometer","Walking Pad","Laufband","Stretching Band"];
 const IC={
   dashboard:<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>,
@@ -506,6 +510,137 @@ function BarChart({bars,color="#FF6B35",height=90}){
   );
 }
 function DonutChart({value,max,color="#FF6B35",size=80,label=""}){const r=30,circ=2*Math.PI*r,pct=Math.min(value/Math.max(max,1),1),dash=pct*circ;return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}><svg width={size} height={size} viewBox="0 0 80 80"><circle cx="40" cy="40" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8"/><circle cx="40" cy="40" r={r} fill="none" stroke={color} strokeWidth="8" strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" transform="rotate(-90 40 40)" style={{transition:"stroke-dasharray 0.5s"}}/><text x="40" y="44" textAnchor="middle" fontSize="12" fontWeight="800" fill="#F0EDE8" fontFamily="DM Sans,sans-serif">{Math.round(pct*100)}%</text></svg>{label&&<div style={{fontSize:10,color:"#666",textAlign:"center",maxWidth:70}}>{label}</div>}</div>);}
+function CustomSelect({value, onChange, options, accentColor="#FF6B35", height=48}){
+  const [open,setOpen]=useState(false);
+  return (
+    <div style={{position:"relative"}}>
+      <button type="button" style={{...s.inp, display:"flex", alignItems:"center", height, width:"100%", borderRadius:14, paddingRight:42, paddingLeft:16, cursor:"pointer", appearance:"none", WebkitAppearance:"none", MozAppearance:"none", fontFamily:"'DM Sans',sans-serif", fontWeight:600, fontSize:14, textAlign:"left", boxShadow: open ? `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 3px ${accentColor}22` : "inset 0 1px 0 rgba(255,255,255,0.08)"}} onClick={()=>setOpen(o=>!o)}>
+        <span style={{overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1}}>{value}</span>
+        <span style={{position:"absolute", right:16, top:"50%", transform: open ? "translateY(-50%) rotate(180deg)" : "translateY(-50%)", transition:"transform 0.2s", display:"flex", pointerEvents:"none"}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F0EDE8" strokeWidth="2.2"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </button>
+      {open && <>
+        <div style={{position:"fixed", inset:0, zIndex:40}} onClick={()=>setOpen(false)}/>
+        <div className="dropIn" style={{position:"absolute", top:"calc(100% + 8px)", left:0, right:0, zIndex:41, background:"#16161A", border:"1px solid #1E1E24", borderRadius:14, overflow:"hidden", boxShadow:"0 20px 60px rgba(0,0,0,0.6)", maxHeight:280, overflowY:"auto"}}>
+          {options.map((opt,i)=>(
+            <div key={opt} className="dropdownOptRow" style={{display:"flex", alignItems:"center", gap:10, padding:"11px 14px", cursor:"pointer", fontSize:14, fontWeight:600, color: value===opt ? accentColor : "#aaa", borderTop: i>0 ? "1px solid rgba(255,255,255,0.06)" : "none"}} onClick={()=>{onChange(opt); setOpen(false);}}>
+              <span style={{flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{opt}</span>
+              {value===opt && <span style={{color:accentColor, display:"flex", flexShrink:0}}>{IC.check}</span>}
+            </div>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+function Overlay({onClick, style, children, ...rest}){
+  return ReactDOM.createPortal(
+    <div style={{...s.overlay2, ...style}} onClick={onClick} {...rest}>{children}</div>,
+    document.body
+  );
+}
+function PlanSelect({value, onChange, plans, allowNone, noneLabel="Kein Plan", height=48}){
+  const [open,setOpen]=useState(false);
+  const selected = plans.find(p=>String(p.id)===String(value));
+  return (
+    <div style={{position:"relative"}}>
+      <button type="button" style={{...s.inp, display:"flex", alignItems:"center", height, width:"100%", borderRadius:14, borderColor: selected?.color || "rgba(255,255,255,0.12)", color: selected?.color || "#F0EDE8", background: selected ? `linear-gradient(135deg, ${selected.color}18 0%, rgba(18,18,24,0.6) 100%)` : "linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(18,18,24,0.6) 100%)", paddingRight:42, paddingLeft:16, cursor:"pointer", appearance:"none", WebkitAppearance:"none", MozAppearance:"none", fontFamily:"'DM Sans',sans-serif", fontWeight:600, fontSize:14, textAlign:"left", boxShadow: open ? "inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 3px rgba(255,107,53,0.12)" : "inset 0 1px 0 rgba(255,255,255,0.08)"}} onClick={()=>setOpen(o=>!o)}>
+        <span style={{overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{selected ? selected.name : (allowNone ? noneLabel : "Plan wählen")}</span>
+        <span style={{position:"absolute", right:16, top:"50%", transform: open ? "translateY(-50%) rotate(180deg)" : "translateY(-50%)", transition:"transform 0.2s", display:"flex", pointerEvents:"none"}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={selected?.color || "#F0EDE8"} strokeWidth="2.2"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </button>
+      {open && <>
+        <div style={{position:"fixed", inset:0, zIndex:40}} onClick={()=>setOpen(false)}/>
+        <div className="dropIn" style={{position:"absolute", top:"calc(100% + 8px)", left:0, right:0, zIndex:41, background:"#16161A", border:"1px solid #1E1E24", borderRadius:14, overflow:"hidden", boxShadow:"0 20px 60px rgba(0,0,0,0.6)", maxHeight:280, overflowY:"auto"}}>
+          {allowNone && (
+            <div className="dropdownOptRow" style={{display:"flex", alignItems:"center", gap:10, padding:"11px 14px", cursor:"pointer", fontSize:14, fontWeight:600, color: !value ? "#F0EDE8" : "#aaa"}} onClick={()=>{onChange(""); setOpen(false);}}>
+              <span style={{width:9, height:9, borderRadius:"50%", background:"rgba(255,255,255,0.15)", flexShrink:0}}/>
+              <span style={{flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{noneLabel}</span>
+              {!value && <span style={{color:"#FF6B35", display:"flex", flexShrink:0}}>{IC.check}</span>}
+            </div>
+          )}
+          {plans.map((p,i)=>(
+            <div key={p.id} className="dropdownOptRow" style={{display:"flex", alignItems:"center", gap:10, padding:"11px 14px", cursor:"pointer", fontSize:14, fontWeight:600, color: String(value)===String(p.id) ? p.color : "#aaa", borderTop: (i>0||allowNone) ? "1px solid rgba(255,255,255,0.06)" : "none"}} onClick={()=>{onChange(p.id); setOpen(false);}}>
+              <span style={{width:9, height:9, borderRadius:"50%", background:p.color, flexShrink:0, boxShadow:`0 0 8px ${p.color}88`}}/>
+              <span style={{flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{p.name}</span>
+              {String(value)===String(p.id) && <span style={{color:p.color, display:"flex", flexShrink:0}}>{IC.check}</span>}
+            </div>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+function ChecklistDot({done, size=22}){
+  return (
+    <div style={{width:size,height:size,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,
+      background: done ? "#06D6A0" : "transparent",
+      border: done ? "none" : "2px solid rgba(255,255,255,0.25)",
+      color:"#000"}}>
+      {done && IC.check}
+    </div>
+  );
+}
+function ChecklistRow({item, onClick}){
+  return (
+    <div onClick={()=>!item.done && onClick(item)} style={{
+      flex:1, display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderRadius:12,
+      background: item.done ? "rgba(6,214,160,0.08)" : "rgba(255,255,255,0.04)",
+      border: `1px solid ${item.done ? "rgba(6,214,160,0.3)" : "rgba(255,255,255,0.12)"}`,
+      cursor: item.done ? "default" : "pointer", minWidth:0
+    }}>
+      <ChecklistDot done={item.done}/>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:12, fontWeight:700, color: item.done?"#888":"#F0EDE8", textDecoration:item.done?"line-through":"none", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{item.label}</div>
+        {!item.done && <div style={{fontSize:10, fontWeight:700, marginTop:2, color: item.time ? "#666" : "#FF6B35"}}>{item.time ? `⏰ ${item.time} Uhr` : "Offen"}</div>}
+        {item.done && <div style={{fontSize:10, fontWeight:700, marginTop:2, color:"#06D6A0"}}>Erledigt</div>}
+      </div>
+    </div>
+  );
+}
+function ChecklistGroupHeader({label, items}){
+  const doneCount = items.filter(i=>i.done).length;
+  const allDone = doneCount===items.length;
+  return (
+    <div style={{display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderRadius:12, marginBottom:8,
+      background: allDone ? "rgba(6,214,160,0.08)" : "rgba(255,255,255,0.04)",
+      border: `1px solid ${allDone ? "rgba(6,214,160,0.3)" : "rgba(255,255,255,0.12)"}`
+    }}>
+      <ChecklistDot done={allDone}/>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:12, fontWeight:700, color: allDone?"#888":"#F0EDE8", textDecoration: allDone?"line-through":"none"}}>{label}</div>
+        <div style={{fontSize:10, fontWeight:700, color: allDone?"#06D6A0":"#FF6B35"}}>{allDone?"Erledigt":`${doneCount}/${items.length} offen`}</div>
+      </div>
+    </div>
+  );
+}
+function ChecklistChip({item, onClick}){
+  return (
+    <div onClick={()=>!item.done && onClick(item)} style={{
+      display:"flex", alignItems:"center", gap:7, padding:"7px 9px", borderRadius:9,
+      background: item.done ? "rgba(6,214,160,0.08)" : "rgba(255,255,255,0.04)",
+      border: `1px solid ${item.done ? "rgba(6,214,160,0.3)" : "rgba(255,255,255,0.12)"}`,
+      cursor: item.done ? "default" : "pointer", minWidth:0
+    }}>
+      <ChecklistDot done={item.done} size={16}/>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:11, fontWeight:700, color: item.done?"#888":"#F0EDE8", textDecoration:item.done?"line-through":"none", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{item.label}</div>
+        <div style={{fontSize:9, fontWeight:700, color: item.done?"#06D6A0":"#FF6B35"}}>{item.done?"Erledigt":(item.time?`⏰ ${item.time} Uhr`:"Offen")}</div>
+      </div>
+    </div>
+  );
+}
+function WaterGlass({ml, goal, size=110}){
+  const pct=Math.min(ml/Math.max(goal,1)*100,100);
+  return (
+    <div style={{width:size*0.62, height:size, border:"3px solid rgba(255,255,255,0.18)", borderTop:"none", borderRadius:"0 0 18px 18px", position:"relative", overflow:"hidden", background:"rgba(255,255,255,0.02)", flexShrink:0}}>
+      <div style={{position:"absolute", bottom:0, left:0, right:0, height:`${pct}%`, background:"linear-gradient(180deg, #4DD0E1 0%, #2196F3 100%)", transition:"height 0.5s cubic-bezier(0.16,1,0.3,1)"}}/>
+      <div style={{position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:13, color:"#fff", textShadow:"0 1px 4px rgba(0,0,0,0.7)"}}>{Math.round(pct)}%</div>
+    </div>
+  );
+}
 function NutritionViewIcon({favFoods}){
   return(
     <div style={{position:"relative",display:"flex"}}>
@@ -546,6 +681,10 @@ function FitForge(){
   const [showLoadingUI, setShowLoadingUI] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [weeklyReport, setWeeklyReport] = useState(null);
+  const [checkinModalOpen, setCheckinModalOpen] = useState(false);
+  const [presetPlanId, setPresetPlanId] = useState(null);
+  const [autoOpenAdd, setAutoOpenAdd] = useState(null);
+  const [presetMealType, setPresetMealType] = useState(null);
 
   // ── Deep Rescue Scan State ──────────────────────────────────────────────
   const [rescueModalOpen, setRescueModalOpen] = useState(false);
@@ -1028,6 +1167,63 @@ function FitForge(){
     return ()=>window.removeEventListener("resize",handleResize);
   },[]);
 
+  useEffect(()=>{
+    const openPlan=new URLSearchParams(window.location.search).get("openPlan");
+    if(openPlan){
+      setPresetPlanId(openPlan);
+      setView("log");
+      window.history.replaceState({},"",window.location.origin+window.location.pathname);
+    }
+  },[]);
+
+  const checklistToday = todayStr();
+  const weightDoneToday = (data.weightHistory||[]).some(h=>h.date===checklistToday);
+  const todaysMeals = nutrition[checklistToday]?.meals || [];
+  const mealTypesDoneToday = CHECKIN_MEAL_TYPES.map(mt=>todaysMeals.some(m=>m.mealType===mt));
+  const trainingDoneToday = data.workouts.some(w=>w.date===checklistToday);
+
+  const cWeekKey = getMonday(new Date()).toISOString().split("T")[0];
+  const cTodayIdx = (new Date().getDay()+6)%7;
+  const cDayEntries = weekPlans[cWeekKey]?.entries?.[cTodayIdx] || [];
+  const cWpEntry = cDayEntries.find(e=>e.type==="training");
+
+  let cTrainingTime=null, cTrainingPlanName=null, cTrainingPlanId=null;
+  if(cWpEntry){
+    cTrainingTime = cWpEntry.startTime || null;
+    const cPlan = data.plans.find(p=>String(p.id)===String(cWpEntry.planId));
+    if(cPlan){ cTrainingPlanName=cPlan.name; cTrainingPlanId=cPlan.id; }
+  }
+  if(!cTrainingPlanName){
+    const cTodayFull = FULL_WEEKDAYS[new Date().getDay()===0?6:new Date().getDay()-1];
+    const cFallbackPlan = data.plans.find(p=>(p.days||[]).includes(cTodayFull));
+    if(cFallbackPlan){ cTrainingPlanName=cFallbackPlan.name; cTrainingPlanId=cFallbackPlan.id; }
+  }
+
+  const cMealEntries = cDayEntries.filter(e=>e.type==="meal");
+  const mealPlanFor = mt => cMealEntries.find(e=>e.mealPreset===mt || (mt==="Snack" && (e.mealPreset==="Pre-Workout" || e.mealPreset==="Post-Workout")));
+
+  const checklist = [
+    {key:"weight", group:"weight", done:weightDoneToday, label:"Gewicht eintragen", onView:"fortschritt"},
+    ...CHECKIN_MEAL_TYPES.map((mt,i)=>{
+      const planned = mealPlanFor(mt);
+      return {key:"meal-"+mt, group:"meal", done:mealTypesDoneToday[i], label: planned ? `${mt}: ${planned.mealName||planned.mealPreset}` : mt, time: planned?.startTime||null, mealType:mt, onView:"nutrition"};
+    }),
+    {key:"training", group:"training", done:trainingDoneToday, label:cTrainingPlanName?`Training: ${cTrainingPlanName}`:"Training absolvieren", time:cTrainingTime, planId:cTrainingPlanId, onView:"log"}
+  ];
+
+  useEffect(()=>{
+    if(!loaded || !authUser) return;
+    if(checklist.every(c=>c.done)) return;
+    if(user.checkinEveryLogin){
+      setCheckinModalOpen(true);
+      return;
+    }
+    const lastShown = ls("checkin_last_shown", null);
+    if(lastShown===checklistToday) return;
+    localStorage.setItem("ff_checkin_last_shown", JSON.stringify(checklistToday));
+    setCheckinModalOpen(true);
+  }, [loaded, authUser]);
+
   // Data is loaded from LocalStorage immediately to show something to the user.
   // 'loaded' will be set to true only when we've established a real-time connection with Firestore.
 
@@ -1486,6 +1682,14 @@ function FitForge(){
   const today=todayStr();
   const todayNut = nutrition[today] || {calories:0,protein:0,carbs:0,fat:0,meals:[]};
 
+  const onChecklistItemClick = (item) => {
+    setPresetPlanId(item.group==="training" ? item.planId : null);
+    setAutoOpenAdd(item.group==="weight" ? "fortschritt" : item.group==="meal" ? "nutrition" : null);
+    setPresetMealType(item.group==="meal" ? item.mealType : null);
+    setView(item.onView);
+    setCheckinModalOpen(false);
+  };
+
   return (
     <div style={{
       ...s.root,
@@ -1521,7 +1725,7 @@ function FitForge(){
             ["recipes","Rezepte",IC.recipe],
             ["goals","Ziele",IC.goals]
           ].map(([id,label,icon])=>(
-            <button key={id} style={{...s.navItem,...(view===id?s.navOn:{})}} onClick={()=>{setView(id);closeAll();if(isMobile)setSidebarOpen(false);}}><span style={{display:"flex",flexShrink:0}}>{icon}</span><span>{label}</span></button>
+            <button key={id} style={{...s.navItem,...(view===id?s.navOn:{})}} onClick={()=>{setView(id);setPresetPlanId(null);setAutoOpenAdd(null);setPresetMealType(null);closeAll();if(isMobile)setSidebarOpen(false);}}><span style={{display:"flex",flexShrink:0}}>{icon}</span><span>{label}</span></button>
           ))}
         </nav>
         <div style={{paddingTop:20, display:"flex", flexDirection:"column", gap:10}}>
@@ -1592,15 +1796,15 @@ function FitForge(){
         {(profileOpen||notifOpen)&&<div style={s.veil} onClick={closeAll}/>}
         {toast&&<div style={{...s.toast,...(toast.type==="error"?s.toastErr:{})}} className="dropIn">{toast.type==="success"?IC.check:IC.x} {toast.msg}</div>}
         <div key={animK} className="pageEnter">
-          {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile}/>}
+          {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick}/>}
           {view==="plans"&&<Plans data={data} setData={setData} onNew={()=>setPlanModal(true)} onEdit={p=>{setEditPlan(p);setPlanModal(true);}} notify={showToast} library={library}/>}
           {view==="library"&&<LibraryPage library={library} setLibrary={setLibrary} notify={showToast}/>}
           {view==="wochenplan"&&<WochenplanPage weekPlans={weekPlans} setWeekPlans={setWeekPlans} data={data} user={user} library={library} notify={showToast}/>}
-          {view==="log"&&<LogWorkout user={user} setUser={setUser} data={data} setData={setData} notify={showToast} prs={prs} onSavePR={savePR} library={library} activeWorkout={activeWorkout} setActiveWorkout={setActiveWorkout} setView={setView} isMobile={isMobile}/>}
+          {view==="log"&&<LogWorkout user={user} setUser={setUser} data={data} setData={setData} notify={showToast} prs={prs} onSavePR={savePR} library={library} activeWorkout={activeWorkout} setActiveWorkout={setActiveWorkout} presetPlanId={presetPlanId} setView={setView} isMobile={isMobile}/>}
           {view==="history"&&<History data={data} setData={setData} selWO={selWO} setSelWO={setSelWO} notify={showToast} library={library} setWeeklyReport={setWeeklyReport} isMobile={isMobile}/>}
           {view==="stats"&&<Stats data={data} prs={prs} nutrition={nutrition} user={user}/>}
-          {view==="fortschritt"&&<ProgressPage data={data} setData={setData} user={user} notify={showToast} isMobile={isMobile}/>}
-          {view==="nutrition"&&<Nutrition nutrition={nutrition} setNutrition={setNutrition} user={user} notify={showToast} favFoods={favFoods} setFavFoods={setFavFoods} isMobile={isMobile}/>}
+          {view==="fortschritt"&&<ProgressPage data={data} setData={setData} user={user} notify={showToast} isMobile={isMobile} autoOpenAdd={autoOpenAdd==="fortschritt"}/>}
+          {view==="nutrition"&&<Nutrition nutrition={nutrition} setNutrition={setNutrition} user={user} notify={showToast} favFoods={favFoods} setFavFoods={setFavFoods} isMobile={isMobile} autoOpenAdd={autoOpenAdd==="nutrition"} presetMealType={presetMealType}/>}
           {view==="recipes"&&<RecipesPage notify={showToast} isMobile={isMobile}/>}
           {view==="goals"&&<GoalsPage user={user} setUser={setUser} data={data} notify={showToast} isMobile={isMobile}/>}
           {view==="profile"&&<ProfilePage user={user} setUser={setUser} notify={showToast} isMobile={isMobile}/>}
@@ -1609,6 +1813,7 @@ function FitForge(){
       {logModal&&<QuickLogModal data={data} setData={setData} onClose={()=>setLogModal(false)} notify={showToast}/>}
       {planModal&&<PlanModal data={data} setData={setData} editPlan={editPlan} library={library} onClose={()=>{setPlanModal(false);setEditPlan(null);}} notify={showToast}/>}
       {weeklyReport&&<WeeklyReportModal report={weeklyReport} onClose={()=>setWeeklyReport(null)} data={data}/>}
+      {checkinModalOpen&&<DailyCheckinModal checklist={checklist} onItemClick={onChecklistItemClick} onClose={()=>setCheckinModalOpen(false)}/>}
       {rescueModalOpen&&<RescueModal 
         progress={rescueScanProgress} 
         workouts={rescuedWorkouts} 
@@ -1659,7 +1864,7 @@ function FitForge(){
     </div>
   );
 }
-function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile}){
+function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick}){
   const cwDays = new Set(thisWeek.map(w => new Date(w.date).toDateString())).size;
   const cwSessions = thisWeek.length;
   const last=[...data.workouts].sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
@@ -1681,6 +1886,26 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile})
             {todayPlan&&<div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.12)",backdropFilter:"blur(12px)",borderRadius:20,padding:"6px 14px",fontSize: isMobile ? 11 : 13,color:"#fff",marginBottom:18,width:"fit-content"}}><span style={{width:8,height:8,borderRadius:"50%",background:todayPlan.color,display:"inline-block"}}/> Heute: {todayPlan.name}</div>}
             <button style={{...s.primaryBtn, width: "fit-content", padding: isMobile ? "7px 14px" : "8px 16px", fontSize: isMobile ? 13 : 14}} onClick={onLog}>{IC.plus} Training starten</button>
           </div>
+        </div>
+      </div>
+      <div className="glass-card" style={{marginBottom:18, marginTop:18}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+          <h2 style={s.secTitle}>Daily Check-in</h2>
+          <span style={{fontSize:12, fontWeight:700, color: checklist.every(c=>c.done) ? "#06D6A0" : "#888"}}>
+            {checklist.filter(c=>c.done).length}/{checklist.length}
+          </span>
+        </div>
+        <div style={{display:"flex", flexDirection: isMobile ? "column" : "row", gap:10, alignItems: isMobile ? "stretch" : "flex-start"}}>
+          <ChecklistRow item={checklist.find(c=>c.group==="weight")} onClick={onChecklistItemClick}/>
+          <div style={{flex: isMobile ? "initial" : 1.6, minWidth:0, width: isMobile ? "100%" : "auto"}}>
+            <ChecklistGroupHeader label="Mahlzeiten" items={checklist.filter(c=>c.group==="meal")}/>
+            <div style={{display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:6}}>
+              {checklist.filter(c=>c.group==="meal").map(item=>(
+                <ChecklistChip key={item.key} item={item} onClick={onChecklistItemClick}/>
+              ))}
+            </div>
+          </div>
+          <ChecklistRow item={checklist.find(c=>c.group==="training")} onClick={onChecklistItemClick}/>
         </div>
       </div>
       <div style={{...s.statsRow, gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : s.statsRow.gridTemplateColumns}}>
@@ -1728,8 +1953,8 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile})
 
 const MEASUREMENT_TYPES = ["Bauchumfang (cm)", "Brustumfang (cm)", "Oberarm L (cm)", "Oberarm R (cm)", "Oberschenkel L (cm)", "Oberschenkel R (cm)", "Wade L (cm)", "Wade R (cm)"];
 
-function ProgressPage({data,setData,user,notify,isMobile}){
-  const [showAddWeight,setShowAddWeight]=useState(false);
+function ProgressPage({data,setData,user,notify,isMobile,autoOpenAdd}){
+  const [showAddWeight,setShowAddWeight]=useState(!!autoOpenAdd);
   const [newWeight,setNewWeight]=useState(user.weight||"");
   const [weightDate,setWeightDate]=useState(todayStr());
   const [showUploadPhoto,setShowUploadPhoto]=useState(false);
@@ -1936,8 +2161,8 @@ function ProgressPage({data,setData,user,notify,isMobile}){
 
     {/* Modals */}
     {showAddWeight && (
-      <div style={s.overlay2} onClick={()=>setShowAddWeight(false)}>
-        <div style={s.modal} onClick={e=>e.stopPropagation()}>
+      <Overlay onClick={()=>setShowAddWeight(false)}>
+        <div style={{...s.modal, maxHeight:"88vh", overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
           <h2 style={s.modalTitle}>Gewicht loggen</h2>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
             <div style={s.fg}><label style={s.lbl}>Gewicht (kg)</label><input style={s.inp} type="number" step="0.1" value={newWeight} onChange={e=>setNewWeight(e.target.value)} autoFocus/></div>
@@ -1945,24 +2170,24 @@ function ProgressPage({data,setData,user,notify,isMobile}){
           </div>
           <div style={{display:"flex",gap:11}}><button style={s.secBtn} onClick={()=>setShowAddWeight(false)}>Abbrechen</button><button style={{...s.primaryBtn,flex:1}} onClick={addWeight}>Speichern</button></div>
         </div>
-      </div>
+      </Overlay>
     )}
 
     {showUploadPhoto && (
-      <div style={s.overlay2} onClick={()=>setShowUploadPhoto(false)}>
-        <div style={s.modal} onClick={e=>e.stopPropagation()}>
+      <Overlay onClick={()=>setShowUploadPhoto(false)}>
+        <div style={{...s.modal, maxHeight:"88vh", overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
           <h2 style={s.modalTitle}>Foto hochladen</h2>
           <div style={s.fg}><label style={s.lbl}>Ansicht</label><select style={s.inp} value={photoTag} onChange={e=>setPhotoTag(e.target.value)}>{["Vorne","Seite","Hinten","Bizeps","Beine","Waage"].map(t=>(<option key={t}>{t}</option>))}</select></div>
           <div style={s.fg}><label style={s.lbl}>Datum</label><input style={s.inp} type="date" value={photoDate} onChange={e=>setPhotoDate(e.target.value)}/></div>
           <div style={s.fg}><label style={s.lbl}>Bild auswählen</label><input type="file" accept="image/*" style={s.inp} onChange={handlePhotoUpload}/></div>
           <button style={{...s.secBtn,width:"100%",marginTop:10}} onClick={()=>setShowUploadPhoto(false)}>Abbrechen</button>
         </div>
-      </div>
+      </Overlay>
     )}
 
     {showAddMeasure && (
-      <div style={s.overlay2} onClick={()=>setShowAddMeasure(false)}>
-        <div style={{...s.modal, maxWidth:450}} onClick={e=>e.stopPropagation()}>
+      <Overlay onClick={()=>setShowAddMeasure(false)}>
+        <div style={{...s.modal, maxWidth:450, maxHeight:"88vh", overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
           <h2 style={s.modalTitle}>Körpermaße</h2>
           <div style={s.fg}><label style={s.lbl}>Datum</label><input style={s.inp} type="date" value={measureForm.date} onChange={e=>setMeasureForm({...measureForm, date:e.target.value})}/></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
@@ -1975,11 +2200,11 @@ function ProgressPage({data,setData,user,notify,isMobile}){
           </div>
           <div style={{display:"flex",gap:11}}><button style={s.secBtn} onClick={()=>setShowAddMeasure(false)}>Abbrechen</button><button style={{...s.primaryBtn,flex:1}} onClick={saveMeasure}>Speichern</button></div>
         </div>
-      </div>
+      </Overlay>
     )}
 
     {showHistory && (
-      <div style={s.overlay2} onClick={()=>setShowHistory(false)}>
+      <Overlay onClick={()=>setShowHistory(false)}>
         <div style={{...s.modal, maxWidth:550, maxHeight:"85vh", display:"flex", flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
             <h2 style={s.modalTitle}>{IC.history} Fortschritts-Historie</h2>
@@ -2038,7 +2263,7 @@ function ProgressPage({data,setData,user,notify,isMobile}){
             })()}
           </div>
         </div>
-      </div>
+      </Overlay>
     )}
   </div>
   );
@@ -2117,18 +2342,20 @@ function Stats({data,prs,nutrition,user}){
   </div>
 );
 }
-function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMobile}){
+function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMobile,autoOpenAdd,presetMealType}){
   const [selDate,setSelDate]=useState(todayStr());
-  const [showAdd,setShowAdd]=useState(false);
-  const [meal,setMeal]=useState({name:"",calories:"",protein:"",carbs:"",fat:"",mealType:"Frühstück"});
+  const [showAdd,setShowAdd]=useState(!!autoOpenAdd);
+  const [meal,setMeal]=useState({name:"",calories:"",protein:"",carbs:"",fat:"",mealType:presetMealType||"Frühstück",amount:100,baseCalories:0,baseProtein:0,baseCarbs:0,baseFat:0});
   const [search,setSearch]=useState("");
   const [apiResults,setApiResults]=useState([]);
   const [apiLoading,setApiLoading]=useState(false);
-  const [searchMode,setSearchMode]=useState("quick"); 
+  const [searchMode,setSearchMode]=useState("quick");
   const [scanning,setScanning]=useState(false);
+  const [manualBarcode,setManualBarcode]=useState("");
+  const [waterAmount,setWaterAmount]=useState("");
   const [activeTab, setActiveTab] = useState("track");
   const [knowledgeSearch, setKnowledgeSearch] = useState("");
-  
+
   const isFav = f => favFoods.some(x => x.name.toLowerCase() === f.name.toLowerCase());
   const toggleFav = f => {
     if (isFav(f)) setFavFoods(curr => curr.filter(x => x.name.toLowerCase() !== f.name.toLowerCase()));
@@ -2136,7 +2363,11 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
   };
 
   const scannerRef = useRef(null);
-  const dayData=(nutrition && nutrition[selDate])||{calories:0,protein:0,carbs:0,fat:0,meals:[]};
+  const dayData=(nutrition && nutrition[selDate])||{calories:0,protein:0,carbs:0,fat:0,meals:[],waterLog:[]};
+  const waterGoal=parseInt(user.waterGoal)||2500;
+  const waterTotal=(dayData.waterLog||[]).reduce((a,w)=>a+w.ml,0);
+  const addWater=ml=>{if(!ml||ml<=0)return;setNutrition(n=>{const d=n[selDate]||{calories:0,protein:0,carbs:0,fat:0,meals:[],waterLog:[]};return{...n,[selDate]:{...d,waterLog:[...(d.waterLog||[]),{id:Date.now(),ml,time:new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}]}};});notify(`${ml} ml hinzugefügt! 💧`);};
+  const delWater=id=>{setNutrition(n=>{const d=n[selDate];if(!d)return n;return{...n,[selDate]:{...d,waterLog:(d.waterLog||[]).filter(w=>w.id!==id)}};});};
 
   const lookupBarcode = async (code) => {
     setApiLoading(true);
@@ -2154,17 +2385,21 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
       if(data.status === 1 && data.product) {
         const p = data.product;
         const n = (p && p.nutriments) || {};
+        const baseCalories = Math.round(n["energy-kcal_100g"] || n["energy-kcal"] || 0);
+        const baseProtein = Math.round((n.proteins_100g || 0) * 10) / 10;
+        const baseCarbs = Math.round((n.carbohydrates_100g || 0) * 10) / 10;
+        const baseFat = Math.round((n.fat_100g || 0) * 10) / 10;
         const found = {
           name: `${p.product_name || "Unbekannt"}${p.brands ? " (" + p.brands + ")" : ""}`,
-          calories: Math.round(n["energy-kcal_100g"] || n["energy-kcal"] || 0),
-          protein: Math.round((n.proteins_100g || 0) * 10) / 10,
-          carbs: Math.round((n.carbohydrates_100g || 0) * 10) / 10,
-          fat: Math.round((n.fat_100g || 0) * 10) / 10,
+          amount: 100,
+          baseCalories, baseProtein, baseCarbs, baseFat,
+          calories: baseCalories, protein: baseProtein, carbs: baseCarbs, fat: baseFat,
           mealType: "Sonstige"
         };
         setMeal(found);
+        setManualBarcode("");
         setShowAdd(true);
-        notify("Produkt gefunden! 🎯");
+        notify("Produkt gefunden! 🎯 Menge bei Bedarf anpassen.");
       } else {
         notify("Barcode nicht gefunden 🔍", "error");
       }
@@ -2182,7 +2417,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
       try {
         const scanner = new window.Html5Qrcode("reader");
         scannerRef.current = scanner;
-        const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+        const config = { fps: 10, qrbox: { width: 280, height: 140 }, aspectRatio: 1.5 };
         scanner.start({ facingMode: "environment" }, config, (text) => {
           lookupBarcode(text);
         }).catch(err => {
@@ -2243,7 +2478,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
   }, []);
 
   const calGoal=user.calorieGoal||2500,protGoal=user.proteinGoal||150,carbGoal=Math.round(calGoal*0.5/4),fatGoal=Math.round(calGoal*0.3/9);
-  const addMeal=()=>{if(!meal.name||!meal.calories)return notify("Name und Kalorien ausfüllen","error");const entry={...meal,id:Date.now(),calories:parseInt(meal.calories)||0,protein:parseFloat(meal.protein)||0,carbs:parseFloat(meal.carbs)||0,fat:parseFloat(meal.fat)||0};setNutrition(n=>{const d=n[selDate]||{calories:0,protein:0,carbs:0,fat:0,meals:[]};return{...n,[selDate]:{calories:d.calories+entry.calories,protein:d.protein+entry.protein,carbs:d.carbs+entry.carbs,fat:d.fat+entry.fat,meals:[...d.meals,entry]}};});notify(`${meal.name} hinzugefügt! ✅`);setMeal({name:"",calories:"",protein:"",carbs:"",fat:"",mealType:"Frühstück"});setShowAdd(false);};
+  const addMeal=()=>{if(!meal.name||!meal.calories)return notify("Name und Kalorien ausfüllen","error");const entry={...meal,id:Date.now(),calories:parseInt(meal.calories)||0,protein:parseFloat(meal.protein)||0,carbs:parseFloat(meal.carbs)||0,fat:parseFloat(meal.fat)||0};setNutrition(n=>{const d=n[selDate]||{calories:0,protein:0,carbs:0,fat:0,meals:[]};return{...n,[selDate]:{calories:d.calories+entry.calories,protein:d.protein+entry.protein,carbs:d.carbs+entry.carbs,fat:d.fat+entry.fat,meals:[...d.meals,entry]}};});notify(`${meal.name} hinzugefügt! ✅`);setMeal({name:"",calories:"",protein:"",carbs:"",fat:"",mealType:"Frühstück",amount:100,baseCalories:0,baseProtein:0,baseCarbs:0,baseFat:0});setShowAdd(false);};
   const quickAdd=food=>{setNutrition(n=>{const d=n[selDate]||{calories:0,protein:0,carbs:0,fat:0,meals:[]};return{...n,[selDate]:{calories:d.calories+food.calories,protein:d.protein+food.protein,carbs:d.carbs+food.carbs,fat:d.fat+food.fat,meals:[...d.meals,{...food,id:Date.now(),mealType:"Sonstige"}]}};});notify(`${food.name} hinzugefügt!`);};
   const delMeal=id=>{setNutrition(n=>{const d=n[selDate];if(!d)return n;const rm=d.meals.find(m=>m.id===id);if(!rm)return n;return{...n,[selDate]:{calories:Math.max(0,d.calories-rm.calories),protein:Math.max(0,d.protein-rm.protein),carbs:Math.max(0,d.carbs-rm.carbs),fat:Math.max(0,d.fat-rm.fat),meals:d.meals.filter(m=>m.id!==id)}};});notify("Eintrag gelöscht");};
   const mealGroups=["Frühstück","Mittagessen","Abendessen","Snack","Sonstige"];
@@ -2283,7 +2518,11 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
               <div style={{width:"100%",maxWidth:400,background:"#111",borderRadius:20,overflow:"hidden",position:"relative"}}>
                 <div id="reader" style={{width:"100%"}}></div>
                 <button style={{position:"absolute",top:15,right:15,background:"rgba(0,0,0,0.5)",border:"none",color:"#fff",borderRadius:"50%",width:36,height:36,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={stopScanner}>{IC.x}</button>
-                <div style={{padding:20,textAlign:"center",color:"#888",fontSize:13}}>Barcode scannen 📸</div>
+                <div style={{padding:"16px 20px 6px",textAlign:"center",color:"#888",fontSize:13}}>Barcode scannen 📸</div>
+                <div style={{padding:"6px 20px 20px",display:"flex",gap:8}}>
+                  <input style={{...s.inp,flex:1}} placeholder="...oder Barcode-Nummer eintippen" value={manualBarcode} onChange={e=>setManualBarcode(e.target.value)} onKeyDown={e=>e.key==="Enter"&&manualBarcode.trim()&&lookupBarcode(manualBarcode.trim())}/>
+                  <button style={{...s.primaryBtn,padding:"0 16px"}} disabled={!manualBarcode.trim()} onClick={()=>lookupBarcode(manualBarcode.trim())}>OK</button>
+                </div>
               </div>
             </div>
           )}
@@ -2297,15 +2536,57 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
               ))}
             </div>
           </div>
+
+          <div style={{...s.card,marginBottom:22, padding: isMobile ? 16 : 22}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><h3 style={s.cardTitle}>💧 Flüssigkeit</h3><div style={{fontFamily:"'DM Sans',sans-serif",fontSize: isMobile ? 16 : 18,fontWeight:800,color:"#2196F3"}}>{waterTotal}<span style={{fontSize:11,color:"#666",fontWeight:400}}> / {waterGoal} ml</span></div></div>
+            <div style={{display:"flex", gap: isMobile ? 14 : 20, alignItems:"center"}}>
+              <WaterGlass ml={waterTotal} goal={waterGoal}/>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{display:"flex", flexWrap:"wrap", gap:8, marginBottom:12}}>
+                  {[250,330,500,750].map(ml=>(
+                    <button key={ml} style={{background:"rgba(33,150,243,0.1)",border:"1px solid rgba(33,150,243,0.3)",borderRadius:9,padding:"7px 12px",color:"#4DD0E1",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'DM Sans',sans-serif"}} onClick={()=>addWater(ml)}>+{ml} ml</button>
+                  ))}
+                </div>
+                <div style={{display:"flex", gap:8}}>
+                  <input style={{...s.inp,flex:1}} type="number" value={waterAmount} onChange={e=>setWaterAmount(e.target.value)} placeholder="Eigene Menge (ml)"/>
+                  <button style={{...s.secBtn,padding:"0 16px"}} onClick={()=>{addWater(parseInt(waterAmount)||0);setWaterAmount("");}}>{IC.plus}</button>
+                </div>
+                {(dayData.waterLog||[]).length>0 && (
+                  <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:12}}>
+                    {dayData.waterLog.map(w=>(
+                      <div key={w.id} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"4px 6px 4px 10px",fontSize:11,color:"#888"}}>
+                        {w.ml} ml · {w.time}
+                        <button style={{background:"transparent",border:"none",color:"#444",cursor:"pointer",padding:3,display:"flex"}} onClick={()=>delWater(w.id)}>{IC.x}</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {showAdd&&<div style={{...s.card,marginBottom:20,border:"1px solid rgba(255, 255, 255, 0.1)", padding: isMobile ? 16 : 22}} className="fadeIn">
             <h3 style={{...s.cardTitle,marginBottom:16}}>Mahlzeit hinzufügen</h3>
             <div style={{display:"grid",gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr",gap:11,marginBottom:11}}>
               <div style={s.fg}><label style={s.lbl}>Name</label><input style={s.inp} value={meal.name} onChange={e=>setMeal(m=>({...m,name:e.target.value}))} placeholder="z.B. Hähnchenbrust" autoFocus/></div>
-              <div style={s.fg}><label style={s.lbl}>Mahlzeit</label><select style={s.inp} value={meal.mealType} onChange={e=>setMeal(m=>({...m,mealType:e.target.value}))}>{mealGroups.map(mg=><option key={mg}>{mg}</option>)}</select></div>
+              <div style={s.fg}><label style={s.lbl}>Mahlzeit</label><CustomSelect value={meal.mealType} onChange={v=>setMeal(m=>({...m,mealType:v}))} options={mealGroups}/></div>
+            </div>
+            <div style={{...s.fg, maxWidth: isMobile ? "100%" : 160, marginBottom:11}}>
+              <label style={s.lbl}>Menge (g/ml)</label>
+              <input style={s.inp} type="number" value={meal.amount} onChange={e=>{
+                const amt=e.target.value;
+                const a=parseFloat(amt)||0;
+                setMeal(m=>({...m, amount:amt, calories:Math.round((m.baseCalories||0)*a/100), protein:Math.round((m.baseProtein||0)*a/100*10)/10, carbs:Math.round((m.baseCarbs||0)*a/100*10)/10, fat:Math.round((m.baseFat||0)*a/100*10)/10}));
+              }} placeholder="100"/>
             </div>
             <div style={{display:"grid",gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4,1fr)",gap:11,marginBottom:14}}>
-              {[["Kalorien","calories","#FF6B35"],["Protein (g)","protein","#00D9C0"],["Carbs (g)","carbs","#FFD166"],["Fett (g)","fat","#A78BFA"]].map(([label,key,color])=>(
-                <div key={key} style={s.fg}><label style={{...s.lbl,color}}>{label}</label><input style={s.inp} type="number" value={meal[key]} onChange={e=>setMeal(m=>({...m,[key]:e.target.value}))} placeholder="0"/></div>
+              {[["Kalorien","calories","baseCalories","#FF6B35"],["Protein (g)","protein","baseProtein","#00D9C0"],["Carbs (g)","carbs","baseCarbs","#FFD166"],["Fett (g)","fat","baseFat","#A78BFA"]].map(([label,key,baseKey,color])=>(
+                <div key={key} style={s.fg}><label style={{...s.lbl,color}}>{label}</label><input style={s.inp} type="number" value={meal[key]} onChange={e=>{
+                  const val=e.target.value;
+                  const a=parseFloat(meal.amount)||100;
+                  const num=parseFloat(val)||0;
+                  setMeal(m=>({...m,[key]:val,[baseKey]: a>0 ? num/(a/100) : num}));
+                }} placeholder="0"/></div>
               ))}
             </div>
             <div style={{display:"flex",gap:11}}><button style={{...s.secBtn, flex:1}} onClick={()=>setShowAdd(false)}>Abbrechen</button><button style={{...s.primaryBtn, flex:1}} onClick={addMeal}>Hinzufügen</button></div>
@@ -2475,11 +2756,11 @@ const calcDist = (lat1, lon1, lat2, lon2) => {
   return 12742 * Math.asin(Math.sqrt(a));
 };
 
-function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activeWorkout,setActiveWorkout,isMobile}){
+function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activeWorkout,setActiveWorkout,presetPlanId,isMobile}){
 
 
   const [step,setStep]=useState(activeWorkout?.step || 1);
-  const [planId,setPlanId]=useState(activeWorkout?.planId || data.plans[0]?.id || null);
+  const [planId,setPlanId]=useState(activeWorkout?.planId || presetPlanId || data.plans[0]?.id || null);
   const [date,setDate]=useState(activeWorkout?.date || todayStr());
   const [exercises,setExercises]=useState(activeWorkout?.exercises || []);
   const [curEx,setCurEx]=useState(activeWorkout?.curEx || 0);
@@ -2776,7 +3057,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
 
   useEffect(()=>{
     if (step !== 1) return; // Only initialize/update when not in an active workout
-    const plan=data.plans.find(p=>p.id===parseInt(planId));
+    const plan=data.plans.find(p=>String(p.id)===String(planId));
     if(plan){
       const exs=(plan.exercises||[]).map(e=>{
         const exObj = typeof e==="string"?{name:e}:e;
@@ -2885,7 +3166,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
   };
 
   const save=()=>{
-    const plan=data.plans.find(p=>p.id===parseInt(planId));
+    const plan=data.plans.find(p=>String(p.id)===String(planId));
     const parsed=exercises.map((ex,ei)=>{
       if (hiitMode) {
         const dur = hiitStatus[ei] || 0;
@@ -3070,7 +3351,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
   }, [curEx, step, exercises, hiitMode, hiitDurations, curRound, voiceVolume]);
 
 
-  const plan=data.plans.find(p=>p.id===parseInt(planId));
+  const plan=data.plans.find(p=>String(p.id)===String(planId));
   const curExData=exercises[curEx];
   const curSets = repeatRounds ? (sets[curEx]||[]).slice((curRound-1)*(parseInt(totalSets)||1), curRound*(parseInt(totalSets)||1)) : (sets[curEx]||[]);
 
@@ -3089,12 +3370,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
         <div style={{display:"flex", flexDirection: "row", gap: isMobile ? 8 : 14, marginBottom:20, alignItems: "flex-end"}}>
           <div style={{flex: 1, minWidth: 0}}>
             <label style={s.lbl}>Trainingsplan</label>
-            <div style={{position: "relative"}}>
-              <select className="customSelect" style={{...s.inp, display: "block", height: 48, width: "100%", borderColor: plan?.color || "rgba(255,255,255,0.12)", color: plan?.color || "#F0EDE8", background: plan ? `linear-gradient(135deg, ${plan.color}18 0%, rgba(18,18,24,0.6) 100%)` : "linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(18,18,24,0.6) 100%)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)", paddingRight: 32, fontSize: isMobile ? 13 : 14, paddingLeft: isMobile ? 10 : 12}} value={planId||""} onChange={e=>setPlanId(e.target.value)}>
-                <option value="">Kein Plan</option>
-                {data.plans.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
+            <PlanSelect value={planId} onChange={setPlanId} plans={data.plans} allowNone height={isMobile ? 54 : 58}/>
           </div>
           <div style={{flex: isMobile ? "0 0 135px" : 1, minWidth: 0}}>
             <label style={s.lbl}>Datum</label>
@@ -4707,6 +4983,31 @@ function WeeklyReportModal({report, onClose, data}) {
   );
 }
 
+function DailyCheckinModal({checklist, onItemClick, onClose}){
+  const doneCount = checklist.filter(c=>c.done).length;
+  return (
+    <Overlay onClick={onClose}>
+      <div style={{...s.modal, maxWidth:420, maxHeight:"88vh", overflowY:"auto"}} onClick={e=>e.stopPropagation()} className="dropIn">
+        <h2 style={s.modalTitle}>Dein Daily Check-in</h2>
+        <div style={{color:"#888", fontSize:13, marginBottom:18}}>{doneCount}/{checklist.length} heute erledigt</div>
+        <div style={{display:"flex", flexDirection:"column", gap:10}}>
+          <ChecklistRow item={checklist.find(c=>c.group==="weight")} onClick={onItemClick}/>
+          <div>
+            <ChecklistGroupHeader label="Mahlzeiten" items={checklist.filter(c=>c.group==="meal")}/>
+            <div style={{display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:8}}>
+              {checklist.filter(c=>c.group==="meal").map(item=>(
+                <ChecklistChip key={item.key} item={item} onClick={onItemClick}/>
+              ))}
+            </div>
+          </div>
+          <ChecklistRow item={checklist.find(c=>c.group==="training")} onClick={onItemClick}/>
+        </div>
+        <button style={{...s.secBtn, width:"100%", marginTop:18, boxSizing:"border-box"}} onClick={onClose}>Später</button>
+      </div>
+    </Overlay>
+  );
+}
+
 function RescueModal({ progress, workouts, plans, weightHistory, log, onClose, onMerge }) {
   return (
     <div style={s.overlay2} onClick={onClose}>
@@ -4927,7 +5228,7 @@ function ProfilePage({user,setUser,notify,isMobile}){
     <div style={{...s.formGrid, gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}><div style={s.fg}><label style={s.lbl}>Beginn</label><input style={s.inp} type="time" value={form.break2Start||"12:30"} onChange={e=>setForm(f=>({...f,break2Start:e.target.value}))}/></div><div style={s.fg}><label style={s.lbl}>Ende</label><input style={s.inp} type="time" value={form.break2End||"13:15"} onChange={e=>setForm(f=>({...f,break2End:e.target.value}))}/></div></div>
   </div>
   </div>
-  <div style={s.card}><h3 style={s.cardTitle}>Ernährungsziele</h3><div style={s.fg}><label style={s.lbl}>Tageskalorienziel</label><input style={s.inp} type="number" value={form.calorieGoal||""} onChange={e=>setForm(f=>({...f,calorieGoal:parseInt(e.target.value)||2500}))} placeholder="2500"/></div><div style={s.fg}><label style={s.lbl}>Proteinziel (g/Tag)</label><input style={s.inp} type="number" value={form.proteinGoal||""} onChange={e=>setForm(f=>({...f,proteinGoal:parseInt(e.target.value)||150}))} placeholder="150"/></div><div style={{height:1,background:"rgba(255,255,255,0.08)",margin:"18px 0"}}/><h3 style={{...s.cardTitle,marginBottom:14}}>Benachrichtigungen</h3><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><div><div style={{fontWeight:700,fontSize:15}}>Erinnerungen</div><div style={{color:"#666",fontSize:11,marginTop:2}}>Wenn Training ansteht</div></div><div style={{...s.toggle,...(form.notificationsEnabled?s.toggleOn:{})}} onClick={()=>setForm(f=>({...f,notificationsEnabled:!f.notificationsEnabled}))}><div style={{...s.thumb,...(form.notificationsEnabled?s.thumbOn:{})}}/></div></div>{form.notificationsEnabled&&<div style={{...s.fg,marginTop:14}}><label style={s.lbl}>Erinnerungszeit</label><input style={s.inp} type="time" value={form.reminderTime||"08:00"} onChange={e=>setForm(f=>({...f,reminderTime:e.target.value}))}/></div>}</div>
+  <div style={s.card}><h3 style={s.cardTitle}>Ernährungsziele</h3><div style={s.fg}><label style={s.lbl}>Tageskalorienziel</label><input style={s.inp} type="number" value={form.calorieGoal||""} onChange={e=>setForm(f=>({...f,calorieGoal:parseInt(e.target.value)||2500}))} placeholder="2500"/></div><div style={s.fg}><label style={s.lbl}>Proteinziel (g/Tag)</label><input style={s.inp} type="number" value={form.proteinGoal||""} onChange={e=>setForm(f=>({...f,proteinGoal:parseInt(e.target.value)||150}))} placeholder="150"/></div><div style={s.fg}><label style={s.lbl}>Trinkziel (ml/Tag)</label><input style={s.inp} type="number" value={form.waterGoal||""} onChange={e=>setForm(f=>({...f,waterGoal:parseInt(e.target.value)||2500}))} placeholder="2500"/></div><div style={{height:1,background:"rgba(255,255,255,0.08)",margin:"18px 0"}}/><h3 style={{...s.cardTitle,marginBottom:14}}>Benachrichtigungen</h3><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><div><div style={{fontWeight:700,fontSize:15}}>Erinnerungen</div><div style={{color:"#666",fontSize:11,marginTop:2}}>Wenn Training ansteht</div></div><div style={{...s.toggle,...(form.notificationsEnabled?s.toggleOn:{})}} onClick={()=>setForm(f=>({...f,notificationsEnabled:!f.notificationsEnabled}))}><div style={{...s.thumb,...(form.notificationsEnabled?s.thumbOn:{})}}/></div></div>{form.notificationsEnabled&&<div style={{...s.fg,marginTop:14}}><label style={s.lbl}>Erinnerungszeit</label><input style={s.inp} type="time" value={form.reminderTime||"08:00"} onChange={e=>setForm(f=>({...f,reminderTime:e.target.value}))}/></div>}<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0"}}><div><div style={{fontWeight:700,fontSize:15}}>Daily Check-in bei jedem Login</div><div style={{color:"#666",fontSize:11,marginTop:2}}>Statt nur einmal pro Tag, jedes Mal beim Öffnen der App anzeigen</div></div><div style={{...s.toggle,...(form.checkinEveryLogin?s.toggleOn:{})}} onClick={()=>setForm(f=>({...f,checkinEveryLogin:!f.checkinEveryLogin}))}><div style={{...s.thumb,...(form.checkinEveryLogin?s.thumbOn:{})}}/></div></div></div>
 </div><button style={{...s.primaryBtn,marginTop:22}} onClick={save}>💾 Speichern</button></div>);}
 // ─── Docs Page ────────────────────────────────────────────────────────────────
 
@@ -6192,7 +6493,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify}){
 
   const saveTemplate=()=>{
     if(!saveName.trim())return;
-    const tmpl={id:uid(),name:saveName.trim(),entries:weekData.entries,savedAt:Date.now()};
+    const tmpl={id:uid(),name:saveName.trim(),entries:weekData.entries,savedAt:Date.now(),favorite:false};
     setTemplates(t=>[...t,tmpl]);
     setShowSaveModal(false);setSaveName("");
     notify(`Woche als Vorlage „${saveName}" gespeichert! 💾`);
@@ -6203,6 +6504,15 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify}){
     setShowTemplates(false);
     notify(`Vorlage „${tmpl.name}" geladen! 📅`);
   };
+
+  const loadTemplateNextWeek=(tmpl)=>{
+    const nextWeekKey=addDays(getMonday(new Date()),7).toISOString().split("T")[0];
+    setWeekPlans(wp=>({...wp,[nextWeekKey]:{...(wp[nextWeekKey]||{entries:{}}),entries:{...tmpl.entries}}}));
+    setShowTemplates(false);
+    notify(`Vorlage „${tmpl.name}" für nächste Woche übernommen! 📅`);
+  };
+
+  const toggleTemplateFavorite=id=>{setTemplates(t=>t.map(x=>x.id===id?{...x,favorite:!x.favorite}:x));};
 
   const deleteTemplate=id=>{setTemplates(t=>t.filter(x=>x.id!==id));};
 
@@ -6237,11 +6547,14 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify}){
         let summary = "FitForge: " + (e.type === 'training' ? 'Workout' : (e.title || e.mealName || e.type));
         if (e.type === 'training') {
           const plan = data.plans.find(p => String(p.id) === String(e.planId));
-          if (plan) summary = `💪 Training: ${plan.name}`;
+          if (plan) {
+            summary = `💪 Training: ${plan.name}`;
+            ics.push(`URL:${window.location.origin}${window.location.pathname}?openPlan=${plan.id}`);
+          }
         } else if (e.type === 'meal') {
           summary = `🥗 Mahlzeit: ${e.mealPreset}${e.mealName ? ' (' + e.mealName + ')' : ''}`;
         }
-        
+
         ics.push(`SUMMARY:${summary}`);
         ics.push(`DESCRIPTION:${e.notes || ''}`);
         ics.push('END:VEVENT');
@@ -6445,7 +6758,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify}){
 
       {/* Save template modal */}
       {showSaveModal&&(
-        <div style={s.overlay2} onClick={e=>e.target===e.currentTarget&&setShowSaveModal(false)}>
+        <Overlay onClick={e=>e.target===e.currentTarget&&setShowSaveModal(false)}>
           <div style={{...s.modal,maxWidth:380}}>
             <h3 style={{...s.modalTitle,fontSize:19,marginBottom:16}}>Woche als Vorlage speichern</h3>
             <input style={{...s.inp,marginBottom:16}} placeholder="Vorlagenname..." value={saveName} onChange={e=>setSaveName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveTemplate()}/>
@@ -6454,30 +6767,36 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify}){
               <button style={{...s.primaryBtn,flex:1}} onClick={saveTemplate} disabled={!saveName.trim()}>{IC.save} Speichern</button>
             </div>
           </div>
-        </div>
+        </Overlay>
       )}
 
       {/* Templates Modal */}
       {showTemplates&&(
-        <div style={s.overlay2} onClick={e=>e.target===e.currentTarget&&setShowTemplates(false)}>
+        <Overlay onClick={e=>e.target===e.currentTarget&&setShowTemplates(false)}>
           <div style={{...s.modal,maxWidth:420,maxHeight:"80vh",overflowY:"auto"}}>
             <h3 style={{...s.modalTitle,fontSize:19,marginBottom:16}}>📋 Vorlagen</h3>
             {!templates.length&&<div style={{color:"#666",textAlign:"center",padding:"30px 0",fontSize:13}}>Noch keine Vorlagen gespeichert.<br/>Speichere eine aktuelle Woche als Vorlage!</div>}
-            {templates.map(tmpl=>(
-              <div key={tmpl.id} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"13px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:700,fontSize:14}}>{tmpl.name}</div>
-                  <div style={{fontSize:11,color:"#666",marginTop:2}}>
-                    {Object.values(tmpl.entries).flat().length} Einträge · Gespeichert {new Date(tmpl.savedAt).toLocaleDateString("de-DE")}
+            {[...templates].sort((a,b)=>(b.favorite?1:0)-(a.favorite?1:0)).map(tmpl=>(
+              <div key={tmpl.id} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"13px 16px",marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                  <button style={{background:"transparent",border:"none",color:tmpl.favorite?"#FFD166":"#2A2A30",cursor:"pointer",padding:4,flexShrink:0,display:"flex"}} onClick={()=>toggleTemplateFavorite(tmpl.id)}>{IC.star}</button>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:14}}>{tmpl.name}</div>
+                    <div style={{fontSize:11,color:"#666",marginTop:2}}>
+                      {Object.values(tmpl.entries).flat().length} Einträge · Gespeichert {new Date(tmpl.savedAt).toLocaleDateString("de-DE")}
+                    </div>
                   </div>
+                  <button style={{...s.cardIconBtn, color:"#EF476F", filter:"drop-shadow(0 0 6px rgba(239,71,111,0.8))"}} className="cardIconBtn" onClick={()=>deleteTemplate(tmpl.id)}>{IC.trash}</button>
                 </div>
-                <button style={{...s.secBtn,padding:"7px 12px",fontSize:12}} onClick={()=>loadTemplate(tmpl)}>{IC.copy} Laden</button>
-                <button style={{...s.cardIconBtn, color:"#EF476F", filter:"drop-shadow(0 0 6px rgba(239,71,111,0.8))"}} className="cardIconBtn" onClick={()=>deleteTemplate(tmpl.id)}>{IC.trash}</button>
+                <div style={{display:"flex",gap:8}}>
+                  <button style={{...s.secBtn,flex:1,padding:"7px 10px",fontSize:12}} onClick={()=>loadTemplate(tmpl)}>{IC.copy} Diese Woche</button>
+                  <button style={{...s.secBtn,flex:1,padding:"7px 10px",fontSize:12,borderColor:"#FF6B35",color:"#FF6B35"}} onClick={()=>loadTemplateNextWeek(tmpl)}>{IC.copy} Nächste Woche</button>
+                </div>
               </div>
             ))}
             <button style={{...s.secBtn,width:"100%",marginTop:8}} onClick={()=>setShowTemplates(false)}>Schließen</button>
           </div>
-        </div>
+        </Overlay>
       )}
 
       {magicModal&&<MagicAssistantModal currentMonday={currentMonday} data={data} recipes={DEFAULT_RECIPES} user={user} library={library} onApply={(entries)=>{setWeekData({entries});setMagicModal(false);notify("Wochenplan automatisch generiert! 🪄");}} onClose={()=>setMagicModal(false)} notify={notify}/>}
@@ -6512,7 +6831,7 @@ function WPEntryModal({dayName,editEntry,plans,dayEntries,onSave,onDelete,onClos
   const lbl={...s.lbl};
 
   return(
-    <div style={s.overlay2} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <Overlay onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{...s.modal,maxWidth:460,maxHeight:"88vh",overflowY:"auto",background:"rgba(16,16,22,0.97)",backdropFilter:"blur(32px) saturate(180%)",WebkitBackdropFilter:"blur(32px) saturate(180%)",border:"1px solid rgba(255,255,255,0.2)",boxShadow:"inset 0 1px 1px rgba(255,255,255,0.1), 0 32px 80px rgba(0,0,0,0.85)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <h3 style={{fontFamily:"'DM Sans',sans-serif",fontSize:18,fontWeight:800,margin:0}}>
@@ -6538,11 +6857,7 @@ function WPEntryModal({dayName,editEntry,plans,dayEntries,onSave,onDelete,onClos
             {!availablePlans.length&&!editEntry?(
               <div style={{background:"rgba(255,255,255,0.04)",borderRadius:9,padding:"12px",color:"#888",fontSize:13}}>Alle Trainingspläne sind für diesen Tag bereits eingetragen.</div>
             ):(
-              <select style={inp} value={planId} onChange={e=>setPlanId(e.target.value)}>
-                {(editEntry&&plans.find(p=>String(p.id)===String(editEntry.planId))?[plans.find(p=>String(p.id)===String(editEntry.planId))]:[]).concat(availablePlans.filter(p=>String(p.id)!==String(editEntry?.planId))).map(p=>(
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              <PlanSelect value={planId} onChange={setPlanId} plans={(editEntry&&plans.find(p=>String(p.id)===String(editEntry.planId))?[plans.find(p=>String(p.id)===String(editEntry.planId))]:[]).concat(availablePlans.filter(p=>String(p.id)!==String(editEntry?.planId)))}/>
             )}
           </div>
         )}
@@ -6551,9 +6866,7 @@ function WPEntryModal({dayName,editEntry,plans,dayEntries,onSave,onDelete,onClos
           <>
             <div style={s.fg}>
               <label style={lbl}>Mahlzeit</label>
-              <select style={{...inp,marginBottom:8}} value={mealPreset} onChange={e=>setMealPreset(e.target.value)}>
-                {MEAL_PRESETS.map(m=><option key={m} value={m}>{m}</option>)}
-              </select>
+              <div style={{marginBottom:8}}><CustomSelect value={mealPreset} onChange={setMealPreset} options={MEAL_PRESETS}/></div>
               <input style={inp} placeholder="Eigene Bezeichnung (optional)" value={mealName} onChange={e=>setMealName(e.target.value)}/>
             </div>
             <div style={s.fg}><label style={lbl}>Kalorien (optional)</label><input style={inp} type="number" placeholder="kcal" value={calories} onChange={e=>setCalories(e.target.value)}/></div>
@@ -6584,7 +6897,7 @@ function WPEntryModal({dayName,editEntry,plans,dayEntries,onSave,onDelete,onClos
           <button style={{...s.primaryBtn,flex:1}} onClick={handleSave}>💾 Speichern</button>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }
 
@@ -7337,7 +7650,7 @@ const s={
 };
 
 const css=`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;margin:0;padding:0;}body{margin:0;background:#0D0D0F;}::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:#111114;}::-webkit-scrollbar-thumb{background:#2A2A30;border-radius:3px;}.pageEnter{animation:pageEnter 0.4s cubic-bezier(0.16,1,0.3,1) both;}body.modal-open{overflow:hidden!important;height:100%;}
-[data-modal-overlay]{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;overflow:hidden!important;-webkit-overflow-scrolling:touch;}@keyframes pageEnter{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}.fadeIn{animation:fadeIn 0.3s ease both;}.dropIn{animation:dropIn 0.25s cubic-bezier(0.16,1,0.3,1) both;}@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}@keyframes dropIn{from{opacity:0;transform:scale(0.96) translateY(6px);}to{opacity:1;transform:scale(1) translateY(0);}}.statCard{transition:transform 0.2s,box-shadow 0.2s;}.statCard:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.4);}.planCard{transition:transform 0.3s cubic-bezier(0.16,1,0.3,1),box-shadow 0.3s,border-color 0.3s,background 0.3s;}.planCard:hover{transform:translateY(-5px);border-color:rgba(255,255,255,0.22)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,0.14),0 18px 48px rgba(0,0,0,0.6),0 6px 20px rgba(0,0,0,0.35)!important;background:linear-gradient(160deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 50%, rgba(15,15,20,0.65) 100%)!important;}.histCard{
+[data-modal-overlay]{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;overflow:hidden!important;-webkit-overflow-scrolling:touch;}@keyframes pageEnter{from{opacity:0;transform:translateY(12px);}to{opacity:1;}}.fadeIn{animation:fadeIn 0.3s ease both;}.dropIn{animation:dropIn 0.25s cubic-bezier(0.16,1,0.3,1) both;}@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}@keyframes dropIn{from{opacity:0;transform:scale(0.96) translateY(6px);}to{opacity:1;transform:scale(1) translateY(0);}}.statCard{transition:transform 0.2s,box-shadow 0.2s;}.statCard:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.4);}.planCard{transition:transform 0.3s cubic-bezier(0.16,1,0.3,1),box-shadow 0.3s,border-color 0.3s,background 0.3s;}.planCard:hover{transform:translateY(-5px);border-color:rgba(255,255,255,0.22)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,0.14),0 18px 48px rgba(0,0,0,0.6),0 6px 20px rgba(0,0,0,0.35)!important;background:linear-gradient(160deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 50%, rgba(15,15,20,0.65) 100%)!important;}.histCard{
   transition: transform 0.3s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s, border-color 0.3s, background 0.3s !important;
 }
 .histCard:hover{
