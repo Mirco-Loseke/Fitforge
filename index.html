@@ -2306,6 +2306,17 @@ function FitForge(){
         <div style={{paddingTop:20, display:"flex", flexDirection:"column", gap:10}}>
           <div style={s.streakCard}><span style={{color:"#FFD166",display:"flex"}}>{IC.fire}</span><div><div style={s.streakN}>{cwDays} {cwDays === 1 ? 'Tag' : 'Tage'}</div><div style={s.streakL}>{cwSessions} {cwSessions === 1 ? 'Einheit' : 'Einheiten'}</div></div></div>
           {lastSync && <div style={{fontSize:10, color:"#444", textAlign:"center", padding:"0 10px"}}>Cloud Sync: {lastSync.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>}
+          <div style={{fontSize:9, color:"#444", display:"flex", justifyContent:"center", gap:8, alignItems:"center"}}>
+            <span>Version: 1.0.4</span>
+            <button onClick={() => {
+              if (navigator.serviceWorker) {
+                navigator.serviceWorker.getRegistrations().then(regs => {
+                  for (const r of regs) r.unregister();
+                });
+              }
+              window.location.reload(true);
+            }} style={{background:"transparent", border:"none", color:"#FF6B35", fontSize:9, cursor:"pointer", textDecoration:"underline", padding:0}}>Update erzwingen</button>
+          </div>
         </div>
       </aside>
       <main style={{...s.main, marginLeft: isMobile ? 0 : 236, minWidth: 0, maxWidth: isMobile ? "100%" : "none", overflowX: isMobile ? "hidden" : "visible"}}>
