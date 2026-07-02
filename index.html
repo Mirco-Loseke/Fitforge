@@ -30,6 +30,7 @@
     firebase.initializeApp(firebaseConfig);
     const _auth = firebase.auth();
     const _db   = firebase.firestore();
+    _db.settings({ ignoreUndefinedProperties: true });
     const _stor = firebase.storage();
 
     // Offline-Persistence: Firestore puffert Daten & Schreibvorgänge in IndexedDB.
@@ -243,15 +244,17 @@ const fbGet = async (key, fallback) => {
 const fbSet = async (key, value) => {
   try {
     const uid = getUid();
-    if (uid) localStorage.setItem(`ff_${uid}_${key}`, JSON.stringify(value));
-    else localStorage.setItem("ff_" + key, JSON.stringify(value));
+    const cleaned = stripBase64(value);
+    if (uid) localStorage.setItem(`ff_${uid}_${key}`, JSON.stringify(cleaned));
+    else localStorage.setItem("ff_" + key, JSON.stringify(cleaned));
 
     if (window.firebaseDb && uid) {
-      await window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", `${uid}_${key}`), { value });
+      await window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", `${uid}_${key}`), { value: cleaned });
     }
   } catch(e) { 
     console.error("fbSet error:", e);
     if(window.dbg) dbg(`❌ Cloud-Speicher Fehler: ${e.message}`, '#f55');
+    window.showToast?.(`Cloud-Speicher Fehler: ${e.message}`, "error");
   }
 };
 
@@ -315,6 +318,26 @@ const purgeDemoPRs=prs=>{
   const out={...prs};
   demoKeys.forEach(k=>delete out[k]);
   return out;
+};
+const stripBase64 = (val) => {
+  if (!val) return val;
+  if (typeof val === "string") {
+    if (val.startsWith("data:") || val.length > 20000) {
+      return null;
+    }
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map(stripBase64);
+  }
+  if (typeof val === "object") {
+    const copy = {};
+    for (const k in val) {
+      copy[k] = stripBase64(val[k]);
+    }
+    return copy;
+  }
+  return val;
 };
 const DEFAULT_POINTS_CONFIG={workoutBase:100,perExercise:20,perSet:10,perKm:20,perMinute:2,perVolume100:1,penaltyWeight:-10,penaltySupplement:-5,penaltyStretch:-10};
 const defaultUser={firstName:"",lastName:"",email:"",weight:"",height:"",goal:"Muskelaufbau",avatar:null,notificationsEnabled:true,reminderTime:"08:00",calorieGoal:2500,proteinGoal:150,workDays:["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],workStart:"08:00",workEnd:"17:00",break1Start:"09:30",break1End:"10:00",break2Start:"12:30",break2End:"13:15",checkinEveryLogin:false,waterGoal:2500,supplements:[],pointsLog:[],pointsConfig:{}};
@@ -974,6 +997,7 @@ function FitForge(){
   // ── Sync Safety State ───────────────────────────────────────────────────
   const loadedKeysRef = useRef({
     data: false,
+    photos: false,
     user: false,
     prs: false,
     nutrition: false,
@@ -1410,15 +1434,16 @@ function FitForge(){
     if(!authUser) return;
     showToast("Synchronisierung läuft...", "info");
     try {
-        const [d,u,p,n,lib,wp] = await Promise.all([
+        const [d,ph,u,p,n,lib,wp] = await Promise.all([
           fbGet("data", defaultData),
+          fbGet("photos", []),
           fbGet("user", defaultUser),
           fbGet("prs",  defaultPRs),
           fbGet("nutrition", {}),
           fbGet("library", []),
           fbGet("weekPlans", {}),
         ]);
-        setData(purgeDemoData(d)); setUser(u); setPrs(purgeDemoPRs(p)); setNutrition(n); setLibrary(lib); setWeekPlans(wp);
+        setData({ ...purgeDemoData(d), photos: ph || [] }); setUser(u); setPrs(purgeDemoPRs(p)); setNutrition(n); setLibrary(lib); setWeekPlans(wp);
         setLastSync(new Date());
         showToast("Synchronisierung erfolgreich! 🔄");
     } catch(e) {
@@ -1588,6 +1613,7 @@ function FitForge(){
 
         const privateKeys = [
           { key: "data", setter: setData, df: defaultData },
+          { key: "photos", setter: (val) => setData(prev => ({ ...prev, photos: val || [] })), df: [] },
           { key: "user", setter: setUser, df: defaultUser },
           { key: "prs", setter: setPrs, df: defaultPRs },
           { key: "nutrition", setter: setNutrition, df: {} },
@@ -1641,7 +1667,13 @@ function FitForge(){
                     const mergedStr = JSON.stringify(merged);
                     localStorage.setItem(`ff_${uid}_data`, mergedStr);
                     lastSyncRef.current["data"] = mergedStr;
-                    return merged;
+                    return { ...merged, photos: prevLocal.photos || [] };
+                  });
+                } else if (key === "photos") {
+                  setData(prevLocal => {
+                    localStorage.setItem(`ff_${uid}_photos`, cloudStr);
+                    lastSyncRef.current["photos"] = cloudStr;
+                    return { ...prevLocal, photos: cloudVal || [] };
                   });
                 } else if (key === "user") {
                   setUser(prevLocal => {
@@ -1802,39 +1834,78 @@ function FitForge(){
     // Safety guard: only upload if this key has finished its initial load from Firestore
     if (!loadedKeysRef.current[key]) return;
 
+    if (key === "data") {
+      const { photos, ...dataWithoutPhotos } = val;
+      const cleanedData = stripBase64(dataWithoutPhotos);
+      const dataStr = JSON.stringify(cleanedData);
+      const valStr = JSON.stringify(val);
+      
+      // Safety check: Prevent overwriting richer cloud data with empty/smaller local data
+      if (val && Array.isArray(val.workouts)) {
+        try {
+          const lastStr = lastSyncRef.current["data"] || localStorage.getItem(`ff_${authUser.uid}_data`);
+          if (lastStr) {
+            const lastVal = JSON.parse(lastStr);
+            if (lastVal && Array.isArray(lastVal.workouts)) {
+              // Absichtlich gelöschte Workouts (Tombstones) zählen nicht als "verloren"
+              const tomb = new Set([...(val.deletedWorkoutIds||[]), ...(lastVal.deletedWorkoutIds||[])]);
+              const lastRelevant = lastVal.workouts.filter(w => !tomb.has(w.id));
+              if (lastRelevant.length > val.workouts.length) {
+                console.warn(`Local data has fewer workouts (${val.workouts.length}) than last sync (${lastRelevant.length}). Merging...`);
+                const merged = mergeData(val, lastVal);
+                if (JSON.stringify(merged) !== valStr) {
+                  setData(merged);
+                  return;
+                }
+              }
+            }
+          }
+        } catch(e) {}
+      }
+
+      const cleanedPhotos = stripBase64(photos);
+      const photosStr = JSON.stringify(cleanedPhotos || []);
+      
+      // Sync data without photos
+      if (dataStr !== lastSyncRef.current["data"]) {
+        clearTimeout(debRef.current["data"]);
+        debRef.current["data"] = setTimeout(() => {
+          if (window.dbg) {
+            dbg(`📤 Synchronisiere data (Größe: ${(dataStr.length/1024).toFixed(1)} KB)...`, '#ff0');
+            console.log("data size debug:", {
+              plans: JSON.stringify(cleanedData.plans || []).length,
+              workouts: JSON.stringify(cleanedData.workouts || []).length,
+              weightHistory: JSON.stringify(cleanedData.weightHistory || []).length
+            });
+          }
+          fbSet("data", cleanedData).finally(() => {
+            lastSyncRef.current["data"] = dataStr;
+          });
+        }, 300);
+      }
+      
+      // Sync photos separately
+      if (photosStr !== lastSyncRef.current["photos"] && loadedKeysRef.current["photos"]) {
+        clearTimeout(debRef.current["photos"]);
+        debRef.current["photos"] = setTimeout(() => {
+          if (window.dbg) dbg(`📤 Synchronisiere photos (Größe: ${(photosStr.length/1024).toFixed(1)} KB)...`, '#ff0');
+          fbSet("photos", cleanedPhotos || []).finally(() => {
+            lastSyncRef.current["photos"] = photosStr;
+          });
+        }, 300);
+      }
+      return;
+    }
+
     const valStr = JSON.stringify(val);
     
     // Skip if this change just came FROM the cloud
     if (valStr === lastSyncRef.current[key]) return;
 
-    // Safety check: Prevent overwriting richer cloud data with empty/smaller local data
-    if (key === "data" && val && Array.isArray(val.workouts)) {
-      try {
-        const lastStr = lastSyncRef.current[key] || localStorage.getItem(`ff_${authUser.uid}_${key}`);
-        if (lastStr) {
-          const lastVal = JSON.parse(lastStr);
-          if (lastVal && Array.isArray(lastVal.workouts)) {
-            // Absichtlich gelöschte Workouts (Tombstones) zählen nicht als "verloren"
-            const tomb = new Set([...(val.deletedWorkoutIds||[]), ...(lastVal.deletedWorkoutIds||[])]);
-            const lastRelevant = lastVal.workouts.filter(w => !tomb.has(w.id));
-            if (lastRelevant.length > val.workouts.length) {
-              // Local state has fewer workouts than what is in cloud/lastSync. Merge them instead of writing smaller dataset!
-              console.warn(`Local data has fewer workouts (${val.workouts.length}) than last sync (${lastRelevant.length}). Merging...`);
-              const merged = mergeData(val, lastVal);
-              if (JSON.stringify(merged) !== valStr) {
-                setData(merged);
-                return;
-              }
-            }
-          }
-        }
-      } catch(e) {}
-    }
-
     clearTimeout(debRef.current[key]);
     debRef.current[key] = setTimeout(() => {
       if (window.dbg) dbg(`📤 Synchronisiere ${key}...`, '#ff0');
-      fbSet(key, val).then(() => {
+      fbSet(key, val).finally(() => {
         lastSyncRef.current[key] = valStr;
       });
     }, 300);
@@ -2027,7 +2098,8 @@ function FitForge(){
   );
 
 
-  const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
+  const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),type==="error"?15000:3500);};
+  window.showToast = showToast;
   const p=n=>String(n).padStart(2,"0");
   const WN=["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
   const clkStr=WN[clk.getDay()]+" "+p(clk.getDate())+"."+p(clk.getMonth()+1)+"."+clk.getFullYear()+" | "+p(clk.getHours())+":"+p(clk.getMinutes())+":"+p(clk.getSeconds());
@@ -2232,7 +2304,7 @@ function FitForge(){
           </div>
         </div>
         {(profileOpen||notifOpen)&&<div style={s.veil} onClick={closeAll}/>}
-        {toast&&<div style={{...s.toast,...(toast.type==="error"?s.toastErr:{})}} className="dropIn">{toast.type==="success"?IC.check:IC.x} {toast.msg}</div>}
+        {toast&&<div style={{...s.toast, cursor:"pointer", ...(toast.type==="error"?s.toastErr:{})}} onClick={()=>setToast(null)} className="dropIn">{toast.type==="success"?IC.check:IC.x} {toast.msg}</div>}
         {undoConfirmItem&&<UndoConfirmModal item={undoConfirmItem} onConfirm={()=>undoChecklistItem(undoConfirmItem)} onCancel={()=>setUndoConfirmItem(null)}/>}
         <div key={animK} className="pageEnter">
           {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday}/>}
@@ -5459,6 +5531,8 @@ function PlanModal({data,setData,editPlan,onClose,notify,library=[]}){
       trackSets:libEx.trackSets??true,
       trackReps:libEx.trackReps??true,
       trackWeight:libEx.trackWeight??true,
+      trackKcal:libEx.trackKcal??false,
+      trackKm:libEx.trackKm??false,
       trackIncline:libEx.trackIncline??false,
       trackTempo:libEx.trackTempo??false
     }]}));
@@ -5483,7 +5557,7 @@ function PlanModal({data,setData,editPlan,onClose,notify,library=[]}){
   });
 
   return(<>
-    <div style={s.overlay2} onClick={onClose}><div style={{...s.modal,maxWidth:560,maxHeight:"88vh",overflowY:"auto",background:"rgba(16,16,22,0.97)",backdropFilter:"blur(32px) saturate(180%)",WebkitBackdropFilter:"blur(32px) saturate(180%)",border:"1px solid rgba(255,255,255,0.2)",boxShadow:"inset 0 1px 1px rgba(255,255,255,0.1), 0 32px 80px rgba(0,0,0,0.85)"}} onClick={e=>e.stopPropagation()} className="dropIn">
+    <div style={s.overlay2} className="mobile-fullscreen-overlay" onClick={onClose}><div style={{...s.modal,maxWidth:560,maxHeight:"88vh",overflowY:"auto",background:"rgba(16,16,22,0.97)",backdropFilter:"blur(32px) saturate(180%)",WebkitBackdropFilter:"blur(32px) saturate(180%)",border:"1px solid rgba(255,255,255,0.2)",boxShadow:"inset 0 1px 1px rgba(255,255,255,0.1), 0 32px 80px rgba(0,0,0,0.85)"}} onClick={e=>e.stopPropagation()} className="dropIn mobile-fullscreen-modal">
     <h2 style={s.modalTitle}>{isEdit?"Plan bearbeiten":"Neuer Trainingsplan"}</h2>
     <div style={s.fg}><label style={s.lbl}>Name</label><input style={s.inp} value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Push Pull Legs" autoFocus/></div>
     
@@ -5534,7 +5608,7 @@ function PlanModal({data,setData,editPlan,onClose,notify,library=[]}){
                 ["%", "trackIncline", "#FFD166"],
                 ["T", "trackTempo", "#EF476F"]
               ].map(([lbl, key, color]) => {
-                const isRealActive = ex[key] === undefined ? (key === "trackIncline" || key === "trackTempo" ? false : true) : ex[key];
+                const isRealActive = ex[key] === undefined ? (key === "trackSets" || key === "trackReps" || key === "trackWeight" ? true : false) : ex[key];
                 return (
                   <button key={key} onClick={() => setForm(f => {
                     const exs = [...f.exercises];
@@ -8814,6 +8888,18 @@ const css=`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@40
     .mobile-hide { display: none !important; }
     .mobile-small-btn { padding: 8px 14px !important; font-size: 13px !important; }
     .pageTitle { font-size: 24px !important; }
+    .mobile-fullscreen-modal {
+      max-width: none !important;
+      max-height: none !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      border-radius: 0 !important;
+      margin: 0 !important;
+      border: none !important;
+    }
+    .mobile-fullscreen-overlay {
+      padding: 0 !important;
+    }
   }
   .wp-meal-item:hover{background:rgba(255,255,255,0.07)!important;border-color:rgba(255,255,255,0.13)!important;}
   .checkin-card:not(.checkin-done):hover{background:rgba(255,255,255,0.07)!important;border-color:rgba(255,255,255,0.13)!important;}
