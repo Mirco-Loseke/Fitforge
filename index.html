@@ -1402,8 +1402,30 @@ function FitForge(){
         } else {
           const localIdx = mergedPlans.findIndex(lp => lp.id === rp.id);
           const localPlan = mergedPlans[localIdx];
-          if (rp.updatedAt > (localPlan.updatedAt || 0)) {
-            mergedPlans[localIdx] = rp;
+          
+          const rpTime = rp.updatedAt || 0;
+          const lpTime = localPlan.updatedAt || 0;
+          
+          if (rpTime > lpTime) {
+            // Remote is newer - take remote, but preserve local photos if remote lacks them
+            const mergedEx = (rp.exercises || []).map((re, idx) => {
+              const le = localPlan.exercises?.[idx];
+              if (le && le.name === re.name && le.photo && !re.photo) {
+                return { ...re, photo: le.photo };
+              }
+              return re;
+            });
+            mergedPlans[localIdx] = { ...rp, exercises: mergedEx, updatedAt: rpTime };
+          } else {
+            // Local is newer or same - keep local, but pull remote photos if local lacks them
+            const mergedEx = (localPlan.exercises || []).map((le, idx) => {
+              const re = rp.exercises?.[idx];
+              if (re && re.name === le.name && re.photo && !le.photo) {
+                return { ...le, photo: re.photo };
+              }
+              return le;
+            });
+            mergedPlans[localIdx] = { ...localPlan, exercises: mergedEx, updatedAt: Math.max(lpTime, rpTime) };
           }
         }
       }
@@ -3584,7 +3606,7 @@ const calcDist = (lat1, lon1, lat2, lon2) => {
 
 function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activeWorkout,setActiveWorkout,presetPlanId,isMobile,stretchFilter,setStretchFilter}){
 
-  const resolvePhoto = ex => library.find(l=>l.id===ex.libId || l.name===ex.name)?.thumbnail || ex.photo;
+  const resolvePhoto = ex => ex.photo || library.find(l=>l.id===ex.libId || l.name===ex.name)?.thumbnail;
 
   const [step,setStep]=useState(activeWorkout?.step || 1);
   const [planId,setPlanId]=useState(activeWorkout?.planId || presetPlanId || data.plans[0]?.id || null);
