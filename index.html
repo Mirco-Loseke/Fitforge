@@ -1696,6 +1696,17 @@ function FitForge(){
                 lastSyncRef.current[key] = JSON.stringify(df);
               }
             }
+          }, (err) => {
+            if (cancelled) return;
+            if (window.dbg) dbg(`❌ Snapshot Fehler für ${key}: ${err.message}`, '#f55');
+            console.error(`Firebase snapshot error for ${key}:`, err);
+            
+            // Mark key as loaded on error to allow local caching and saving
+            loadedKeysRef.current[key] = true;
+            const allLoaded = Object.values(loadedKeysRef.current).every(v => v);
+            if (allLoaded && !loaded) {
+              setLoaded(true);
+            }
           });
           unsubs.push(unsub);
         });
@@ -1767,6 +1778,10 @@ function FitForge(){
       }
       if (!cancelled && !loaded && authUser) {
         if (window.dbg) dbg('⚠️ Sync Timeout - starte Schreibmodus', '#f80');
+        // Force all keys to loaded so syncToCloud can save to localStorage
+        Object.keys(loadedKeysRef.current).forEach(k => {
+          loadedKeysRef.current[k] = true;
+        });
         setLoaded(true);
       }
     }, 15000);
