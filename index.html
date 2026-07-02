@@ -5558,7 +5558,14 @@ function PlanModal({data,setData,editPlan,onClose,notify,library=[]}){
       return{...f,exercises:e};
     });
   };
-  const save=()=>{if(!form.name)return notify("Bitte Namen eingeben","error");if(isEdit)setData(d=>({...d,plans:d.plans.map(p=>p.id===form.id?form:p)}));else setData(d=>({...d,plans:[...d.plans,{id:Date.now(),...form}]}));notify(isEdit?"Plan aktualisiert! ✅":"Plan erstellt! 🎉");onClose();};
+  const save=()=>{
+    if(!form.name)return notify("Bitte Namen eingeben","error");
+    const updatedForm = { ...form, updatedAt: Date.now() };
+    if(isEdit) setData(d=>({...d,plans:d.plans.map(p=>p.id===form.id?updatedForm:p)}));
+    else setData(d=>({...d,plans:[...d.plans,{id:Date.now(),...updatedForm}]}));
+    notify(isEdit?"Plan aktualisiert! ✅":"Plan erstellt! 🎉");
+    onClose();
+  };
 
   const libFiltered=(library||[]).filter(ex=>{
     const ms=!libFilterM.length||libFilterM.some(m=>ex.muscles?.includes(m));
@@ -5647,8 +5654,8 @@ function PlanModal({data,setData,editPlan,onClose,notify,library=[]}){
       </div>
       <div style={{display:"flex",gap:11,marginTop:18}}><button style={s.secBtn} onClick={onClose}>Abbrechen</button><button style={{...s.primaryBtn,flex:1}} onClick={save}>{isEdit?"Speichern":"Plan erstellen"}</button></div>
     </div></div>
-  {showLibPicker&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",backdropFilter:"blur(6px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:18}} onClick={()=>setShowLibPicker(false)}>
-    <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:18,padding:24,width:"100%",maxWidth:520,maxHeight:"80vh",display:"flex",flexDirection:"column",gap:12,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)"}} onClick={e=>e.stopPropagation()}>
+  {showLibPicker&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",backdropFilter:"blur(6px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:18}} className="mobile-fullscreen-overlay" onClick={()=>setShowLibPicker(false)}>
+    <div style={{background:"rgba(16,16,22,0.98)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:18,padding:24,width:"100%",maxWidth:520,maxHeight:"80vh",display:"flex",flexDirection:"column",gap:12,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)"}} className="mobile-fullscreen-modal" onClick={e=>e.stopPropagation()}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <h3 style={{fontFamily:"'DM Sans',sans-serif",fontSize:17,fontWeight:800,margin:0}}>📚 Übung aus Bibliothek</h3>
         <button style={{background:"transparent",border:"none",color:"#666",cursor:"pointer",display:"flex"}} onClick={()=>setShowLibPicker(false)}>{IC.x}</button>
