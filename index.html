@@ -123,6 +123,8 @@ input[type="date"] { text-align: center; justify-content: center; align-items: c
 .statCard:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.4);}
 .planCard{transition:transform 0.2s,box-shadow 0.2s;}
 .planCard:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,0.5);}
+.newPlanCard:hover{border-color:rgba(255,107,53,0.5)!important;background:rgba(255,107,53,0.04)!important;}
+.newPlanCard:hover .newPlanIcon{background:rgba(255,107,53,0.18)!important;box-shadow:0 0 24px rgba(255,107,53,0.35);transform:scale(1.08);}
 .histCard{transition:transform 0.3s cubic-bezier(0.16,1,0.3,1),box-shadow 0.3s,border-color 0.3s,background 0.3s;}.histCard:hover{transform:translateY(-5px)!important;border-color:rgba(255,255,255,0.2)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,0.14),0 20px 56px rgba(0,0,0,0.6),0 6px 20px rgba(0,0,0,0.3)!important;}
 .recentCard:hover{background:rgba(255,255,255,0.06)!important;}
 .notifRow:hover{background:rgba(255,255,255,0.05)!important;}
@@ -3711,8 +3713,9 @@ function Plans({data,setData,onNew,onEdit,notify}){
   return(<div style={s.page}><div style={s.pageHead}><div><h1 style={s.pageTitle}>Trainingspläne</h1><p style={s.pageSub}>{data.plans.length} aktive Pläne</p></div><button className="mobile-small-btn" style={s.primaryBtn} onClick={onNew}>{IC.plus} <span className="mobile-hide">Neuer Plan</span></button></div>
     <div style={s.plansGrid}>{data.plans.map(plan=>{
       const exs=plan.exercises.map(e=>typeof e==="string"?{name:e,photo:null}:e);
-      return(<div key={plan.id} style={{...s.planCard,borderTopColor:plan.color}} className="planCard">
-      <div style={{width:42,height:42,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,background:plan.color+"20",color:plan.color}}>{IC.dumbbell}</div>
+      return(<div key={plan.id} style={{...s.planCard,borderTopColor:plan.color,overflow:"hidden"}} className="planCard">
+      <div style={{position:"absolute",top:-50,left:-30,width:160,height:120,borderRadius:"50%",background:plan.color,opacity:0.09,filter:"blur(30px)",pointerEvents:"none"}}/>
+      <div style={{width:46,height:46,borderRadius:13,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,background:`linear-gradient(135deg,${plan.color}30,${plan.color}10)`,border:`1px solid ${plan.color}40`,color:plan.color,boxShadow:`0 0 20px ${plan.color}25, inset 0 1px 0 ${plan.color}30`}}>{IC.dumbbell}</div>
       <h3 style={{fontFamily:"'DM Sans',sans-serif",fontSize:19,fontWeight:800,margin:"0 0 14px",letterSpacing:"-0.5px"}}>{plan.name}</h3>
       
       <div style={{marginBottom:14}}>
@@ -3726,15 +3729,19 @@ function Plans({data,setData,onNew,onEdit,notify}){
         </div>
       </div>
 
-      <div style={{display:"flex",gap:5,marginBottom:14}}>{WEEKDAYS.map((d,i)=><span key={d} style={{...s.dayChip,...(plan.days.includes(FULL_WEEKDAYS[i])?{background:plan.color,color:"#fff"}:{})}}>{d}</span>)}</div>
+      <div style={{display:"flex",gap:5,marginBottom:14}}>{WEEKDAYS.map((d,i)=><span key={d} style={{...s.dayChip,...(plan.days.includes(FULL_WEEKDAYS[i])?{background:`linear-gradient(135deg,${plan.color},${plan.color}CC)`,color:"#fff",border:`1px solid ${plan.color}`,boxShadow:`0 0 12px ${plan.color}50`,fontWeight:900}:{})}}>{d}</span>)}</div>
       <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:12}}>{exs.slice(0,4).map((ex,i)=>{
         const photoToShow = ex.photo ? (ex.photo.startsWith("ex_") ? data.exercisePhotos?.[ex.photo] : ex.photo) : null;
         return (<div key={i} style={{display:"flex",alignItems:"center",gap:7}}>{photoToShow?<img src={photoToShow} alt={ex.name} style={{width:36,height:36,borderRadius:7,objectFit:"contain",flexShrink:0,background:"#1A1A1F"}}/>:<div style={{width:36,height:36,borderRadius:7,background:"#1A1A1F",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#444"}}>{IC.image}</div>}<span style={{fontSize:11,color:"#aaa"}}>{ex.name}</span></div>)
       })}{exs.length>4&&<span style={{fontSize:11,color:"#555",paddingLeft:31}}>+{exs.length-4} weitere</span>}</div>
-      <div style={{fontSize:11,color:"#555",fontWeight:700}}>{data.workouts.filter(w=>w.planId===plan.id).length} Trainings absolviert</div>
+      {(()=>{const n=data.workouts.filter(w=>w.planId===plan.id).length;return(
+      <div style={{display:"flex",gap:6,alignItems:"center",marginTop:2,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+        <span style={{fontSize:10,fontWeight:800,color:plan.color,background:plan.color+"18",border:`1px solid ${plan.color}30`,borderRadius:8,padding:"3px 9px"}}>🏋️ {exs.length} Übungen</span>
+        <span style={{fontSize:10,fontWeight:800,color:"#06D6A0",background:"rgba(6,214,160,0.1)",border:"1px solid rgba(6,214,160,0.25)",borderRadius:8,padding:"3px 9px"}}>✓ {n}x absolviert</span>
+      </div>);})()}
       <div style={{position:"absolute",top:13,right:13,display:"flex",gap:5}}><button className="cardIconBtn" style={{...s.cardIconBtn, color:"#ccc", filter:"drop-shadow(0 0 6px rgba(255,255,255,0.5))"}} onClick={()=>onEdit({...plan,exercises:exs})}>{IC.edit}</button><button className="cardIconBtn" style={{...s.cardIconBtn, color:"#EF476F", filter:"drop-shadow(0 0 6px rgba(239,71,111,0.8))"}} onClick={()=>del(plan.id)}>{IC.trash}</button></div>
     </div>);})}
-    <div style={s.newPlanCard} onClick={onNew} className="planCard"><div style={{color:"#444",display:"flex"}}>{IC.plus}</div><span style={{color:"#666",fontSize:13}}>Neuen Plan erstellen</span></div></div>
+    <div style={{...s.newPlanCard,justifyContent:"center",minHeight:180}} onClick={onNew} className="planCard newPlanCard"><div className="newPlanIcon" style={{width:52,height:52,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,107,53,0.08)",border:"1px dashed rgba(255,107,53,0.35)",color:"#FF6B35",transition:"all 0.25s"}}>{IC.plus}</div><span style={{color:"#888",fontSize:13,fontWeight:700}}>Neuen Plan erstellen</span></div></div>
   </div>);}
 
 const formatPace = (kmh) => {
@@ -4373,7 +4380,13 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
         <div><h1 style={{...s.pageTitle, fontSize: isMobile ? 26 : 32}}>Training starten</h1><p style={s.pageSub}>Schritt {step} von 3</p></div>
       </div>
     </div>
-    <div style={{...s.stepBar, gap: isMobile ? 4 : 8}}>{[1,2,3].map(n=>(<div key={n} style={{display:"flex",alignItems:"center",flex:1}}><div style={{...s.stepDot, width: isMobile ? 32 : 40, height: isMobile ? 32 : 40, fontSize: isMobile ? 12 : 14, ...(step>=n?s.stepOn:{})}}>{step>n?IC.check:n}</div>{n<3&&<div style={{flex:1,height:2,background:step>n?"#FF6B35":"#1E1E24",transition:"background 0.3s"}}/>}</div>))}</div>
+    <div style={{...s.stepBar, gap: isMobile ? 4 : 8}}>{[[1,"Setup"],[2,"Training"],[3,"Fertig"]].map(([n,lbl])=>(<div key={n} style={{display:"flex",alignItems:"center",flex:n<3?1:"none"}}>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+        <div style={{...s.stepDot, width: isMobile ? 32 : 40, height: isMobile ? 32 : 40, fontSize: isMobile ? 12 : 14, ...(step>=n?{...s.stepOn,background:"linear-gradient(135deg,#FF6B35,#FF8C5A)",boxShadow:step===n?"0 0 18px rgba(255,107,53,0.55)":"none"}:{})}}>{step>n?IC.check:n}</div>
+        <span style={{fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:0.5,color:step>=n?"#FF6B35":"#444",transition:"color 0.3s"}}>{lbl}</span>
+      </div>
+      {n<3&&<div style={{flex:1,height:2,borderRadius:1,marginBottom:14,background:step>n?"linear-gradient(90deg,#FF6B35,#FF8C5A)":"#1E1E24",transition:"background 0.3s"}}/>}
+    </div>))}</div>
     <div style={plan ? {...s.logCard, position: "relative", borderTop: `6px solid ${plan.color}`, borderRight: "none", borderBottom: "none", borderLeft: "none", paddingTop: 46, padding: isMobile ? 16 : 24, width: "100%", maxWidth: "100%", boxSizing: "border-box", minWidth: 0} : {...s.logCard, padding: isMobile ? 16 : 24, width: "100%", maxWidth: "100%", boxSizing: "border-box", minWidth: 0}}>
       {plan && <div style={{position: "absolute", top: 0, left: 24, background: plan.color, padding: "4px 14px", borderRadius: "0 0 10px 10px", color: "#000", fontSize: 11, fontWeight: 900, textTransform: "uppercase"}}>{plan.name}</div>}
 
@@ -4614,7 +4627,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
 
       {step===2&&<div className="fadeIn">
         <div style={{marginBottom:18, display:"flex", gap:10}}>
-          <div style={{flex:1, padding:"10px 14px", background:"rgba(255,255,255,0.03)", borderRadius:16, border:"1px solid rgba(255,255,255,0.08)", backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer"}} onClick={()=>{
+          <div style={{flex:1, padding:"10px 14px", background:running?"linear-gradient(135deg,rgba(255,107,53,0.14),rgba(255,107,53,0.04))":"rgba(255,255,255,0.03)", borderRadius:16, border:running?"1px solid rgba(255,107,53,0.4)":"1px solid rgba(255,255,255,0.08)", boxShadow:running?"0 0 24px rgba(255,107,53,0.18), inset 0 1px 0 rgba(255,107,53,0.2)":"none", backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", transition:"all 0.3s"}} onClick={()=>{
             if (!running && exercises[curEx]?.trackGPS && 'geolocation' in navigator) navigator.geolocation.getCurrentPosition(() => {}, () => {});
             setRunning(r=>!r);
           }}>
@@ -4645,6 +4658,13 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
         </div>
 
         {curExData && <>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10}}>
+            <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:isMobile?18:21,fontWeight:900,letterSpacing:"-0.3px",color:"#F0EDE8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{curExData.name}</div>
+            <span style={{flexShrink:0,fontSize:10,fontWeight:900,color:plan?.color||"#FF6B35",background:(plan?.color||"#FF6B35")+"18",border:`1px solid ${(plan?.color||"#FF6B35")}35`,borderRadius:8,padding:"4px 10px"}}>{curEx+1} / {exercises.length}</span>
+          </div>
+          <div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2,overflow:"hidden",marginBottom:14}}>
+            <div style={{height:"100%",width:`${((curEx+1)/Math.max(exercises.length,1))*100}%`,background:`linear-gradient(90deg,${plan?.color||"#FF6B35"},${plan?.color||"#FF6B35"}99)`,borderRadius:2,transition:"width 0.4s cubic-bezier(0.16,1,0.3,1)",boxShadow:`0 0 10px ${(plan?.color||"#FF6B35")}60`}}/>
+          </div>
           {hiitMode && curEx < exercises.length - 1 && (
             <div style={{fontSize: 10, fontWeight: 900, color: "#666", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8, display: "flex", alignItems: "center", gap: 8}}>
               <span>Als nächstes:</span>
@@ -4914,9 +4934,19 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
       </div>}
 
       {step===3 && <div className="fadeIn">
-        <div style={{background:"#0D0D0F",borderRadius:14,padding:20,textAlign:"center",marginBottom:20}}>
-          <div style={{fontSize:32,fontWeight:800,color:"#06D6A0",marginBottom:10}}>Geschafft! 🎉</div>
-          <div style={{fontSize:14,color:"#888"}}>Dauer: {fmtTimer(timer)} | Übungen: {exercises.length}</div>
+        <div style={{position:"relative",overflow:"hidden",background:"linear-gradient(160deg,rgba(6,214,160,0.12) 0%,rgba(6,214,160,0.03) 45%,rgba(13,13,15,0.6) 100%)",border:"1px solid rgba(6,214,160,0.3)",borderRadius:22,padding:"32px 20px 26px",textAlign:"center",marginBottom:20,boxShadow:"inset 0 1px 1px rgba(6,214,160,0.2), 0 12px 40px rgba(0,0,0,0.4)"}}>
+          <div style={{position:"absolute",top:-60,left:"50%",transform:"translateX(-50%)",width:220,height:140,borderRadius:"50%",background:"#06D6A0",opacity:0.12,filter:"blur(40px)",pointerEvents:"none"}}/>
+          <div style={{width:72,height:72,margin:"0 auto 14px",borderRadius:"50%",background:"linear-gradient(135deg,rgba(6,214,160,0.25),rgba(6,214,160,0.08))",border:"1px solid rgba(6,214,160,0.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:34,boxShadow:"0 0 30px rgba(6,214,160,0.3)"}}>🏆</div>
+          <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:30,fontWeight:900,color:"#06D6A0",marginBottom:6,letterSpacing:"-0.5px",textShadow:"0 0 30px rgba(6,214,160,0.4)"}}>Geschafft! 🎉</div>
+          <div style={{fontSize:13,color:"#888",marginBottom:20}}>Starke Leistung – Training abgeschlossen</div>
+          <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+            {[[fmtTimer(timer),"Dauer","#FF6B35"],[exercises.length,"Übungen","#00D9C0"],[Object.values(sets).reduce((a,arr)=>a+(arr||[]).filter(x=>x.done).length,0)||Object.values(sets).reduce((a,arr)=>a+(arr||[]).length,0),"Sätze","#A78BFA"]].map(([v,l,c])=>(
+              <div key={l} style={{minWidth:86,padding:"12px 16px",background:"rgba(255,255,255,0.04)",border:`1px solid ${c}30`,borderRadius:14,backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)"}}>
+                <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:19,fontWeight:900,color:c,lineHeight:1}}>{v}</div>
+                <div style={{fontSize:9,fontWeight:800,color:"#666",marginTop:5,textTransform:"uppercase",letterSpacing:0.5}}>{l}</div>
+              </div>
+            ))}
+          </div>
         </div>
         <div style={{display: "flex", gap: 12}}><button style={{...s.primaryBtn, flex: 2}} onClick={save}>🎉 Training speichern</button><button style={{...s.primaryBtn, flex: 1, background: "#EF476F15", border: "2px solid #EF476F", color: "#EF476F"}} onClick={()=>{if(window.confirm("Möchtest du das Training wirklich verwerfen?")) {setStep(1); setTimer(0); setRunning(false); setActiveWorkout(null); notify("Training verworfen", "info");}}}>🗑️ Verwerfen</button></div>
       </div>}
@@ -5433,7 +5463,11 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
           >Vergleichen</button>
         </div>
       )}
-      {!sorted.length&&<div style={{textAlign:"center",padding:"80px 20px",color:"#555",border:"2px dashed rgba(255,255,255,0.08)",borderRadius:18,background:"rgba(255,255,255,0.02)"}}>Noch keine Trainings aufgezeichnet.</div>}
+      {!sorted.length&&<div style={{textAlign:"center",padding:"70px 20px",border:"2px dashed rgba(255,255,255,0.08)",borderRadius:18,background:"rgba(255,255,255,0.02)"}}>
+        <div style={{width:64,height:64,margin:"0 auto 16px",borderRadius:"50%",background:"rgba(255,107,53,0.08)",border:"1px dashed rgba(255,107,53,0.3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28}}>🏋️</div>
+        <div style={{fontSize:15,fontWeight:800,color:"#888",marginBottom:6}}>Noch keine Trainings aufgezeichnet</div>
+        <div style={{fontSize:12,color:"#555"}}>Starte dein erstes Training – dein Verlauf erscheint dann hier.</div>
+      </div>}
       <div style={{display:"flex",flexDirection:"column",gap: isMobile ? 28 : 36}}>
         {Object.values(grouped).map((group, gi) => (
           <div key={gi} style={{background:"linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 60%), rgba(18,18,24,0.5)", backdropFilter:"blur(30px) saturate(200%)", WebkitBackdropFilter:"blur(30px) saturate(200%)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:22, padding: isMobile ? 16 : 20, boxShadow:"inset 0 1px 1px rgba(255,255,255,0.07), 0 12px 48px rgba(0,0,0,0.5)"}}>
@@ -5453,6 +5487,7 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
                 )}
                 <span style={{fontSize:24,fontWeight:900,fontFamily:"'DM Sans',sans-serif",color:"#F0EDE8"}}>KW {group.wn}</span>
                 <span style={{fontSize:14,fontWeight:700,color:"#666"}}>({group.dateRange})</span>
+                {!isMobile&&<span style={{fontSize:10,fontWeight:800,color:"#FF6B35",background:"rgba(255,107,53,0.12)",border:"1px solid rgba(255,107,53,0.25)",borderRadius:8,padding:"3px 9px",alignSelf:"center"}}>{group.workouts.length}x · {(()=>{const m=group.workouts.reduce((a,w)=>a+(parseInt(w.duration)||0),0);return m>=120?`${Math.round(m/60)}h`:`${m}min`;})()}</span>}
               </div>
               {!compMode && (
                 <button 
