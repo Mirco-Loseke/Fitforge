@@ -7903,6 +7903,48 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
     notify("Eintrag gelöscht");
   };
 
+  // Drag & Drop: Eintrag zwischen Tagen verschieben
+  const [dragInfo,setDragInfo]=useState(null);   // {dayIdx, entryId}
+  const [dragOverDay,setDragOverDay]=useState(null);
+  const moveEntry=(fromDay,toDay,entryId)=>{
+    if(fromDay===toDay)return;
+    setWeekData(w=>{
+      const ent=(w.entries[fromDay]||[]).find(e=>e.id===entryId);
+      if(!ent)return w;
+      return{...w,entries:{...w.entries,[fromDay]:(w.entries[fromDay]||[]).filter(e=>e.id!==entryId),[toDay]:[...(w.entries[toDay]||[]),ent]}};
+    });
+    notify(`Eintrag zu ${WP_DAY_NAMES[toDay]} verschoben 📅`);
+  };
+
+  // Eintrag auf andere Wochentage duplizieren
+  const [dupInfo,setDupInfo]=useState(null);     // {dayIdx, entry}
+  const [dupDays,setDupDays]=useState([]);
+  const duplicateEntry=(entry,days)=>{
+    if(!days.length)return;
+    setWeekData(w=>{
+      const ne={...w.entries};
+      days.forEach(d=>{ne[d]=[...(ne[d]||[]),{...entry,id:uid()}];});
+      return{...w,entries:ne};
+    });
+    setDupInfo(null);setDupDays([]);
+    notify(`Eintrag auf ${days.length} Tag${days.length===1?"":"e"} kopiert 📋`);
+  };
+
+  // Vorlage auf eine frei wählbare Woche anwenden
+  const [applyTmpl,setApplyTmpl]=useState(null);
+  const [applyDate,setApplyDate]=useState("");
+  const loadTemplateToWeek=(tmpl,dateStr)=>{
+    if(!dateStr)return;
+    const mon=getMonday(new Date(dateStr));
+    const key=mon.toISOString().split("T")[0];
+    setWeekPlans(wp=>({...wp,[key]:{...(wp[key]||{entries:{}}),entries:{...tmpl.entries}}}));
+    setApplyTmpl(null);setShowTemplates(false);
+    notify(`Vorlage „${tmpl.name}" auf KW ab ${fmtShort(mon)} angewendet! 📅`);
+  };
+
+  // Ist-Abgleich: wurde an diesem Tag ein Training mit diesem Plan absolviert?
+  const isTrainingDone=(entry,dayISO)=>entry.type==="training"&&(data.workouts||[]).some(w=>w.date===dayISO&&String(w.planId)===String(entry.planId));
+
   const prevWeek=()=>setCurrentMonday(d=>addDays(d,-7));
   const nextWeek=()=>setCurrentMonday(d=>addDays(d,7));
   const goToday = () => {
@@ -8104,15 +8146,21 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
           const isToday=dayDate.toDateString()===today.toDateString();
           const entries=getDayEntries(dayIdx);
           const isRest=entries.some(e=>e.type==="rest");
+          const dayISO=`${dayDate.getFullYear()}-${String(dayDate.getMonth()+1).padStart(2,"0")}-${String(dayDate.getDate()).padStart(2,"0")}`;
           const isPast = dayDate.setHours(0,0,0,0) < new Date().setHours(0,0,0,0);
+          const isDropTarget=dragOverDay===dayIdx&&dragInfo&&dragInfo.dayIdx!==dayIdx;
           return(
-            <div key={dayIdx} style={{
+            <div key={dayIdx}
+              onDragOver={e=>{if(dragInfo){e.preventDefault();setDragOverDay(dayIdx);}}}
+              onDragLeave={()=>setDragOverDay(d=>d===dayIdx?null:d)}
+              onDrop={e=>{e.preventDefault();if(dragInfo){moveEntry(dragInfo.dayIdx,dayIdx,dragInfo.entryId);}setDragInfo(null);setDragOverDay(null);}}
+              style={{
               background:isPast ? "rgba(255,255,255,0.01)" : isRest ? "rgba(255,255,255,0.02)" : isToday ? "linear-gradient(180deg, rgba(59,130,246,0.09) 0%, rgba(59,130,246,0.02) 100%)" : "rgba(255,255,255,0.03)",
               border:`1px solid ${isToday?"rgba(59,130,246,0.55)":isRest?"rgba(255,255,255,0.06)":isPast?"rgba(255,255,255,0.02)":"rgba(255,255,255,0.06)"}`,
               borderRadius:14, minHeight:dayMinHeight, display:"flex", flexDirection:"column", transition:"all 0.3s", overflow:"hidden",
               backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)",
-              boxShadow:isToday?"0 0 24px rgba(59,130,246,0.14), inset 0 1px 0 rgba(59,130,246,0.2)":"none",
-              opacity: isPast ? 0.6 : 1
+              boxShadow:isDropTarget?"0 0 28px rgba(255,107,53,0.35), inset 0 0 0 2px #FF6B35":isToday?"0 0 24px rgba(59,130,246,0.14), inset 0 1px 0 rgba(59,130,246,0.2)":"none",
+              opacity: isPast&&!isDropTarget ? 0.6 : 1
             }}>
               {/* Day header */}
               <div style={{padding:"10px 10px 8px",borderBottom:`1px solid ${isToday?"rgba(59,130,246,0.25)":"rgba(255,255,255,0.05)"}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:isToday?"rgba(59, 130, 246, 0.12)":isRest?"rgba(255,255,255,0.02)":"transparent"}}>
@@ -8155,23 +8203,27 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                     :entry.type==="stretching"?(entry.stretchName||"Dehnen")
                     :entry.type==="rest"?"Ruhetag"
                     :(entry.title||"Eintrag");
+                  const done=isTrainingDone(entry,dayISO);
                   return(
-                    <div key={entry.id} className="wpEntry" style={{background:meta.bg,border:`1px solid ${meta.color}40`,borderLeft:`3px solid ${plan?.color||meta.color}`,borderRadius:9,padding:entryPad,cursor:"pointer",transition:"all 0.15s", textDecoration: isPast ? "line-through" : "none"}}
+                    <div key={entry.id} className="wpEntry" draggable
+                      onDragStart={e=>{e.dataTransfer.effectAllowed="move";setDragInfo({dayIdx,entryId:entry.id});}}
+                      onDragEnd={()=>{setDragInfo(null);setDragOverDay(null);}}
+                      style={{background:done?"rgba(6,214,160,0.1)":meta.bg,border:`1px solid ${done?"rgba(6,214,160,0.45)":meta.color+"40"}`,borderLeft:`3px solid ${done?"#06D6A0":plan?.color||meta.color}`,borderRadius:9,padding:entryPad,cursor:"grab",transition:"all 0.15s", textDecoration: isPast&&!done ? "line-through" : "none", boxShadow:done?"0 0 12px rgba(6,214,160,0.12)":"none"}}
                       onClick={()=>{setEntryDay(dayIdx);setEditEntry(entry);setShowEntryForm(true);}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:4}}>
                         <div style={{flex:1,minWidth:0}}>
                           {density==="dense"?(
                             <div style={{display:"flex",alignItems:"center",gap:4,minWidth:0}}>
-                              <span style={{fontSize:11,flexShrink:0}}>{meta.icon}</span>
-                              <span style={{fontSize:entryTitleSize,fontWeight:700,color:"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</span>
+                              <span style={{fontSize:11,flexShrink:0}}>{done?"✅":meta.icon}</span>
+                              <span style={{fontSize:entryTitleSize,fontWeight:700,color:done?"#06D6A0":"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</span>
                             </div>
                           ):(
                             <>
                               <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}>
-                                <span style={{fontSize:12}}>{meta.icon}</span>
-                                <span style={{fontSize:10,fontWeight:700,color:meta.color,textTransform:"uppercase",letterSpacing:"0.3px"}}>{meta.label}</span>
+                                <span style={{fontSize:12}}>{done?"✅":meta.icon}</span>
+                                <span style={{fontSize:10,fontWeight:700,color:done?"#06D6A0":meta.color,textTransform:"uppercase",letterSpacing:"0.3px"}}>{done?"Absolviert":meta.label}</span>
                               </div>
-                              <div style={{fontSize:entryTitleSize,fontWeight:700,color:"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
+                              <div style={{fontSize:entryTitleSize,fontWeight:700,color:done?"#06D6A0":"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
                             </>
                           )}
                           <div style={{fontSize:density==="dense"?9:10,color:"#888",marginTop:density==="dense"?1:2}}>
@@ -8181,7 +8233,10 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                           {density!=="dense"&&entry.type==="meal"&&entry.calories&&<div style={{fontSize:10,color:"#22C55E",marginTop:1}}>{entry.calories} kcal</div>}
                           {density==="roomy"&&entry.notes&&<div style={{fontSize:10,color:"#666",marginTop:2,fontStyle:"italic",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{entry.notes}</div>}
                         </div>
-                        <button onClick={e=>{e.stopPropagation();deleteEntry(dayIdx,entry.id);}} style={{background:"transparent",border:"none",color:"#555",cursor:"pointer",padding:2,display:"flex",flexShrink:0,borderRadius:4,transition:"color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#EF476F"} onMouseLeave={e=>e.currentTarget.style.color="#555"}>{IC.x}</button>
+                        <div style={{display:"flex",flexDirection:"column",gap:2,flexShrink:0}}>
+                          <button title="Auf andere Tage kopieren" onClick={e=>{e.stopPropagation();setDupInfo({dayIdx,entry});setDupDays([]);}} style={{background:"transparent",border:"none",color:"#555",cursor:"pointer",padding:2,display:"flex",borderRadius:4,transition:"color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#4CC9F0"} onMouseLeave={e=>e.currentTarget.style.color="#555"}>{IC.copy}</button>
+                          <button onClick={e=>{e.stopPropagation();deleteEntry(dayIdx,entry.id);}} style={{background:"transparent",border:"none",color:"#555",cursor:"pointer",padding:2,display:"flex",borderRadius:4,transition:"color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#EF476F"} onMouseLeave={e=>e.currentTarget.style.color="#555"}>{IC.x}</button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -8254,13 +8309,57 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                   </div>
                   <button style={{...s.cardIconBtn, color:"#EF476F", filter:"drop-shadow(0 0 6px rgba(239,71,111,0.8))"}} className="cardIconBtn" onClick={()=>deleteTemplate(tmpl.id)}>{IC.trash}</button>
                 </div>
-                <div style={{display:"flex",gap:8}}>
-                  <button style={{...s.secBtn,flex:1,padding:"7px 10px",fontSize:12}} onClick={()=>loadTemplate(tmpl)}>{IC.copy} Diese Woche</button>
-                  <button style={{...s.secBtn,flex:1,padding:"7px 10px",fontSize:12,borderColor:"#FF6B35",color:"#FF6B35"}} onClick={()=>loadTemplateNextWeek(tmpl)}>{IC.copy} Nächste Woche</button>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <button style={{...s.secBtn,flex:1,minWidth:100,padding:"7px 10px",fontSize:12}} onClick={()=>loadTemplate(tmpl)}>{IC.copy} Diese Woche</button>
+                  <button style={{...s.secBtn,flex:1,minWidth:100,padding:"7px 10px",fontSize:12,borderColor:"#FF6B35",color:"#FF6B35"}} onClick={()=>loadTemplateNextWeek(tmpl)}>{IC.copy} Nächste Woche</button>
+                  <button style={{...s.secBtn,flex:1,minWidth:100,padding:"7px 10px",fontSize:12,borderColor:"rgba(76,201,240,0.4)",color:"#4CC9F0"}} onClick={()=>{setApplyTmpl(tmpl);setApplyDate(addDays(getMonday(new Date()),14).toISOString().split("T")[0]);}}>📅 Andere Woche…</button>
                 </div>
               </div>
             ))}
             <button style={{...s.secBtn,width:"100%",marginTop:8}} onClick={()=>setShowTemplates(false)}>Schließen</button>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Eintrag auf andere Tage kopieren */}
+      {dupInfo&&(
+        <Overlay onClick={e=>e.target===e.currentTarget&&setDupInfo(null)}>
+          <div style={{...s.modal,maxWidth:380}}>
+            <h3 style={{...s.modalTitle,fontSize:19,marginBottom:6}}>Eintrag kopieren</h3>
+            <div style={{fontSize:13,color:"#888",marginBottom:16}}>
+              „{(ENTRY_TYPES[dupInfo.entry.type]||ENTRY_TYPES.other).icon} {dupInfo.entry.type==="training"?(data.plans.find(p=>p.id===parseInt(dupInfo.entry.planId))?.name||"Training"):dupInfo.entry.mealPreset||dupInfo.entry.mealName||dupInfo.entry.stretchName||dupInfo.entry.title||"Eintrag"}" auf weitere Tage übernehmen:
+            </div>
+            <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
+              {WP_DAY_SHORT.map((d,i)=>(
+                <button key={i} disabled={i===dupInfo.dayIdx}
+                  onClick={()=>setDupDays(ds=>ds.includes(i)?ds.filter(x=>x!==i):[...ds,i])}
+                  style={{width:40,height:40,borderRadius:10,cursor:i===dupInfo.dayIdx?"default":"pointer",fontSize:12,fontWeight:800,fontFamily:"'DM Sans',sans-serif",transition:"all 0.15s",
+                    background:i===dupInfo.dayIdx?"rgba(255,255,255,0.03)":dupDays.includes(i)?"linear-gradient(135deg,#FF6B35,#FF8C5A)":"rgba(255,255,255,0.05)",
+                    border:dupDays.includes(i)?"1px solid #FF6B35":"1px solid rgba(255,255,255,0.1)",
+                    color:i===dupInfo.dayIdx?"#333":dupDays.includes(i)?"#fff":"#888",
+                    boxShadow:dupDays.includes(i)?"0 0 12px rgba(255,107,53,0.35)":"none"}}>{d}</button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button style={s.secBtn} onClick={()=>setDupInfo(null)}>Abbrechen</button>
+              <button style={{...s.primaryBtn,flex:1,opacity:dupDays.length?1:0.5}} disabled={!dupDays.length} onClick={()=>duplicateEntry(dupInfo.entry,dupDays)}>{IC.copy} Auf {dupDays.length||0} Tag{dupDays.length===1?"":"e"} kopieren</button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Vorlage auf beliebige Woche anwenden */}
+      {applyTmpl&&(
+        <Overlay onClick={e=>e.target===e.currentTarget&&setApplyTmpl(null)}>
+          <div style={{...s.modal,maxWidth:380}}>
+            <h3 style={{...s.modalTitle,fontSize:19,marginBottom:6}}>Vorlage anwenden</h3>
+            <div style={{fontSize:13,color:"#888",marginBottom:16}}>Wähle ein beliebiges Datum – „{applyTmpl.name}" wird auf die Woche angewendet, in der dieser Tag liegt.</div>
+            <input type="date" style={{...s.inp,marginBottom:8,colorScheme:"dark",textAlign:"center"}} value={applyDate} onChange={e=>setApplyDate(e.target.value)}/>
+            {applyDate&&<div style={{fontSize:12,fontWeight:700,color:"#4CC9F0",marginBottom:16,textAlign:"center"}}>→ Woche {fmtShort(getMonday(new Date(applyDate)))} – {fmtShort(addDays(getMonday(new Date(applyDate)),6))}</div>}
+            <div style={{display:"flex",gap:10}}>
+              <button style={s.secBtn} onClick={()=>setApplyTmpl(null)}>Abbrechen</button>
+              <button style={{...s.primaryBtn,flex:1,opacity:applyDate?1:0.5}} disabled={!applyDate} onClick={()=>loadTemplateToWeek(applyTmpl,applyDate)}>📅 Anwenden</button>
+            </div>
           </div>
         </Overlay>
       )}
