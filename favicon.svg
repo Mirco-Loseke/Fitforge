@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0D0D0F" />
+      <stop offset="100%" stop-color="#1A1A24" />
+    </linearGradient>
+
+    <!-- Glowing Blob 1 (Purple) -->
+    <radialGradient id="glowPurple" cx="10%" cy="90%" r="70%">
+      <stop offset="0%" stop-color="#A78BFA" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Glowing Blob 2 (Teal) -->
+    <radialGradient id="glowTeal" cx="90%" cy="10%" r="70%">
+      <stop offset="0%" stop-color="#00D9C0" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#00D9C0" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Bolt Gradient -->
+    <linearGradient id="boltGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B35" />
+      <stop offset="100%" stop-color="#FF8C60" />
+    </linearGradient>
+
+    <!-- Glass Border Gradient -->
+    <linearGradient id="glassBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.2" />
+      <stop offset="40%" stop-color="#ffffff" stop-opacity="0.05" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.15" />
+    </linearGradient>
+
+    <!-- Glow Effect for Bolt -->
+    <filter id="boltGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.2" />
+    </filter>
+  </defs>
+
+  <!-- Base Background -->
+  <rect width="32" height="32" rx="8" fill="url(#bgGrad)" />
+
+  <!-- Glow effects (matching the page background lights) -->
+  <rect width="32" height="32" rx="8" fill="url(#glowPurple)" />
+  <rect width="32" height="32" rx="8" fill="url(#glowTeal)" />
+
+  <!-- Glass Inner Border -->
+  <rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="none" stroke="url(#glassBorder)" stroke-width="1" />
+
+  <!-- Bolt Glow Shadow -->
+  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="#FF6B35" opacity="0.4" transform="translate(4, 4)" filter="url(#boltGlow)" />
+
+  <!-- Main Bolt -->
+  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="url(#boltGrad)" transform="translate(4, 4)" />
+</svg>

@@ -1,0 +1,7 @@
+{
+  "buildCommand": "npx --yes vite build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
