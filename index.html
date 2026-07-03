@@ -1663,7 +1663,15 @@ function FitForge(){
   const weightDoneToday = (data.weightHistory||[]).some(h=>h.date===checklistToday);
   const todaysMeals = nutrition[checklistToday]?.meals || [];
   const mealTypesDoneToday = CHECKIN_MEAL_TYPES.map(mt=>todaysMeals.some(m=>m.mealType===mt));
-  const trainingDoneToday = data.workouts.some(w=>w.date===checklistToday);
+  // Ein Training zählt für "Dehnen" wenn sein Plan mind. einen Mobility/Stretching-Typ hat,
+  // und für "Training absolviert" nur wenn es NICHT rein Mobility/Stretching ist. So werden
+  // ein reiner Dehn-/Mobility-Plan und ein "echtes" Training separat abgehakt.
+  const cIsStretchOnlyWorkout = w => {
+    const wp = data.plans.find(p => String(p.id) === String(w.planId));
+    const types = wp?.types || [];
+    return types.length>0 && types.every(t => t==="Mobility / Beweglichkeit" || t==="Stretching / Dehnen");
+  };
+  const trainingDoneToday = data.workouts.some(w=>w.date===checklistToday && !cIsStretchOnlyWorkout(w));
 
   const waterGoal = parseInt(user.waterGoal)||2500;
   const todayWaterLog = nutrition[checklistToday]?.waterLog || [];
