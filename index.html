@@ -282,12 +282,15 @@ const fbSet = async (key, value) => {
 // Erfordert passende Firestore Security Rules (siehe Doku/Chat).
 const upsertUserProfile = async (uid, user) => {
   if (!window.firebaseDb || !uid) return;
+  // E-Mail immer befüllen: das Profilformular-Feld kann leer sein, dann greift
+  // die echte Login-E-Mail aus Firebase Auth – sonst ist man nicht per E-Mail suchbar.
+  const email = ((user.email || "").trim()) || ((window.firebaseAuth?.currentUser?.email || "").trim());
   const profile = {
     uid,
     username: (user.username || "").trim(),
     usernameLower: (user.username || "").trim().toLowerCase(),
-    email: user.email || "",
-    emailLower: (user.email || "").trim().toLowerCase(),
+    email,
+    emailLower: email.toLowerCase(),
     firstName: user.firstName || "",
     lastName: user.lastName || "",
     firstNameLower: (user.firstName || "").trim().toLowerCase(),
@@ -6598,8 +6601,10 @@ function FriendsCard({user,notify}){
       const res=await searchUserProfiles(search,myUid);
       setResults(res);
       if(!res.length){
+        // Diagnose: zeige, welche durchsuchbaren Angaben die vorhandenen Profile haben.
+        if(window.dbg) allSnap.docs.forEach(d=>{const p=d.data()||{};dbg(`   • Profil: user="${p.username||"-"}" name="${((p.firstName||"")+" "+(p.lastName||"")).trim()||"-"}" mail="${p.email||"-"}"`, '#888');});
         if(total<=1) notify("Es ist noch niemand anderes in der Datenbank. Die andere Person muss die App einmal (online, nicht als lokale Datei) öffnen.","error");
-        else notify(`Niemanden gefunden (${total} Profile durchsucht)`,"error");
+        else notify(`Niemanden gefunden (${total} Profile durchsucht). Tipp: Die gesuchte Person braucht einen Benutzernamen oder muss ihr Profil einmal speichern.`,"error");
       }
     }catch(e){console.warn(e);notify(`Suche fehlgeschlagen: ${e.message}`,"error");}
     setSearching(false);
