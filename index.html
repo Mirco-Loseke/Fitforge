@@ -282,12 +282,15 @@ const fbSet = async (key, value) => {
 // Erfordert passende Firestore Security Rules (siehe Doku/Chat).
 const upsertUserProfile = async (uid, user) => {
   if (!window.firebaseDb || !uid) return;
+  // E-Mail immer befüllen: das Profilformular-Feld kann leer sein, dann greift
+  // die echte Login-E-Mail aus Firebase Auth – sonst ist man nicht per E-Mail suchbar.
+  const email = ((user.email || "").trim()) || ((window.firebaseAuth?.currentUser?.email || "").trim());
   const profile = {
     uid,
     username: (user.username || "").trim(),
     usernameLower: (user.username || "").trim().toLowerCase(),
-    email: user.email || "",
-    emailLower: (user.email || "").trim().toLowerCase(),
+    email,
+    emailLower: email.toLowerCase(),
     firstName: user.firstName || "",
     lastName: user.lastName || "",
     firstNameLower: (user.firstName || "").trim().toLowerCase(),
@@ -334,10 +337,29 @@ const sendFriendRequest = async (myUid, myProfile, otherProfile) => {
   });
 };
 
+const getUserProfile = async (uid) => {
+  if (!window.firebaseDb || !uid) return null;
+  try {
+    const snap = await window.firebaseDoc(window.firebaseDb, "userProfiles", uid).get();
+    if (!snap.exists) return null;
+    return snap.data();
+  } catch (e) { return null; }
+};
+
 const getIncomingRequests = async (myUid) => {
   if (!window.firebaseDb || !myUid) return [];
   const snap = await window.firebaseDoc(window.firebaseDb, "friendRequests").where("to", "==", myUid).where("status", "==", "pending").get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const reqs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Aktuelles Profil der anfragenden Person nachladen, damit Name & E-Mail
+  // auch für ältere Anfragen (die nur fromUsername/fromEmail gespeichert haben) da sind.
+  await Promise.all(reqs.map(async r => {
+    const prof = await getUserProfile(r.from);
+    const fullName = prof ? `${prof.firstName || ""} ${prof.lastName || ""}`.trim() : "";
+    r.displayUsername = (prof && prof.username) || r.fromUsername || "";
+    r.displayName = fullName;
+    r.displayEmail = (prof && prof.email) || r.fromEmail || "";
+  }));
+  return reqs;
 };
 
 const getOutgoingRequests = async (myUid) => {
@@ -363,6 +385,33 @@ const acceptFriendRequest = async (reqId) => {
 
 const removeFriendRequest = async (reqId) => {
   await window.firebaseDoc(window.firebaseDb, "friendRequests", reqId).delete();
+};
+
+// ── Teilen: Trainings-/Wochenpläne an Freunde senden ───────────────────────
+// Landet in der Collection "sharedItems"; der Empfänger sieht sie oben in den
+// Benachrichtigungen und kann sie importieren.
+const shareItemWithFriends = async (fromUid, fromProfile, friendUids, type, itemName, payload) => {
+  const fromName = (fromProfile && (fromProfile.username
+    || `${fromProfile.firstName || ""} ${fromProfile.lastName || ""}`.trim()
+    || fromProfile.email)) || "Ein Freund";
+  await Promise.all((friendUids || []).map(to => {
+    const id = `${fromUid}_${to}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    return window.firebaseDoc(window.firebaseDb, "sharedItems", id).set({
+      from: fromUid, to, fromName, type, itemName: itemName || "", payload, status: "pending", createdAt: Date.now()
+    });
+  }));
+};
+
+const getIncomingSharedItems = async (myUid) => {
+  if (!window.firebaseDb || !myUid) return [];
+  try {
+    const snap = await window.firebaseDoc(window.firebaseDb, "sharedItems").where("to", "==", myUid).where("status", "==", "pending").get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  } catch (e) { console.warn("getIncomingSharedItems:", e.message); return []; }
+};
+
+const dismissSharedItem = async (id) => {
+  try { await window.firebaseDoc(window.firebaseDb, "sharedItems", id).delete(); } catch (e) { console.warn("dismissSharedItem:", e.message); }
 };
 
 // ── Einladen per Link: ?ref=<uid> wird beim ersten Laden gemerkt und, sobald
@@ -590,7 +639,8 @@ const IC={
   alert:<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
   ruler:<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M3 13V5a2 2 0 012-2h14a2 2 0 012 2v8M3 13h18M3 13v6a2 2 0 002 2h14a2 2 0 002-2v-6M7 13v-3M11 13v-3M15 13v-3M19 13v-3"/></svg>,
   arrowLeft:<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5m7 7l-7-7 7-7"/></svg>,
-  timer:<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M12 2v3M20 7l-2 2M4 7l2 2"/></svg>
+  timer:<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M12 2v3M20 7l-2 2M4 7l2 2"/></svg>,
+  share:<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
 };
 
 let audioCtx = null;
@@ -1260,6 +1310,8 @@ function FitForge(){
   const [selWO,setSelWO]=useState(null);
   const [notifs,setNotifs]=useState(()=>{try{return JSON.parse(localStorage.getItem("ff_notifs")||"[]");}catch{return[];}});
   const [dismissedNotifIds]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem("ff_notif_dismissed")||"[]"));}catch{return new Set();}});
+  const [sharedInbox,setSharedInbox]=useState([]);
+  const [shareModalItem,setShareModalItem]=useState(null);
   const [profileOpen,setProfileOpen]=useState(false);
   const [friendsExpanded,setFriendsExpanded]=useState(false);
   const [notifOpen,setNotifOpen]=useState(false);
@@ -2161,13 +2213,26 @@ function FitForge(){
       const libUnsub = window.firebaseOnSnapshot(libRef, (snap) => {
         if (cancelled) return;
         if (snap.exists) {
-            const libVal = snap.data().value;
+            const libVal = snap.data().value || [];
             const libStr = JSON.stringify(libVal);
             if (libStr !== lastSyncRef.current["library"]) {
-              if (window.dbg) dbg('📚 Gemeinsame Bibliothek geladen', '#0ff');
-              localStorage.setItem("ff_library", libStr);
+              if (window.dbg) dbg('📚 Gemeinsame Bibliothek empfangen – wird zusammengeführt', '#0ff');
+              // NICHT blind überschreiben: lokale (noch nicht synchronisierte) Übungen
+              // bewahren, gelöschte per Tombstone ausschließen, bei Konflikt die
+              // neuere Version (per _m Zeitstempel) nehmen.
+              setLibrary(prevLocal => {
+                let deleted; try { deleted = new Set(JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]")); } catch(e){ deleted = new Set(); }
+                const pick = (a,b) => (((b&&b._m)||0) >= ((a&&a._m)||0) ? b : a);
+                const byId = new Map();
+                libVal.forEach(ex => { if(ex&&ex.id!=null&&!deleted.has(ex.id)) byId.set(ex.id, ex); });
+                (prevLocal||[]).forEach(ex => { if(!ex||ex.id==null||deleted.has(ex.id)) return; byId.set(ex.id, byId.has(ex.id)?pick(byId.get(ex.id),ex):ex); });
+                const merged = [...byId.values()];
+                localStorage.setItem("ff_library", JSON.stringify(merged));
+                return merged;
+              });
+              // Cloud-Stand als Basis merken; falls das Merge lokale Zusätze enthält,
+              // erkennt der Sync-Effekt die Differenz und schiebt die Vereinigung hoch.
               lastSyncRef.current["library"] = libStr;
-              setLibrary(libVal);
             }
         }
         if (!loaded && fbUser) {
@@ -2319,17 +2384,42 @@ function FitForge(){
   useEffect(() => { syncToCloud("user", user); }, [user, loaded]);
   useEffect(() => { syncToCloud("prs", prs); }, [prs, loaded]);
   useEffect(() => { syncToCloud("nutrition", nutrition); }, [nutrition, loaded]);
-  useEffect(() => { 
+  useEffect(() => {
     // Library sync is shared
     if (!authUser || !loaded) return;
     const valStr = JSON.stringify(library);
     if (valStr === lastSyncRef.current["library"]) return;
     clearTimeout(debRef.current["library"]);
-    debRef.current["library"] = setTimeout(() => {
+    debRef.current["library"] = setTimeout(async () => {
       if (window.dbg) dbg(`📤 Synchronisiere shared library...`, '#0ff');
-      window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: library }).then(() => {
-        lastSyncRef.current["library"] = valStr;
-      });
+      // WICHTIG: Große base64-Bilder rausfiltern, sonst sprengt das gemeinsame
+      // Library-Dokument das 1-MB-Limit von Firestore und der Schreibvorgang
+      // schlägt komplett fehl (= Übungen gehen verloren).
+      const cleanedLib = stripBase64(library, "library");
+      const cleanedStr = JSON.stringify(cleanedLib);
+      const sizeKB = cleanedStr.length / 1024;
+      if (sizeKB > 950) {
+        if (window.dbg) dbg(`⚠️ Library zu groß (${sizeKB.toFixed(0)} KB) – Speichern könnte fehlschlagen!`, '#f55');
+        showToast(`Achtung: Deine Übungsbibliothek ist sehr groß (${sizeKB.toFixed(0)} KB). Bitte weniger/kleinere Bilder verwenden, sonst kann nicht gespeichert werden.`, "error");
+      }
+      try {
+        await window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: cleanedLib });
+        // Auf echte Server-Bestätigung warten (Offline-Persistenz meldet sonst
+        // schon "fertig", wenn nur lokal gespeichert wurde).
+        try {
+          await Promise.race([
+            window.firebaseDb.waitForPendingWrites(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 12000))
+          ]);
+          lastSyncRef.current["library"] = valStr;
+          if (window.dbg) dbg(`✅ Library auf Server bestätigt`, '#0f0');
+        } catch (e) {
+          if (window.dbg) dbg(`⏳ Library noch nicht zum Server bestätigt (Verbindung/Warteschlange)`, '#fa0');
+        }
+      } catch (e) {
+        if (window.dbg) dbg(`❌ Library-Speichern fehlgeschlagen: ${e.message}`, '#f55');
+        showToast(`Übungen konnten nicht online gespeichert werden: ${e.message}`, "error");
+      }
     }, 500);
   }, [library, loaded]);
   useEffect(() => { syncToCloud("weekPlans", weekPlans); }, [weekPlans, loaded]);
@@ -2344,13 +2434,49 @@ function FitForge(){
     if(newOnes.length) setNotifs(n=>[...newOnes,...n].slice(0,30));
   },[weekPlans,data.plans.length]);
 
-  const unread=notifs.filter(n=>!n.read).length;
+  const unread=notifs.filter(n=>!n.read).length + sharedInbox.length;
   const markAll=()=>setNotifs(n=>n.map(x=>({...x,read:true})));
   const markRead=id=>setNotifs(n=>n.map(x=>x.id===id?{...x,read:true}:x));
   const delNotif=id=>{
     setNotifs(n=>n.filter(x=>x.id!==id));
     dismissedNotifIds.add(id);
     localStorage.setItem("ff_notif_dismissed",JSON.stringify([...dismissedNotifIds]));
+  };
+
+  // ── Geteilte Pläne (von Freunden) laden & importieren ─────────────────────
+  const reloadSharedInbox=async()=>{
+    if(!authUser)return;
+    const items=await getIncomingSharedItems(authUser.uid);
+    setSharedInbox(items);
+  };
+  useEffect(()=>{ if(loaded&&authUser) reloadSharedInbox(); },[loaded,authUser]);
+  // Zum Teilen aus Plans/Wochenplan heraus: öffnet den Freunde-Auswahl-Dialog
+  window.ffShareItem=(item)=>setShareModalItem(item);
+
+  const importSharedItem=async(item)=>{
+    try{
+      if(item.type==="plan"){
+        const p=item.payload||{};
+        const newPlan={...p,id:Date.now(),name:p.name||item.itemName||"Geteilter Plan",exercises:p.exercises||[],days:p.days||[],muscles:p.muscles||[],types:p.types||[],color:p.color||"#FF6B35"};
+        setData(d=>({...d,plans:[...(d.plans||[]),newPlan]}));
+        showToast(`Trainingsplan „${newPlan.name}" übernommen! 💪`);
+      }else if(item.type==="weekplan"){
+        const entries=(item.payload&&item.payload.entries)||item.payload||{};
+        const name=item.itemName||"Geteilter Wochenplan";
+        if(window.ffAddWeekTemplate){window.ffAddWeekTemplate(name,entries);}
+        else{
+          try{const cur=JSON.parse(localStorage.getItem("ff_wptemplates")||"[]");cur.push({id:Math.random().toString(36).slice(2,9),name,entries,savedAt:Date.now(),favorite:true});localStorage.setItem("ff_wptemplates",JSON.stringify(cur));}catch(e){}
+        }
+        showToast(`Wochenplan „${name}" zu deinen Vorlagen hinzugefügt! 📅`);
+      }
+      await dismissSharedItem(item.id);
+      setSharedInbox(inb=>inb.filter(x=>x.id!==item.id));
+    }catch(e){showToast(`Import fehlgeschlagen: ${e.message}`,"error");}
+  };
+
+  const dismissSharedInboxItem=async(item)=>{
+    await dismissSharedItem(item.id);
+    setSharedInbox(inb=>inb.filter(x=>x.id!==item.id));
   };
 
   // ── Migration: Ausdauertraining -> Entspannung ──────────────────────────
@@ -2672,13 +2798,28 @@ function FitForge(){
           <div style={{display:"flex",alignItems:"center",gap:12, flexShrink: 0}}>
             {!isMobile && <span style={{fontSize:13,fontWeight:600,color:"#F0EDE8",whiteSpace:"nowrap"}}>{clkStr}</span>}
             <div style={{position:"relative"}}>
-              <button className="iconBtn" style={{...s.iconCircle,...(notifOpen?s.iconOn:{})}} onClick={()=>{setNotifOpen(o=>!o);setProfileOpen(false);}}>
+              <button className="iconBtn" style={{...s.iconCircle,...(notifOpen?s.iconOn:{})}} onClick={()=>{const willOpen=!notifOpen;setNotifOpen(o=>!o);setProfileOpen(false);if(willOpen)reloadSharedInbox();}}>
                 {IC.bell}{unread>0&&<span style={s.badge}>{unread}</span>}
               </button>
               {notifOpen&&<div style={{...s.dropdown, background: "#16161A", backdropFilter: "none", WebkitBackdropFilter: "none", border: "1px solid #1E1E24", width: isMobile ? "280px" : 350, right: isMobile ? "-16px" : 0}} className="dropIn" onClick={e=>e.stopPropagation()}>
                 <div style={s.ddHead}><span style={s.ddTitle}>Benachrichtigungen</span>{unread>0&&<button className="markAllBtn" onClick={markAll}>Alle lesen</button>}</div>
                 <div style={{maxHeight:320,overflowY:"auto"}}>
-                  {!notifs.length&&<div style={{padding:"36px 18px",textAlign:"center",color:"#555",fontSize:13}}>Alles erledigt 🎉</div>}
+                  {sharedInbox.map(item=>(
+                    <div key={item.id} style={{padding:"12px 16px",borderBottom:"1px solid #1E1E24",background:"rgba(255,107,53,0.05)"}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                        <div style={{width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,background:"#1A1A1F"}}>📤</div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:12}}>{item.fromName||"Ein Freund"} hat dir {item.type==="plan"?"einen Trainingsplan":"einen Wochenplan"} geteilt</div>
+                          <div style={{color:"#FF6B35",fontSize:12,fontWeight:700,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.itemName}</div>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:8,marginTop:10}}>
+                        <button style={{...s.primaryBtn,flex:1,justifyContent:"center",padding:"7px 10px",fontSize:12}} onClick={()=>importSharedItem(item)}>Übernehmen</button>
+                        <button style={{...s.secBtn,padding:"7px 12px",fontSize:12}} onClick={()=>dismissSharedInboxItem(item)}>Verwerfen</button>
+                      </div>
+                    </div>
+                  ))}
+                  {!notifs.length&&!sharedInbox.length&&<div style={{padding:"36px 18px",textAlign:"center",color:"#555",fontSize:13}}>Alles erledigt 🎉</div>}
                   {notifs.map(n=>(<div key={n.id} style={{...s.nRow,...(n.read?{}:s.nRowU)}} className="notifRow" onClick={()=>markRead(n.id)}>
                     <div style={{width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,background:"#1A1A1F"}}>{{training:"💪",reminder:"📅",warning:"⚠️",achievement:"🏆",meal:"🍽️"}[n.type]||"🔔"}</div>
                     <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:12}}>{n.title}</div><div style={{color:"#888",fontSize:11,marginTop:2}}>{n.body}</div><div style={{color:"#555",fontSize:10,marginTop:2}}>{timeAgo(n.ts)}</div></div>
@@ -2726,6 +2867,7 @@ function FitForge(){
         {(profileOpen||notifOpen)&&<div style={s.veil} onClick={closeAll}/>}
         {toast&&<div style={{...s.toast, cursor:"pointer", ...(toast.type==="error"?s.toastErr:{})}} onClick={()=>setToast(null)} className="dropIn">{toast.type==="success"?IC.check:IC.x} {toast.msg}</div>}
         {undoConfirmItem&&<UndoConfirmModal item={undoConfirmItem} onConfirm={()=>undoChecklistItem(undoConfirmItem)} onCancel={()=>setUndoConfirmItem(null)}/>}
+        {shareModalItem&&<ShareWithFriendsModal item={shareModalItem} user={user} notify={showToast} onClose={()=>setShareModalItem(null)}/>}
         <div key={animK} className="pageEnter">
           {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday}/>}
           {view==="plans"&&<Plans data={data} setData={setData} onNew={()=>setPlanModal(true)} onEdit={p=>{setEditPlan(p);setPlanModal(true);}} notify={showToast} library={library}/>}
@@ -3944,7 +4086,7 @@ function Plans({data,setData,onNew,onEdit,notify}){
         <span style={{fontSize:10,fontWeight:800,color:plan.color,background:plan.color+"18",border:`1px solid ${plan.color}30`,borderRadius:8,padding:"3px 9px"}}>🏋️ {exs.length} Übungen</span>
         <span style={{fontSize:10,fontWeight:800,color:"#06D6A0",background:"rgba(6,214,160,0.1)",border:"1px solid rgba(6,214,160,0.25)",borderRadius:8,padding:"3px 9px"}}>✓ {n}x absolviert</span>
       </div>);})()}
-      <div style={{position:"absolute",top:13,right:13,display:"flex",gap:5}}><button className="cardIconBtn" style={{...s.cardIconBtn, color:"#ccc", filter:"drop-shadow(0 0 6px rgba(255,255,255,0.5))"}} onClick={()=>onEdit({...plan,exercises:exs})}>{IC.edit}</button><button className="cardIconBtn" style={{...s.cardIconBtn, color:"#EF476F", filter:"drop-shadow(0 0 6px rgba(239,71,111,0.8))"}} onClick={()=>del(plan.id)}>{IC.trash}</button></div>
+      <div style={{position:"absolute",top:13,right:13,display:"flex",gap:5}}><button className="cardIconBtn" title="Mit Freunden teilen" style={{...s.cardIconBtn, color:"#4CC9F0", filter:"drop-shadow(0 0 6px rgba(76,201,240,0.6))"}} onClick={()=>window.ffShareItem&&window.ffShareItem({type:"plan",name:plan.name,payload:{...plan,exercises:exs}})}>{IC.share}</button><button className="cardIconBtn" style={{...s.cardIconBtn, color:"#ccc", filter:"drop-shadow(0 0 6px rgba(255,255,255,0.5))"}} onClick={()=>onEdit({...plan,exercises:exs})}>{IC.edit}</button><button className="cardIconBtn" style={{...s.cardIconBtn, color:"#EF476F", filter:"drop-shadow(0 0 6px rgba(239,71,111,0.8))"}} onClick={()=>del(plan.id)}>{IC.trash}</button></div>
     </div>);})}
     <div style={{...s.newPlanCard,justifyContent:"center",minHeight:180}} onClick={onNew} className="planCard newPlanCard"><div className="newPlanIcon" style={{width:52,height:52,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,107,53,0.08)",border:"1px dashed rgba(255,107,53,0.35)",color:"#FF6B35",transition:"all 0.25s"}}>{IC.plus}</div><span style={{color:"#888",fontSize:13,fontWeight:700}}>Neuen Plan erstellen</span></div></div>
   </div>);}
@@ -6557,6 +6699,87 @@ function PhotoDetailModal({photo, onClose, isMobile}) {
   );
 }
 
+function ShareWithFriendsModal({item,user,onClose,notify}){
+  const myUid=getUid();
+  const [friends,setFriends]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selected,setSelected]=useState(()=>new Set());
+  const [sharing,setSharing]=useState(false);
+
+  useEffect(()=>{
+    getFriends(myUid).then(fr=>{
+      // Doppelte (falls beidseitige Datensätze) nach uid deduplizieren
+      const seen=new Map();
+      fr.forEach(f=>{if(!seen.has(f.uid))seen.set(f.uid,f);});
+      setFriends([...seen.values()]);
+      setLoading(false);
+    }).catch(()=>{setLoading(false);});
+  },[]);
+
+  const toggle=uid=>setSelected(s=>{const n=new Set(s);n.has(uid)?n.delete(uid):n.add(uid);return n;});
+
+  const doShare=async()=>{
+    if(!selected.size)return;
+    setSharing(true);
+    try{
+      const myProfile=await upsertUserProfile(myUid,user).catch(()=>({username:user.username,firstName:user.firstName,lastName:user.lastName,email:user.email}));
+      await shareItemWithFriends(myUid,myProfile,[...selected],item.type,item.name,item.payload);
+      // WICHTIG: Mit aktivierter Offline-Persistenz gilt ein Schreibvorgang schon
+      // als "fertig", sobald er lokal gespeichert ist – nicht wenn er den Server
+      // erreicht. Deshalb warten wir explizit auf die Server-Bestätigung, damit der
+      // Empfänger das Geteilte auch wirklich bekommt (sonst hängt es nur lokal fest).
+      let confirmed=true;
+      try{
+        await Promise.race([
+          window.firebaseDb.waitForPendingWrites(),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),9000))
+        ]);
+      }catch(e){confirmed=false;}
+      if(confirmed){
+        notify(`„${item.name}" mit ${selected.size} Freund${selected.size===1?"":"en"} geteilt! 📤`);
+      }else{
+        notify("Teilen lokal gespeichert, aber noch nicht zum Server gesendet (Verbindung/Warteschlange). Es wird nachgesendet, sobald die Verbindung frei ist.","error");
+      }
+      onClose();
+    }catch(e){notify(`Teilen fehlgeschlagen: ${e.message}`,"error");setSharing(false);}
+  };
+
+  const typeLabel=item.type==="plan"?"Trainingsplan":"Wochenplan";
+
+  return(
+    <Overlay onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{...s.modal,maxWidth:420,maxHeight:"80vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <h3 style={{...s.modalTitle,fontSize:19,margin:0}}>{IC.share} Teilen</h3>
+          <button style={{background:"transparent",border:"none",color:"#666",cursor:"pointer",display:"flex"}} onClick={onClose}>{IC.x}</button>
+        </div>
+        <p style={{fontSize:13,color:"#888",marginBottom:16}}>{typeLabel} „<span style={{color:"#F0EDE8",fontWeight:700}}>{item.name}</span>" mit Freunden teilen:</p>
+        {loading?<div style={{color:"#666",fontSize:13,textAlign:"center",padding:"24px 0"}}>Freunde werden geladen…</div>:
+          friends.length===0?<div style={{color:"#666",fontSize:13,textAlign:"center",padding:"24px 0",fontStyle:"italic"}}>Du hast noch keine Freunde. Füge zuerst über „Freunde" jemanden hinzu.</div>:
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+            {friends.map(f=>{
+              const sel=selected.has(f.uid);
+              return(
+                <button key={f.uid} onClick={()=>toggle(f.uid)} style={{display:"flex",alignItems:"center",gap:10,background:sel?"rgba(255,107,53,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${sel?"#FF6B35":"rgba(255,255,255,0.08)"}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",textAlign:"left",width:"100%"}}>
+                  <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${sel?"#FF6B35":"#444"}`,background:sel?"#FF6B35":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fff"}}>{sel&&IC.check}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:13,color:"#F0EDE8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.username||f.email||"Freund"}</div>
+                    {f.username&&f.email&&<div style={{fontSize:11,color:"#888",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.email}</div>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        }
+        <div style={{display:"flex",gap:10}}>
+          <button style={{...s.secBtn,flex:1}} onClick={onClose}>Abbrechen</button>
+          <button style={{...s.primaryBtn,flex:1,justifyContent:"center",opacity:(!selected.size||sharing)?0.5:1}} disabled={!selected.size||sharing} onClick={doShare}>{sharing?"Teilt…":`Teilen${selected.size?` (${selected.size})`:""}`}</button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
 function FriendsCard({user,notify}){
   const myUid=getUid();
   const [search,setSearch]=useState("");
@@ -6598,8 +6821,10 @@ function FriendsCard({user,notify}){
       const res=await searchUserProfiles(search,myUid);
       setResults(res);
       if(!res.length){
+        // Diagnose: zeige, welche durchsuchbaren Angaben die vorhandenen Profile haben.
+        if(window.dbg) allSnap.docs.forEach(d=>{const p=d.data()||{};dbg(`   • Profil: user="${p.username||"-"}" name="${((p.firstName||"")+" "+(p.lastName||"")).trim()||"-"}" mail="${p.email||"-"}"`, '#888');});
         if(total<=1) notify("Es ist noch niemand anderes in der Datenbank. Die andere Person muss die App einmal (online, nicht als lokale Datei) öffnen.","error");
-        else notify(`Niemanden gefunden (${total} Profile durchsucht)`,"error");
+        else notify(`Niemanden gefunden (${total} Profile durchsucht). Tipp: Die gesuchte Person braucht einen Benutzernamen oder muss ihr Profil einmal speichern.`,"error");
       }
     }catch(e){console.warn(e);notify(`Suche fehlgeschlagen: ${e.message}`,"error");}
     setSearching(false);
@@ -6671,13 +6896,22 @@ function FriendsCard({user,notify}){
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Anfragen ({incoming.length})</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {incoming.map(r=>(
+            {incoming.map(r=>{
+              const primary=r.displayUsername||r.displayName||r.fromUsername||r.displayEmail||r.fromEmail||"Unbekannt";
+              const secondaryParts=[];
+              if(r.displayName&&r.displayName!==primary) secondaryParts.push(r.displayName);
+              const mail=r.displayEmail||r.fromEmail;
+              if(mail&&mail!==primary) secondaryParts.push(mail);
+              return(
               <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,183,3,0.06)",border:"1px solid rgba(255,183,3,0.25)",borderRadius:10,padding:"10px 14px"}}>
-                <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:13}}>{r.fromUsername||r.fromEmail}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{primary}</div>
+                  {secondaryParts.length>0&&<div style={{fontSize:11,color:"#888",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{secondaryParts.join(" · ")}</div>}
+                </div>
                 <button style={{...s.primaryBtn,padding:"6px 12px",fontSize:12}} onClick={()=>accept(r)}>Annehmen</button>
                 <button style={{background:"transparent",border:"none",color:"#666",cursor:"pointer",padding:6}} onClick={()=>decline(r)}>{IC.x}</button>
               </div>
-            ))}
+            );})}
           </div>
         </div>
       )}
@@ -7549,10 +7783,15 @@ function LibraryPage({library,setLibrary,notify}){
   const [equipModalEx, setEquipModalEx] = useState(null);
   const [descModalEx, setDescModalEx] = useState(null);
 
-  const delEx=id=>{setLibrary(l=>l.filter(e=>e.id!==id));notify("Übung gelöscht");};
+  const delEx=id=>{
+    // Tombstone merken, damit ein veralteter Cloud-Snapshot die Löschung nicht rückgängig macht
+    try{const t=JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]");if(!t.includes(id)){t.push(id);localStorage.setItem("ff_lib_deleted",JSON.stringify(t.slice(-500)));}}catch(e){}
+    setLibrary(l=>l.filter(e=>e.id!==id));notify("Übung gelöscht");
+  };
   const saveEx=ex=>{
-    if(editEx){setLibrary(l=>l.map(e=>e.id===editEx.id?{...editEx,...ex}:e));notify("Übung aktualisiert ✏️");}
-    else{setLibrary(l=>[...l,{...ex,id:Date.now()}]);notify("Übung gespeichert! 💪");}
+    // _m = Zuletzt-geändert-Zeitstempel, damit beim Zusammenführen die neuere Version gewinnt
+    if(editEx){setLibrary(l=>l.map(e=>e.id===editEx.id?{...editEx,...ex,_m:Date.now()}:e));notify("Übung aktualisiert ✏️");}
+    else{setLibrary(l=>[...l,{...ex,id:Date.now(),_m:Date.now()}]);notify("Übung gespeichert! 💪");}
     setShowForm(false);setEditEx(null);
   };
 
@@ -7628,7 +7867,7 @@ function LibraryPage({library,setLibrary,notify}){
         <EquipmentPickerModal 
           exercise={equipModalEx} 
           onSave={(items) => {
-            setLibrary(l => l.map(e => e.id === equipModalEx.id ? { ...e, equipment: items } : e));
+            setLibrary(l => l.map(e => e.id === equipModalEx.id ? { ...e, equipment: items, _m: Date.now() } : e));
             setEquipModalEx(null);
             notify("Geräte aktualisiert! ⚙️");
           }} 
@@ -7647,7 +7886,7 @@ function LibraryPage({library,setLibrary,notify}){
         <DescriptionEditModal 
           exercise={descModalEx} 
           onSave={(desc) => {
-            setLibrary(l => l.map(e => e.id === descModalEx.id ? { ...e, description: desc } : e));
+            setLibrary(l => l.map(e => e.id === descModalEx.id ? { ...e, description: desc, _m: Date.now() } : e));
             setDescModalEx(null);
             notify("Beschreibung aktualisiert! 📝");
           }} 
@@ -8118,6 +8357,11 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
 
   const [magicModal, setMagicModal] = useState(false);
   window.showMagicModal = () => setMagicModal(true);
+  // Import geteilter Wochenpläne in die lokalen Vorlagen (von der Benachrichtigung aus)
+  useEffect(()=>{
+    window.ffAddWeekTemplate=(name,entries)=>setTemplates(t=>[...t,{id:uid(),name,entries:entries||{},savedAt:Date.now(),favorite:true}]);
+    return ()=>{if(window.ffAddWeekTemplate)delete window.ffAddWeekTemplate;};
+  },[]);
 
   const weekKey=currentMonday.toISOString().split("T")[0];
   const weekData=weekPlans[weekKey]||{entries:{}};// entries: {dayIndex: [entry,...]}
@@ -8551,6 +8795,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                       {Object.values(tmpl.entries).flat().length} Einträge · Gespeichert {new Date(tmpl.savedAt).toLocaleDateString("de-DE")}
                     </div>
                   </div>
+                  <button title="Mit Freunden teilen" style={{...s.cardIconBtn, color:"#4CC9F0", filter:"drop-shadow(0 0 6px rgba(76,201,240,0.6))"}} className="cardIconBtn" onClick={()=>window.ffShareItem&&window.ffShareItem({type:"weekplan",name:tmpl.name,payload:{entries:tmpl.entries}})}>{IC.share}</button>
                   <button style={{...s.cardIconBtn, color:"#EF476F", filter:"drop-shadow(0 0 6px rgba(239,71,111,0.8))"}} className="cardIconBtn" onClick={()=>deleteTemplate(tmpl.id)}>{IC.trash}</button>
                 </div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
