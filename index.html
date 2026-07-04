@@ -366,6 +366,54 @@ const removeFriendRequest = async (reqId) => {
   await window.firebaseDoc(window.firebaseDb, "friendRequests", reqId).delete();
 };
 
+// ── Einladen per Link: ?ref=<uid> wird beim ersten Laden gemerkt und, sobald
+// der neue Nutzer eingeloggt ist, in eine Freundschaftsanfrage umgewandelt.
+const REF_STORAGE_KEY = "ff_pending_ref";
+
+const captureReferralFromUrl = () => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (!ref) return;
+    localStorage.setItem(REF_STORAGE_KEY, ref);
+    params.delete("ref");
+    const query = params.toString();
+    const newUrl = window.location.pathname + (query ? `?${query}` : "") + window.location.hash;
+    window.history.replaceState({}, "", newUrl);
+  } catch (e) {}
+};
+captureReferralFromUrl();
+
+const processPendingReferral = async (myUid, myProfile) => {
+  const refUid = localStorage.getItem(REF_STORAGE_KEY);
+  if (!refUid || refUid === myUid) { localStorage.removeItem(REF_STORAGE_KEY); return null; }
+  try {
+    const refSnap = await window.firebaseDoc(window.firebaseDb, "userProfiles", refUid).get();
+    if (!refSnap.exists) { localStorage.removeItem(REF_STORAGE_KEY); return null; }
+    const refProfile = refSnap.data();
+
+    // Der Einladende hat mir schon eine Anfrage geschickt? Dann direkt annehmen.
+    const incomingFromRef = await window.firebaseDoc(window.firebaseDb, "friendRequests", friendReqId(refUid, myUid)).get();
+    if (incomingFromRef.exists && incomingFromRef.data().status === "pending") {
+      await acceptFriendRequest(friendReqId(refUid, myUid));
+      localStorage.removeItem(REF_STORAGE_KEY);
+      return { type: "accepted", profile: refProfile };
+    }
+
+    // Schon eine Beziehung in die andere Richtung (Anfrage von mir oder Freunde)? Nichts tun.
+    const mineToRef = await window.firebaseDoc(window.firebaseDb, "friendRequests", friendReqId(myUid, refUid)).get();
+    if (mineToRef.exists) { localStorage.removeItem(REF_STORAGE_KEY); return null; }
+
+    await sendFriendRequest(myUid, myProfile, refProfile);
+    localStorage.removeItem(REF_STORAGE_KEY);
+    return { type: "requested", profile: refProfile };
+  } catch (e) {
+    console.warn("processPendingReferral:", e.message);
+    localStorage.removeItem(REF_STORAGE_KEY);
+    return null;
+  }
+};
+
 // Firebase Storage upload – returns download URL (falls back to base64)
 const uploadToStorage = async (file, path) => {
   try {
@@ -1859,7 +1907,13 @@ function FitForge(){
   // einen auch finden können, ohne dass man extra im Profil auf Speichern klicken muss.
   useEffect(()=>{
     if(!loaded || !authUser) return;
-    upsertUserProfile(authUser.uid, {...user, email: user.email || authUser.email || ""}).catch(e=>console.warn("upsertUserProfile (auto):",e.message));
+    (async()=>{
+      const profile = await upsertUserProfile(authUser.uid, {...user, email: user.email || authUser.email || ""}).catch(e=>{console.warn("upsertUserProfile (auto):",e.message);return null;});
+      if(!profile) return;
+      const result = await processPendingReferral(authUser.uid, profile).catch(()=>null);
+      if(result?.type==="requested") showToast(`Freundschaftsanfrage an ${result.profile.username||result.profile.email} gesendet! 🤝`);
+      if(result?.type==="accepted") showToast(`Du bist jetzt mit ${result.profile.username||result.profile.email} befreundet! 🎉`);
+    })();
   }, [loaded, authUser, user.username, user.email, user.firstName, user.lastName]);
 
   // Data is loaded from LocalStorage immediately to show something to the user.
@@ -6540,7 +6594,7 @@ function FriendsCard({user,notify}){
   };
 
   const invite=async()=>{
-    const url=window.location.origin;
+    const url=`${window.location.origin}${window.location.pathname}?ref=${myUid}`;
     const text=`Komm auf FitForge trainieren! ${url}`;
     if(navigator.share){
       try{await navigator.share({title:"FitForge",text,url});return;}
