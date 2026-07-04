@@ -1247,6 +1247,8 @@ function FitForge(){
   const [favFoods,setFavFoods]=useState([]);
   
   const [authUser,setAuthUser]=useState(null);
+  const profileSyncTimerRef=useRef(null);
+  const profileSyncKeyRef=useRef(null);
   const [isMobile,setIsMobile]=useState(window.innerWidth<=1024);
   const [sidebarOpen,setSidebarOpen]=useState(window.innerWidth>1024);
 
@@ -1905,15 +1907,28 @@ function FitForge(){
 
   // Öffentliches Profil (userProfiles) automatisch aktuell halten, damit Freunde
   // einen auch finden können, ohne dass man extra im Profil auf Speichern klicken muss.
+  // Debounced + dedupliziert, damit das nicht bei jedem Render/Sync erneut schreibt
+  // (sonst können sich bei wackliger Verbindung Firestore-Writes aufstauen).
   useEffect(()=>{
     if(!loaded || !authUser) return;
-    (async()=>{
-      const profile = await upsertUserProfile(authUser.uid, {...user, email: user.email || authUser.email || ""}).catch(e=>{console.warn("upsertUserProfile (auto):",e.message);return null;});
-      if(!profile) return;
-      const result = await processPendingReferral(authUser.uid, profile).catch(()=>null);
-      if(result?.type==="requested") showToast(`Freundschaftsanfrage an ${result.profile.username||result.profile.email} gesendet! 🤝`);
-      if(result?.type==="accepted") showToast(`Du bist jetzt mit ${result.profile.username||result.profile.email} befreundet! 🎉`);
-    })();
+    const key = JSON.stringify([user.username||"", user.email||authUser.email||"", user.firstName||"", user.lastName||""]);
+    if(profileSyncKeyRef.current===key) return;
+    if(profileSyncTimerRef.current) clearTimeout(profileSyncTimerRef.current);
+    profileSyncTimerRef.current=setTimeout(()=>{
+      (async()=>{
+        const profile = await upsertUserProfile(authUser.uid, {...user, email: user.email || authUser.email || ""}).catch(e=>{
+          if(window.dbg) dbg(`❌ Öffentliches Profil konnte nicht gespeichert werden: ${e.message}`, '#f55');
+          return null;
+        });
+        if(!profile){return;} // Fehlgeschlagen – Key NICHT setzen, damit es beim nächsten Sync erneut versucht wird.
+        profileSyncKeyRef.current=key;
+        if(window.dbg) dbg(`👤 Öffentliches Profil synchronisiert: ${profile.username||profile.email||authUser.uid}`, '#0f0');
+        const result = await processPendingReferral(authUser.uid, profile).catch(()=>null);
+        if(result?.type==="requested") showToast(`Freundschaftsanfrage an ${result.profile.username||result.profile.email} gesendet! 🤝`);
+        if(result?.type==="accepted") showToast(`Du bist jetzt mit ${result.profile.username||result.profile.email} befreundet! 🎉`);
+      })();
+    },1500);
+    return ()=>{if(profileSyncTimerRef.current)clearTimeout(profileSyncTimerRef.current);};
   }, [loaded, authUser, user.username, user.email, user.firstName, user.lastName]);
 
   // Data is loaded from LocalStorage immediately to show something to the user.
@@ -6559,11 +6574,18 @@ function FriendsCard({user,notify}){
     try{
       const [inc,out,fr]=await Promise.all([getIncomingRequests(myUid),getOutgoingRequests(myUid),getFriends(myUid)]);
       setIncoming(inc);setOutgoing(out);setFriends(fr);
-    }catch(e){console.warn("Freunde laden:",e.message);}
+    }catch(e){console.warn("Freunde laden:",e.message);notify(`Freunde/Anfragen laden fehlgeschlagen: ${e.message}`,"error");}
     setLoading(false);
   };
 
-  useEffect(()=>{reload();},[]);
+  useEffect(()=>{
+    reload();
+    if(myUid){
+      upsertUserProfile(myUid,user)
+        .then(profile=>{if(!profile)notify("Dein Profil konnte nicht synchronisiert werden – die Suche findet dich evtl. nicht.","error");})
+        .catch(e=>notify(`Profil-Sync fehlgeschlagen: ${e.message}`,"error"));
+    }
+  },[]);
 
   const doSearch=async()=>{
     if(!search.trim())return;
@@ -6594,6 +6616,10 @@ function FriendsCard({user,notify}){
   };
 
   const invite=async()=>{
+    if(window.location.protocol==="file:"){
+      notify("Einladen funktioniert nur, wenn die App über eine echte Web-Adresse (nicht als lokale Datei) läuft.","error");
+      return;
+    }
     const url=`${window.location.origin}${window.location.pathname}?ref=${myUid}`;
     const text=`Komm auf FitForge trainieren! ${url}`;
     if(navigator.share){
