@@ -305,22 +305,21 @@ const isUsernameTaken = async (username, myUid) => {
 
 const searchUserProfiles = async (term, myUid) => {
   if (!window.firebaseDb || !term || !term.trim()) return [];
-  const t = term.trim();
-  const col = window.firebaseDoc(window.firebaseDb, "userProfiles");
-  if (t.includes("@")) {
-    const snap = await col.where("emailLower", "==", t.toLowerCase()).limit(10).get();
-    return snap.docs.map(d => d.data()).filter(p => p.uid !== myUid);
-  }
-  const low = t.toLowerCase();
-  const prefixQuery = field => col.where(field, ">=", low).where(field, "<=", low + "").limit(10).get();
-  const [byUsername, byFirstName, byLastName] = await Promise.all([
-    prefixQuery("usernameLower"),
-    prefixQuery("firstNameLower"),
-    prefixQuery("lastNameLower")
-  ]);
-  const merged = new Map();
-  [...byUsername.docs, ...byFirstName.docs, ...byLastName.docs].forEach(d => merged.set(d.id, d.data()));
-  return [...merged.values()].filter(p => p.uid !== myUid);
+  const q = term.trim().toLowerCase();
+  // Robust: gesamte (kleine) userProfiles-Collection laden und clientseitig filtern.
+  // So werden auch Profile gefunden, die von aelteren Code-Versionen ohne die
+  // *Lower-Felder geschrieben wurden, und Teilstring-Suche funktioniert ueberall.
+  const snap = await window.firebaseDoc(window.firebaseDb, "userProfiles").limit(500).get();
+  const matches = [];
+  snap.docs.forEach(d => {
+    const data = d.data() || {};
+    const p = { ...data, uid: data.uid || d.id };
+    if (p.uid === myUid) return;
+    const hay = [p.username, p.email, p.firstName, p.lastName]
+      .filter(Boolean).map(s => String(s).toLowerCase());
+    if (hay.some(s => s.includes(q))) matches.push(p);
+  });
+  return matches.slice(0, 20);
 };
 const friendReqId = (fromUid, toUid) => `${fromUid}_${toUid}`;
 
@@ -6591,10 +6590,18 @@ function FriendsCard({user,notify}){
     if(!search.trim())return;
     setSearching(true);
     try{
+      // Gesamtzahl der Profile ermitteln – hilft zu unterscheiden zwischen
+      // "keine Treffer" und "die Datenbank ist leer / niemand hat sich synchronisiert".
+      const allSnap=await window.firebaseDoc(window.firebaseDb,"userProfiles").limit(500).get();
+      const total=allSnap.docs.length;
+      if(window.dbg) dbg(`🔎 Suche "${search}" – ${total} Profile in der Datenbank`, '#4CC9F0');
       const res=await searchUserProfiles(search,myUid);
       setResults(res);
-      if(!res.length)notify("Niemanden gefunden","error");
-    }catch(e){console.warn(e);notify("Suche fehlgeschlagen","error");}
+      if(!res.length){
+        if(total<=1) notify("Es ist noch niemand anderes in der Datenbank. Die andere Person muss die App einmal (online, nicht als lokale Datei) öffnen.","error");
+        else notify(`Niemanden gefunden (${total} Profile durchsucht)`,"error");
+      }
+    }catch(e){console.warn(e);notify(`Suche fehlgeschlagen: ${e.message}`,"error");}
     setSearching(false);
   };
 
