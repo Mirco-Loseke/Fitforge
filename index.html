@@ -337,10 +337,29 @@ const sendFriendRequest = async (myUid, myProfile, otherProfile) => {
   });
 };
 
+const getUserProfile = async (uid) => {
+  if (!window.firebaseDb || !uid) return null;
+  try {
+    const snap = await window.firebaseDoc(window.firebaseDb, "userProfiles", uid).get();
+    if (!snap.exists) return null;
+    return snap.data();
+  } catch (e) { return null; }
+};
+
 const getIncomingRequests = async (myUid) => {
   if (!window.firebaseDb || !myUid) return [];
   const snap = await window.firebaseDoc(window.firebaseDb, "friendRequests").where("to", "==", myUid).where("status", "==", "pending").get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const reqs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Aktuelles Profil der anfragenden Person nachladen, damit Name & E-Mail
+  // auch für ältere Anfragen (die nur fromUsername/fromEmail gespeichert haben) da sind.
+  await Promise.all(reqs.map(async r => {
+    const prof = await getUserProfile(r.from);
+    const fullName = prof ? `${prof.firstName || ""} ${prof.lastName || ""}`.trim() : "";
+    r.displayUsername = (prof && prof.username) || r.fromUsername || "";
+    r.displayName = fullName;
+    r.displayEmail = (prof && prof.email) || r.fromEmail || "";
+  }));
+  return reqs;
 };
 
 const getOutgoingRequests = async (myUid) => {
@@ -6676,13 +6695,22 @@ function FriendsCard({user,notify}){
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Anfragen ({incoming.length})</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {incoming.map(r=>(
+            {incoming.map(r=>{
+              const primary=r.displayUsername||r.displayName||r.fromUsername||r.displayEmail||r.fromEmail||"Unbekannt";
+              const secondaryParts=[];
+              if(r.displayName&&r.displayName!==primary) secondaryParts.push(r.displayName);
+              const mail=r.displayEmail||r.fromEmail;
+              if(mail&&mail!==primary) secondaryParts.push(mail);
+              return(
               <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,183,3,0.06)",border:"1px solid rgba(255,183,3,0.25)",borderRadius:10,padding:"10px 14px"}}>
-                <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:13}}>{r.fromUsername||r.fromEmail}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{primary}</div>
+                  {secondaryParts.length>0&&<div style={{fontSize:11,color:"#888",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{secondaryParts.join(" · ")}</div>}
+                </div>
                 <button style={{...s.primaryBtn,padding:"6px 12px",fontSize:12}} onClick={()=>accept(r)}>Annehmen</button>
                 <button style={{background:"transparent",border:"none",color:"#666",cursor:"pointer",padding:6}} onClick={()=>decline(r)}>{IC.x}</button>
               </div>
-            ))}
+            );})}
           </div>
         </div>
       )}
