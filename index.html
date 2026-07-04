@@ -276,6 +276,89 @@ const fbSet = async (key, value) => {
   }
 };
 
+// ── Freunde: öffentliche Profile + Freundschaftsanfragen ───────────────────
+// Nutzt eine eigene, für eingeloggte Nutzer lesbare Collection "userProfiles"
+// (getrennt von den privaten "fitforge"-Dokumenten) sowie "friendRequests".
+// Erfordert passende Firestore Security Rules (siehe Doku/Chat).
+const upsertUserProfile = async (uid, user) => {
+  if (!window.firebaseDb || !uid) return;
+  const profile = {
+    uid,
+    username: (user.username || "").trim(),
+    usernameLower: (user.username || "").trim().toLowerCase(),
+    email: user.email || "",
+    emailLower: (user.email || "").trim().toLowerCase(),
+    firstName: user.firstName || "",
+    lastName: user.lastName || ""
+  };
+  await window.firebaseDoc(window.firebaseDb, "userProfiles", uid).set(profile, { merge: true });
+  return profile;
+};
+
+const isUsernameTaken = async (username, myUid) => {
+  if (!window.firebaseDb || !username) return false;
+  const snap = await window.firebaseDoc(window.firebaseDb, "userProfiles").where("usernameLower", "==", username.trim().toLowerCase()).get();
+  return snap.docs.some(d => d.id !== myUid);
+};
+
+const searchUserProfiles = async (term, myUid) => {
+  if (!window.firebaseDb || !term || !term.trim()) return [];
+  const t = term.trim();
+  const col = window.firebaseDoc(window.firebaseDb, "userProfiles");
+  let snap;
+  if (t.includes("@")) {
+    snap = await col.where("emailLower", "==", t.toLowerCase()).limit(10).get();
+  } else {
+    const low = t.toLowerCase();
+    snap = await col.where("usernameLower", ">=", low).where("usernameLower", "<=", low + "").limit(10).get();
+  }
+  return snap.docs.map(d => d.data()).filter(p => p.uid !== myUid);
+};
+
+const friendReqId = (fromUid, toUid) => `${fromUid}_${toUid}`;
+
+const sendFriendRequest = async (myUid, myProfile, otherProfile) => {
+  const reverse = await window.firebaseDoc(window.firebaseDb, "friendRequests", friendReqId(otherProfile.uid, myUid)).get();
+  if (reverse.exists) throw new Error("Es gibt bereits eine Anfrage von dieser Person.");
+  await window.firebaseDoc(window.firebaseDb, "friendRequests", friendReqId(myUid, otherProfile.uid)).set({
+    from: myUid, to: otherProfile.uid,
+    fromUsername: myProfile.username || myProfile.email, toUsername: otherProfile.username || otherProfile.email,
+    fromEmail: myProfile.email, toEmail: otherProfile.email,
+    status: "pending", createdAt: Date.now()
+  });
+};
+
+const getIncomingRequests = async (myUid) => {
+  if (!window.firebaseDb || !myUid) return [];
+  const snap = await window.firebaseDoc(window.firebaseDb, "friendRequests").where("to", "==", myUid).where("status", "==", "pending").get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+const getOutgoingRequests = async (myUid) => {
+  if (!window.firebaseDb || !myUid) return [];
+  const snap = await window.firebaseDoc(window.firebaseDb, "friendRequests").where("from", "==", myUid).where("status", "==", "pending").get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+const getFriends = async (myUid) => {
+  if (!window.firebaseDb || !myUid) return [];
+  const [asFrom, asTo] = await Promise.all([
+    window.firebaseDoc(window.firebaseDb, "friendRequests").where("from", "==", myUid).where("status", "==", "accepted").get(),
+    window.firebaseDoc(window.firebaseDb, "friendRequests").where("to", "==", myUid).where("status", "==", "accepted").get()
+  ]);
+  const fromFriends = asFrom.docs.map(d => ({ id: d.id, uid: d.data().to, username: d.data().toUsername, email: d.data().toEmail }));
+  const toFriends = asTo.docs.map(d => ({ id: d.id, uid: d.data().from, username: d.data().fromUsername, email: d.data().fromEmail }));
+  return [...fromFriends, ...toFriends];
+};
+
+const acceptFriendRequest = async (reqId) => {
+  await window.firebaseDoc(window.firebaseDb, "friendRequests", reqId).update({ status: "accepted" });
+};
+
+const removeFriendRequest = async (reqId) => {
+  await window.firebaseDoc(window.firebaseDb, "friendRequests", reqId).delete();
+};
+
 // Firebase Storage upload – returns download URL (falls back to base64)
 const uploadToStorage = async (file, path) => {
   try {
@@ -396,7 +479,7 @@ const compressImage = (file, maxWidth = 700, maxHeight = 700, quality = 0.5) => 
   });
 };
 const DEFAULT_POINTS_CONFIG={workoutBase:100,perExercise:20,perSet:10,perKm:20,perMinute:2,perVolume100:1,perPr:150,penaltyWeight:-10,penaltySupplement:-5,penaltyStretch:-10};
-const defaultUser={firstName:"",lastName:"",email:"",weight:"",height:"",goal:"Muskelaufbau",avatar:null,notificationsEnabled:true,reminderTime:"08:00",calorieGoal:2500,proteinGoal:150,workDays:["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],workStart:"08:00",workEnd:"17:00",break1Start:"09:30",break1End:"10:00",break2Start:"12:30",break2End:"13:15",checkinEveryLogin:false,waterGoal:2500,supplements:[],pointsLog:[],pointsConfig:{}};
+const defaultUser={firstName:"",lastName:"",username:"",email:"",weight:"",height:"",goal:"Muskelaufbau",avatar:null,notificationsEnabled:true,reminderTime:"08:00",calorieGoal:2500,proteinGoal:150,workDays:["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],workStart:"08:00",workEnd:"17:00",break1Start:"09:30",break1End:"10:00",break2Start:"12:30",break2End:"13:15",checkinEveryLogin:false,waterGoal:2500,supplements:[],pointsLog:[],pointsConfig:{}};
 const defaultPRs={};
 const readFile=file=>new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsDataURL(file);});
 const todayStr=()=>new Date().toISOString().split("T")[0];
@@ -6386,6 +6469,126 @@ function PhotoDetailModal({photo, onClose, isMobile}) {
   );
 }
 
+function FriendsCard({user,notify}){
+  const myUid=getUid();
+  const [search,setSearch]=useState("");
+  const [results,setResults]=useState([]);
+  const [searching,setSearching]=useState(false);
+  const [incoming,setIncoming]=useState([]);
+  const [outgoing,setOutgoing]=useState([]);
+  const [friends,setFriends]=useState([]);
+  const [loading,setLoading]=useState(true);
+
+  const reload=async()=>{
+    if(!myUid)return;
+    setLoading(true);
+    try{
+      const [inc,out,fr]=await Promise.all([getIncomingRequests(myUid),getOutgoingRequests(myUid),getFriends(myUid)]);
+      setIncoming(inc);setOutgoing(out);setFriends(fr);
+    }catch(e){console.warn("Freunde laden:",e.message);}
+    setLoading(false);
+  };
+
+  useEffect(()=>{reload();},[]);
+
+  const doSearch=async()=>{
+    if(!search.trim())return;
+    setSearching(true);
+    try{
+      const res=await searchUserProfiles(search,myUid);
+      setResults(res);
+      if(!res.length)notify("Niemanden gefunden","error");
+    }catch(e){console.warn(e);notify("Suche fehlgeschlagen","error");}
+    setSearching(false);
+  };
+
+  const request=async(profile)=>{
+    try{
+      const myProfile=await upsertUserProfile(myUid,user);
+      await sendFriendRequest(myUid,myProfile||user,profile);
+      notify(`Anfrage an ${profile.username||profile.email} gesendet! 🤝`);
+      reload();
+    }catch(e){notify(e.message||"Anfrage fehlgeschlagen","error");}
+  };
+
+  const accept=async(req)=>{
+    try{await acceptFriendRequest(req.id);notify(`Du bist jetzt mit ${req.fromUsername||req.fromEmail} befreundet! 🎉`);reload();}
+    catch(e){notify("Fehler beim Annehmen","error");}
+  };
+  const decline=async(req)=>{
+    try{await removeFriendRequest(req.id);reload();}catch(e){}
+  };
+
+  const invite=async()=>{
+    const url=window.location.origin;
+    const text=`Komm auf FitForge trainieren! ${url}`;
+    if(navigator.share){
+      try{await navigator.share({title:"FitForge",text,url});}catch(e){}
+    }else{
+      try{await navigator.clipboard.writeText(url);notify("Link kopiert! 📋");}catch(e){notify(url);}
+    }
+  };
+
+  const isRequested=uid=>outgoing.some(o=>o.to===uid)||friends.some(f=>f.uid===uid);
+
+  return (
+    <div style={{...s.card, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h3 style={s.cardTitle}>👥 Freunde</h3>
+        <button style={{...s.secBtn,padding:"6px 14px",fontSize:12}} onClick={invite}>Einladen</button>
+      </div>
+
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <input style={{...s.inp,flex:1}} placeholder="Benutzername oder E-Mail suchen..." value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()}/>
+        <button style={{...s.secBtn,padding:"0 16px"}} disabled={!search.trim()||searching} onClick={doSearch}>{searching?"...":"Suchen"}</button>
+      </div>
+
+      {results.length>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+          {results.map(p=>(
+            <div key={p.uid} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:13}}>{p.username||"(kein Username)"}</div>
+                <div style={{fontSize:11,color:"#666"}}>{p.email}</div>
+              </div>
+              <button style={{...s.secBtn,padding:"6px 12px",fontSize:12}} disabled={isRequested(p.uid)} onClick={()=>request(p)}>{isRequested(p.uid)?"Angefragt":"Hinzufügen"}</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {incoming.length>0&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Anfragen ({incoming.length})</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {incoming.map(r=>(
+              <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,183,3,0.06)",border:"1px solid rgba(255,183,3,0.25)",borderRadius:10,padding:"10px 14px"}}>
+                <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:13}}>{r.fromUsername||r.fromEmail}</div>
+                <button style={{...s.primaryBtn,padding:"6px 12px",fontSize:12}} onClick={()=>accept(r)}>Annehmen</button>
+                <button style={{background:"transparent",border:"none",color:"#666",cursor:"pointer",padding:6}} onClick={()=>decline(r)}>{IC.x}</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div style={{fontSize:11,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Deine Freunde ({friends.length})</div>
+        {loading?<div style={{color:"#666",fontSize:12}}>Lädt...</div>:
+          friends.length===0?<div style={{color:"#666",fontSize:12,fontStyle:"italic"}}>Noch keine Freunde. Nutze die Suche oben!</div>:
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {friends.map(f=>(
+              <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px"}}>
+                <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:13}}>{f.username||f.email}</div>
+              </div>
+            ))}
+          </div>
+        }
+      </div>
+    </div>
+  );
+}
+
 function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
   const [form,setForm]=useState({...user,weight:latestWeight!=null?String(latestWeight):user.weight||""});
   const [uploading,setUploading]=useState(false);
@@ -6407,11 +6610,20 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
     setUploading(false);
   };
 
-  const save=()=>{setUser(form);notify("Profil gespeichert! ✅");};
+  const save=async()=>{
+    if(form.username&&form.username.trim()){
+      const taken=await isUsernameTaken(form.username,getUid()).catch(()=>false);
+      if(taken)return notify("Dieser Benutzername ist schon vergeben","error");
+    }
+    setUser(form);
+    upsertUserProfile(getUid(),form).catch(e=>console.warn("upsertUserProfile:",e.message));
+    notify("Profil gespeichert! ✅");
+  };
 
   return(<div style={s.page}><div style={s.pageHead}><div><h1 style={s.pageTitle}>Mein Profil</h1><p style={s.pageSub}>Daten & Einstellungen</p></div></div><div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:22}}>
   <div style={{...s.card, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}}><h3 style={s.cardTitle}>Persönliche Daten</h3><div style={{display:"flex",alignItems:"center",gap:18,marginBottom:24}}><div className="avCircle" style={{width:76,height:76,borderRadius:"50%",background:"rgba(255,255,255,0.04)",border:"2px dashed rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",overflow:"hidden",flexShrink:0}} onClick={()=>fileRef.current.click()}>{form.avatar?<img src={form.avatar} alt="av" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}}/>:<span style={{fontSize:28,fontFamily:"'DM Sans',sans-serif",fontWeight:800,color:"#FF6B35"}}>{getInitials(form)}</span>}<div className="avOverlay" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s"}}>{IC.camera}</div></div><input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleAv}/><div><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:800,fontSize:16}}>{form.firstName||form.lastName?`${form.firstName} ${form.lastName}`.trim():"Dein Name"}</div></div></div>
   <div style={{...s.formGrid, gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}><div style={s.fg}><label style={s.lbl}>Vorname</label><input style={s.inp} value={form.firstName} onChange={e=>setForm(f=>({...f,firstName:e.target.value}))} placeholder="Max"/></div><div style={s.fg}><label style={s.lbl}>Nachname</label><input style={s.inp} value={form.lastName} onChange={e=>setForm(f=>({...f,lastName:e.target.value}))} placeholder="Mustermann"/></div></div>
+  <div style={s.fg}><label style={s.lbl}>Benutzername</label><input style={s.inp} value={form.username||""} onChange={e=>setForm(f=>({...f,username:e.target.value.replace(/\s+/g,"")}))} placeholder="z.B. mirco_ff"/><div style={{fontSize:11,color:"#666",marginTop:5}}>Damit dich Freunde finden können.</div></div>
   <div style={s.fg}><label style={s.lbl}>E-Mail</label><input style={s.inp} type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="max@beispiel.de"/></div>
   <div style={{...s.formGrid, gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}><div style={s.fg}><label style={s.lbl}>Gewicht (kg)</label><input style={s.inp} type="number" value={form.weight} onChange={e=>setForm(f=>({...f,weight:e.target.value}))} placeholder="80"/></div><div style={s.fg}><label style={s.lbl}>Größe (cm)</label><input style={s.inp} type="number" value={form.height} onChange={e=>setForm(f=>({...f,height:e.target.value}))} placeholder="180"/></div></div>
   <div style={s.fg}><label style={s.lbl}>Fitnessziel</label><select style={s.inp} value={form.goal} onChange={e=>setForm(f=>({...f,goal:e.target.value}))}>{["Muskelaufbau","Gewichtsverlust","Ausdauer","Fitness & Gesundheit","Kraft steigern"].map(g=><option key={g}>{g}</option>)}</select></div>
@@ -6465,6 +6677,7 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
       }}>{IC.plus} Supplement hinzufügen</button>
     </div>
   </div>
+  <FriendsCard user={form} notify={notify}/>
   </div>
   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:22,gap:12}}>
     <button style={{...s.primaryBtn,flex:1}} onClick={save}>💾 Speichern</button>
