@@ -2213,13 +2213,26 @@ function FitForge(){
       const libUnsub = window.firebaseOnSnapshot(libRef, (snap) => {
         if (cancelled) return;
         if (snap.exists) {
-            const libVal = snap.data().value;
+            const libVal = snap.data().value || [];
             const libStr = JSON.stringify(libVal);
             if (libStr !== lastSyncRef.current["library"]) {
-              if (window.dbg) dbg('📚 Gemeinsame Bibliothek geladen', '#0ff');
-              localStorage.setItem("ff_library", libStr);
+              if (window.dbg) dbg('📚 Gemeinsame Bibliothek empfangen – wird zusammengeführt', '#0ff');
+              // NICHT blind überschreiben: lokale (noch nicht synchronisierte) Übungen
+              // bewahren, gelöschte per Tombstone ausschließen, bei Konflikt die
+              // neuere Version (per _m Zeitstempel) nehmen.
+              setLibrary(prevLocal => {
+                let deleted; try { deleted = new Set(JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]")); } catch(e){ deleted = new Set(); }
+                const pick = (a,b) => (((b&&b._m)||0) >= ((a&&a._m)||0) ? b : a);
+                const byId = new Map();
+                libVal.forEach(ex => { if(ex&&ex.id!=null&&!deleted.has(ex.id)) byId.set(ex.id, ex); });
+                (prevLocal||[]).forEach(ex => { if(!ex||ex.id==null||deleted.has(ex.id)) return; byId.set(ex.id, byId.has(ex.id)?pick(byId.get(ex.id),ex):ex); });
+                const merged = [...byId.values()];
+                localStorage.setItem("ff_library", JSON.stringify(merged));
+                return merged;
+              });
+              // Cloud-Stand als Basis merken; falls das Merge lokale Zusätze enthält,
+              // erkennt der Sync-Effekt die Differenz und schiebt die Vereinigung hoch.
               lastSyncRef.current["library"] = libStr;
-              setLibrary(libVal);
             }
         }
         if (!loaded && fbUser) {
@@ -2371,17 +2384,42 @@ function FitForge(){
   useEffect(() => { syncToCloud("user", user); }, [user, loaded]);
   useEffect(() => { syncToCloud("prs", prs); }, [prs, loaded]);
   useEffect(() => { syncToCloud("nutrition", nutrition); }, [nutrition, loaded]);
-  useEffect(() => { 
+  useEffect(() => {
     // Library sync is shared
     if (!authUser || !loaded) return;
     const valStr = JSON.stringify(library);
     if (valStr === lastSyncRef.current["library"]) return;
     clearTimeout(debRef.current["library"]);
-    debRef.current["library"] = setTimeout(() => {
+    debRef.current["library"] = setTimeout(async () => {
       if (window.dbg) dbg(`📤 Synchronisiere shared library...`, '#0ff');
-      window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: library }).then(() => {
-        lastSyncRef.current["library"] = valStr;
-      });
+      // WICHTIG: Große base64-Bilder rausfiltern, sonst sprengt das gemeinsame
+      // Library-Dokument das 1-MB-Limit von Firestore und der Schreibvorgang
+      // schlägt komplett fehl (= Übungen gehen verloren).
+      const cleanedLib = stripBase64(library, "library");
+      const cleanedStr = JSON.stringify(cleanedLib);
+      const sizeKB = cleanedStr.length / 1024;
+      if (sizeKB > 950) {
+        if (window.dbg) dbg(`⚠️ Library zu groß (${sizeKB.toFixed(0)} KB) – Speichern könnte fehlschlagen!`, '#f55');
+        showToast(`Achtung: Deine Übungsbibliothek ist sehr groß (${sizeKB.toFixed(0)} KB). Bitte weniger/kleinere Bilder verwenden, sonst kann nicht gespeichert werden.`, "error");
+      }
+      try {
+        await window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: cleanedLib });
+        // Auf echte Server-Bestätigung warten (Offline-Persistenz meldet sonst
+        // schon "fertig", wenn nur lokal gespeichert wurde).
+        try {
+          await Promise.race([
+            window.firebaseDb.waitForPendingWrites(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 12000))
+          ]);
+          lastSyncRef.current["library"] = valStr;
+          if (window.dbg) dbg(`✅ Library auf Server bestätigt`, '#0f0');
+        } catch (e) {
+          if (window.dbg) dbg(`⏳ Library noch nicht zum Server bestätigt (Verbindung/Warteschlange)`, '#fa0');
+        }
+      } catch (e) {
+        if (window.dbg) dbg(`❌ Library-Speichern fehlgeschlagen: ${e.message}`, '#f55');
+        showToast(`Übungen konnten nicht online gespeichert werden: ${e.message}`, "error");
+      }
     }, 500);
   }, [library, loaded]);
   useEffect(() => { syncToCloud("weekPlans", weekPlans); }, [weekPlans, loaded]);
@@ -7745,10 +7783,15 @@ function LibraryPage({library,setLibrary,notify}){
   const [equipModalEx, setEquipModalEx] = useState(null);
   const [descModalEx, setDescModalEx] = useState(null);
 
-  const delEx=id=>{setLibrary(l=>l.filter(e=>e.id!==id));notify("Übung gelöscht");};
+  const delEx=id=>{
+    // Tombstone merken, damit ein veralteter Cloud-Snapshot die Löschung nicht rückgängig macht
+    try{const t=JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]");if(!t.includes(id)){t.push(id);localStorage.setItem("ff_lib_deleted",JSON.stringify(t.slice(-500)));}}catch(e){}
+    setLibrary(l=>l.filter(e=>e.id!==id));notify("Übung gelöscht");
+  };
   const saveEx=ex=>{
-    if(editEx){setLibrary(l=>l.map(e=>e.id===editEx.id?{...editEx,...ex}:e));notify("Übung aktualisiert ✏️");}
-    else{setLibrary(l=>[...l,{...ex,id:Date.now()}]);notify("Übung gespeichert! 💪");}
+    // _m = Zuletzt-geändert-Zeitstempel, damit beim Zusammenführen die neuere Version gewinnt
+    if(editEx){setLibrary(l=>l.map(e=>e.id===editEx.id?{...editEx,...ex,_m:Date.now()}:e));notify("Übung aktualisiert ✏️");}
+    else{setLibrary(l=>[...l,{...ex,id:Date.now(),_m:Date.now()}]);notify("Übung gespeichert! 💪");}
     setShowForm(false);setEditEx(null);
   };
 
@@ -7824,7 +7867,7 @@ function LibraryPage({library,setLibrary,notify}){
         <EquipmentPickerModal 
           exercise={equipModalEx} 
           onSave={(items) => {
-            setLibrary(l => l.map(e => e.id === equipModalEx.id ? { ...e, equipment: items } : e));
+            setLibrary(l => l.map(e => e.id === equipModalEx.id ? { ...e, equipment: items, _m: Date.now() } : e));
             setEquipModalEx(null);
             notify("Geräte aktualisiert! ⚙️");
           }} 
@@ -7843,7 +7886,7 @@ function LibraryPage({library,setLibrary,notify}){
         <DescriptionEditModal 
           exercise={descModalEx} 
           onSave={(desc) => {
-            setLibrary(l => l.map(e => e.id === descModalEx.id ? { ...e, description: desc } : e));
+            setLibrary(l => l.map(e => e.id === descModalEx.id ? { ...e, description: desc, _m: Date.now() } : e));
             setDescModalEx(null);
             notify("Beschreibung aktualisiert! 📝");
           }} 
