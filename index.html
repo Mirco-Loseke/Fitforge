@@ -3449,7 +3449,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
       try {
         const scanner = new window.Html5Qrcode("reader");
         scannerRef.current = scanner;
-        const config = { fps: 15, qrbox: { width: 300, height: 180 }, aspectRatio: 1.333, formatsToSupport: [0,1,2,3,4,5,6,7,8,9,10,11,12,13] };
+        const config = { fps: 15, qrbox: { width: 300, height: 180 }, aspectRatio: 1.333, formatsToSupport: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16] };
         scanner.start({ facingMode: "environment" }, config, (text) => {
           lookupBarcode(text);
         }).catch(err => {
@@ -3527,8 +3527,8 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
             <p style={s.pageSub}>{dayData.calories} kcal heute</p>
           </div>
           <div style={{display:"flex", gap: 8, width: isMobile ? "100%" : "auto"}}>
-            <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...s.inp,flex:1,padding:"8px 12px", fontSize: 13}}/>
-            <button style={{...s.primaryBtn, padding: "8px 16px"}} onClick={()=>setShowAdd(o=>!o)}>{IC.plus} {isMobile ? "" : "Hinzufügen"}</button>
+            <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...s.inp,flex: isMobile ? "0 0 120px" : "0 0 150px",padding:"8px 10px", fontSize: 13}}/>
+            <button style={{...s.primaryBtn, flex:1, justifyContent:"center", padding: "8px 16px"}} onClick={()=>setShowAdd(o=>!o)}>{IC.plus} Hinzufügen</button>
           </div>
         </div>
       </div>
