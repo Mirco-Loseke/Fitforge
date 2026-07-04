@@ -1855,6 +1855,13 @@ function FitForge(){
     setCheckinModalOpen(true);
   }, [loaded, authUser]);
 
+  // Öffentliches Profil (userProfiles) automatisch aktuell halten, damit Freunde
+  // einen auch finden können, ohne dass man extra im Profil auf Speichern klicken muss.
+  useEffect(()=>{
+    if(!loaded || !authUser) return;
+    upsertUserProfile(authUser.uid, {...user, email: user.email || authUser.email || ""}).catch(e=>console.warn("upsertUserProfile (auto):",e.message));
+  }, [loaded, authUser, user.username, user.email, user.firstName, user.lastName]);
+
   // Data is loaded from LocalStorage immediately to show something to the user.
   // 'loaded' will be set to true only when we've established a real-time connection with Firestore.
 
