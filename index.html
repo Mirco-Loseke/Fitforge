@@ -3549,12 +3549,29 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
           )}
 
           <div style={{...s.card,marginBottom:22, padding: isMobile ? 16 : 22}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><h3 style={s.cardTitle}>Makros</h3><div style={{fontFamily:"'DM Sans',sans-serif",fontSize: isMobile ? 16 : 18,fontWeight:800,color:"#FF6B35"}}>{dayData.calories}<span style={{fontSize:11,color:"#666",fontWeight:400}}> / {calGoal} kcal</span></div></div>
-            <div style={{height:9,background:"rgba(255,255,255,0.05)",borderRadius:5,overflow:"hidden",marginBottom:18}}><div style={{height:"100%",width:`${Math.min(dayData.calories/calGoal*100,100)}%`,background:"#FF6B35",borderRadius:5,transition:"width 0.4s"}}/></div>
-            <div style={{display:"grid",gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)",gap:12}}>
-              {[["Protein",dayData.protein||0,protGoal,"g","#00D9C0"],["Kohlenhydrate",dayData.carbs||0,carbGoal,"g","#FFD166"],["Fett",dayData.fat||0,fatGoal,"g","#A78BFA"]].map(([label,val,goal,unit,color])=>(
-                <div key={label} style={{background:"rgba(255, 255, 255, 0.02)",border:"1px solid rgba(255, 255, 255, 0.06)",backdropFilter:"blur(5px)",WebkitBackdropFilter:"blur(5px)",borderRadius:11,padding: isMobile ? "10px 14px" : "13px"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}><span style={{fontSize:11,fontWeight:600,color}}>{label}</span><span style={{fontSize:10,color:"#666"}}>{Math.round(val)}/{goal}{unit}</span></div><div style={{height:5,background:"rgba(255,255,255,0.05)",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(val/goal*100,100)}%`,background:color,borderRadius:3,transition:"width 0.4s"}}/></div></div>
-              ))}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h3 style={s.cardTitle}>Makros</h3></div>
+            <div style={{display:"grid",gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)",gap: isMobile ? 10 : 14}}>
+              {[["Kalorien",dayData.calories||0,calGoal,"kcal","#FF6B35","🔥"],["Protein",dayData.protein||0,protGoal,"g","#00D9C0","💪"],["Kohlenhydrate",dayData.carbs||0,carbGoal,"g","#FFD166","🌾"],["Fett",dayData.fat||0,fatGoal,"g","#A78BFA","🥑"]].map(([label,val,goal,unit,color,emoji])=>{
+                const pct=goal>0?Math.min(val/goal,1):0;
+                const rr=30,circ=2*Math.PI*rr;
+                const done=val>=goal;
+                return(
+                  <div key={label} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding: isMobile ? "12px 4px" : "14px 8px",backdropFilter:"blur(5px)",WebkitBackdropFilter:"blur(5px)"}}>
+                    <svg width={76} height={76} viewBox="0 0 76 76">
+                      <circle cx="38" cy="38" r={rr} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7"/>
+                      <circle cx="38" cy="38" r={rr} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
+                        strokeDasharray={`${pct*circ} ${circ}`} transform="rotate(-90 38 38)"
+                        style={{transition:"stroke-dasharray 0.6s cubic-bezier(0.16,1,0.3,1)",filter:done?`drop-shadow(0 0 5px ${color}99)`:"none"}}/>
+                      <text x="38" y="35" textAnchor="middle" fontSize="15" fontWeight="900" fill="#fff" fontFamily="DM Sans,sans-serif">{Math.round(pct*100)}%</text>
+                      <text x="38" y="48" textAnchor="middle" fontSize="9" fontFamily="DM Sans,sans-serif">{emoji}</text>
+                    </svg>
+                    <div style={{textAlign:"center"}}>
+                      <div style={{fontSize:11,fontWeight:700,color}}>{label}</div>
+                      <div style={{fontSize:10,color:"#666",marginTop:2}}>{Math.round(val)}/{goal}{unit}</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
