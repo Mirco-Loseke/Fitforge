@@ -276,6 +276,144 @@ const fbSet = async (key, value) => {
   }
 };
 
+// ── Freunde: öffentliche Profile + Freundschaftsanfragen ───────────────────
+// Nutzt eine eigene, für eingeloggte Nutzer lesbare Collection "userProfiles"
+// (getrennt von den privaten "fitforge"-Dokumenten) sowie "friendRequests".
+// Erfordert passende Firestore Security Rules (siehe Doku/Chat).
+const upsertUserProfile = async (uid, user) => {
+  if (!window.firebaseDb || !uid) return;
+  const profile = {
+    uid,
+    username: (user.username || "").trim(),
+    usernameLower: (user.username || "").trim().toLowerCase(),
+    email: user.email || "",
+    emailLower: (user.email || "").trim().toLowerCase(),
+    firstName: user.firstName || "",
+    lastName: user.lastName || "",
+    firstNameLower: (user.firstName || "").trim().toLowerCase(),
+    lastNameLower: (user.lastName || "").trim().toLowerCase()
+  };
+  await window.firebaseDoc(window.firebaseDb, "userProfiles", uid).set(profile, { merge: true });
+  return profile;
+};
+
+const isUsernameTaken = async (username, myUid) => {
+  if (!window.firebaseDb || !username) return false;
+  const snap = await window.firebaseDoc(window.firebaseDb, "userProfiles").where("usernameLower", "==", username.trim().toLowerCase()).get();
+  return snap.docs.some(d => d.id !== myUid);
+};
+
+const searchUserProfiles = async (term, myUid) => {
+  if (!window.firebaseDb || !term || !term.trim()) return [];
+  const t = term.trim();
+  const col = window.firebaseDoc(window.firebaseDb, "userProfiles");
+  if (t.includes("@")) {
+    const snap = await col.where("emailLower", "==", t.toLowerCase()).limit(10).get();
+    return snap.docs.map(d => d.data()).filter(p => p.uid !== myUid);
+  }
+  const low = t.toLowerCase();
+  const prefixQuery = field => col.where(field, ">=", low).where(field, "<=", low + "").limit(10).get();
+  const [byUsername, byFirstName, byLastName] = await Promise.all([
+    prefixQuery("usernameLower"),
+    prefixQuery("firstNameLower"),
+    prefixQuery("lastNameLower")
+  ]);
+  const merged = new Map();
+  [...byUsername.docs, ...byFirstName.docs, ...byLastName.docs].forEach(d => merged.set(d.id, d.data()));
+  return [...merged.values()].filter(p => p.uid !== myUid);
+};
+const friendReqId = (fromUid, toUid) => `${fromUid}_${toUid}`;
+
+const sendFriendRequest = async (myUid, myProfile, otherProfile) => {
+  const reverse = await window.firebaseDoc(window.firebaseDb, "friendRequests", friendReqId(otherProfile.uid, myUid)).get();
+  if (reverse.exists) throw new Error("Es gibt bereits eine Anfrage von dieser Person.");
+  await window.firebaseDoc(window.firebaseDb, "friendRequests", friendReqId(myUid, otherProfile.uid)).set({
+    from: myUid, to: otherProfile.uid,
+    fromUsername: myProfile.username || myProfile.email, toUsername: otherProfile.username || otherProfile.email,
+    fromEmail: myProfile.email, toEmail: otherProfile.email,
+    status: "pending", createdAt: Date.now()
+  });
+};
+
+const getIncomingRequests = async (myUid) => {
+  if (!window.firebaseDb || !myUid) return [];
+  const snap = await window.firebaseDoc(window.firebaseDb, "friendRequests").where("to", "==", myUid).where("status", "==", "pending").get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+const getOutgoingRequests = async (myUid) => {
+  if (!window.firebaseDb || !myUid) return [];
+  const snap = await window.firebaseDoc(window.firebaseDb, "friendRequests").where("from", "==", myUid).where("status", "==", "pending").get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+const getFriends = async (myUid) => {
+  if (!window.firebaseDb || !myUid) return [];
+  const [asFrom, asTo] = await Promise.all([
+    window.firebaseDoc(window.firebaseDb, "friendRequests").where("from", "==", myUid).where("status", "==", "accepted").get(),
+    window.firebaseDoc(window.firebaseDb, "friendRequests").where("to", "==", myUid).where("status", "==", "accepted").get()
+  ]);
+  const fromFriends = asFrom.docs.map(d => ({ id: d.id, uid: d.data().to, username: d.data().toUsername, email: d.data().toEmail }));
+  const toFriends = asTo.docs.map(d => ({ id: d.id, uid: d.data().from, username: d.data().fromUsername, email: d.data().fromEmail }));
+  return [...fromFriends, ...toFriends];
+};
+
+const acceptFriendRequest = async (reqId) => {
+  await window.firebaseDoc(window.firebaseDb, "friendRequests", reqId).update({ status: "accepted" });
+};
+
+const removeFriendRequest = async (reqId) => {
+  await window.firebaseDoc(window.firebaseDb, "friendRequests", reqId).delete();
+};
+
+// ── Einladen per Link: ?ref=<uid> wird beim ersten Laden gemerkt und, sobald
+// der neue Nutzer eingeloggt ist, in eine Freundschaftsanfrage umgewandelt.
+const REF_STORAGE_KEY = "ff_pending_ref";
+
+const captureReferralFromUrl = () => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (!ref) return;
+    localStorage.setItem(REF_STORAGE_KEY, ref);
+    params.delete("ref");
+    const query = params.toString();
+    const newUrl = window.location.pathname + (query ? `?${query}` : "") + window.location.hash;
+    window.history.replaceState({}, "", newUrl);
+  } catch (e) {}
+};
+captureReferralFromUrl();
+
+const processPendingReferral = async (myUid, myProfile) => {
+  const refUid = localStorage.getItem(REF_STORAGE_KEY);
+  if (!refUid || refUid === myUid) { localStorage.removeItem(REF_STORAGE_KEY); return null; }
+  try {
+    const refSnap = await window.firebaseDoc(window.firebaseDb, "userProfiles", refUid).get();
+    if (!refSnap.exists) { localStorage.removeItem(REF_STORAGE_KEY); return null; }
+    const refProfile = refSnap.data();
+
+    // Der Einladende hat mir schon eine Anfrage geschickt? Dann direkt annehmen.
+    const incomingFromRef = await window.firebaseDoc(window.firebaseDb, "friendRequests", friendReqId(refUid, myUid)).get();
+    if (incomingFromRef.exists && incomingFromRef.data().status === "pending") {
+      await acceptFriendRequest(friendReqId(refUid, myUid));
+      localStorage.removeItem(REF_STORAGE_KEY);
+      return { type: "accepted", profile: refProfile };
+    }
+
+    // Schon eine Beziehung in die andere Richtung (Anfrage von mir oder Freunde)? Nichts tun.
+    const mineToRef = await window.firebaseDoc(window.firebaseDb, "friendRequests", friendReqId(myUid, refUid)).get();
+    if (mineToRef.exists) { localStorage.removeItem(REF_STORAGE_KEY); return null; }
+
+    await sendFriendRequest(myUid, myProfile, refProfile);
+    localStorage.removeItem(REF_STORAGE_KEY);
+    return { type: "requested", profile: refProfile };
+  } catch (e) {
+    console.warn("processPendingReferral:", e.message);
+    localStorage.removeItem(REF_STORAGE_KEY);
+    return null;
+  }
+};
+
 // Firebase Storage upload – returns download URL (falls back to base64)
 const uploadToStorage = async (file, path) => {
   try {
@@ -396,7 +534,7 @@ const compressImage = (file, maxWidth = 700, maxHeight = 700, quality = 0.5) => 
   });
 };
 const DEFAULT_POINTS_CONFIG={workoutBase:100,perExercise:20,perSet:10,perKm:20,perMinute:2,perVolume100:1,perPr:150,penaltyWeight:-10,penaltySupplement:-5,penaltyStretch:-10};
-const defaultUser={firstName:"",lastName:"",email:"",weight:"",height:"",goal:"Muskelaufbau",avatar:null,notificationsEnabled:true,reminderTime:"08:00",calorieGoal:2500,proteinGoal:150,workDays:["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],workStart:"08:00",workEnd:"17:00",break1Start:"09:30",break1End:"10:00",break2Start:"12:30",break2End:"13:15",checkinEveryLogin:false,waterGoal:2500,supplements:[],pointsLog:[],pointsConfig:{}};
+const defaultUser={firstName:"",lastName:"",username:"",email:"",weight:"",height:"",goal:"Muskelaufbau",avatar:null,notificationsEnabled:true,reminderTime:"08:00",calorieGoal:2500,proteinGoal:150,workDays:["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],workStart:"08:00",workEnd:"17:00",break1Start:"09:30",break1End:"10:00",break2Start:"12:30",break2End:"13:15",checkinEveryLogin:false,waterGoal:2500,supplements:[],pointsLog:[],pointsConfig:{}};
 const defaultPRs={};
 const readFile=file=>new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsDataURL(file);});
 const todayStr=()=>new Date().toISOString().split("T")[0];
@@ -1109,6 +1247,8 @@ function FitForge(){
   const [favFoods,setFavFoods]=useState([]);
   
   const [authUser,setAuthUser]=useState(null);
+  const profileSyncTimerRef=useRef(null);
+  const profileSyncKeyRef=useRef(null);
   const [isMobile,setIsMobile]=useState(window.innerWidth<=1024);
   const [sidebarOpen,setSidebarOpen]=useState(window.innerWidth>1024);
 
@@ -1122,6 +1262,7 @@ function FitForge(){
   const [notifs,setNotifs]=useState(()=>{try{return JSON.parse(localStorage.getItem("ff_notifs")||"[]");}catch{return[];}});
   const [dismissedNotifIds]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem("ff_notif_dismissed")||"[]"));}catch{return new Set();}});
   const [profileOpen,setProfileOpen]=useState(false);
+  const [friendsExpanded,setFriendsExpanded]=useState(false);
   const [notifOpen,setNotifOpen]=useState(false);
   const [toast,setToast]=useState(null);
   const [showLoadingUI, setShowLoadingUI] = useState(false);
@@ -1764,6 +1905,32 @@ function FitForge(){
     setCheckinModalOpen(true);
   }, [loaded, authUser]);
 
+  // Öffentliches Profil (userProfiles) automatisch aktuell halten, damit Freunde
+  // einen auch finden können, ohne dass man extra im Profil auf Speichern klicken muss.
+  // Debounced + dedupliziert, damit das nicht bei jedem Render/Sync erneut schreibt
+  // (sonst können sich bei wackliger Verbindung Firestore-Writes aufstauen).
+  useEffect(()=>{
+    if(!loaded || !authUser) return;
+    const key = JSON.stringify([user.username||"", user.email||authUser.email||"", user.firstName||"", user.lastName||""]);
+    if(profileSyncKeyRef.current===key) return;
+    if(profileSyncTimerRef.current) clearTimeout(profileSyncTimerRef.current);
+    profileSyncTimerRef.current=setTimeout(()=>{
+      (async()=>{
+        const profile = await upsertUserProfile(authUser.uid, {...user, email: user.email || authUser.email || ""}).catch(e=>{
+          if(window.dbg) dbg(`❌ Öffentliches Profil konnte nicht gespeichert werden: ${e.message}`, '#f55');
+          return null;
+        });
+        if(!profile){return;} // Fehlgeschlagen – Key NICHT setzen, damit es beim nächsten Sync erneut versucht wird.
+        profileSyncKeyRef.current=key;
+        if(window.dbg) dbg(`👤 Öffentliches Profil synchronisiert: ${profile.username||profile.email||authUser.uid}`, '#0f0');
+        const result = await processPendingReferral(authUser.uid, profile).catch(()=>null);
+        if(result?.type==="requested") showToast(`Freundschaftsanfrage an ${result.profile.username||result.profile.email} gesendet! 🤝`);
+        if(result?.type==="accepted") showToast(`Du bist jetzt mit ${result.profile.username||result.profile.email} befreundet! 🎉`);
+      })();
+    },1500);
+    return ()=>{if(profileSyncTimerRef.current)clearTimeout(profileSyncTimerRef.current);};
+  }, [loaded, authUser, user.username, user.email, user.firstName, user.lastName]);
+
   // Data is loaded from LocalStorage immediately to show something to the user.
   // 'loaded' will be set to true only when we've established a real-time connection with Firestore.
 
@@ -2341,7 +2508,7 @@ function FitForge(){
   const p=n=>String(n).padStart(2,"0");
   const WN=["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
   const clkStr=WN[clk.getDay()]+" "+p(clk.getDate())+"."+p(clk.getMonth()+1)+"."+clk.getFullYear()+" | "+p(clk.getHours())+":"+p(clk.getMinutes())+":"+p(clk.getSeconds());
-  const closeAll=()=>{setProfileOpen(false);setNotifOpen(false);};
+  const closeAll=()=>{setProfileOpen(false);setNotifOpen(false);setFriendsExpanded(false);};
   const activeEx = activeWorkout && activeWorkout.curEx !== undefined ? activeWorkout.exercises[activeWorkout.curEx] : null;
   const fmtTimer=t=>{const m=Math.floor(t/60),s=t%60;return`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;};
   const totalVol=data.workouts.reduce((a,w)=>a+(w.exercises||[]).reduce((b,e)=>b+(e.isHiit?0:(e.sets||[]).reduce((c,s)=>c+(parseFloat(s.weight)||0)*(parseFloat(s.reps)||0),0)),0),0);
@@ -2527,7 +2694,7 @@ function FitForge(){
               <button style={{...s.avatarBtn,...(profileOpen?s.avatarOn:{})}} onClick={()=>{setProfileOpen(o=>!o);setNotifOpen(false);}}>
                 {user.avatar?<img src={user.avatar} alt="av" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={s.initials}>{getInitials(user)}</span>}
               </button>
-              {profileOpen&&<div style={{...s.dropdown,width:250, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}} className="dropIn" onClick={e=>e.stopPropagation()}>
+              {profileOpen&&<div style={{...s.dropdown,width: friendsExpanded?340:250, maxHeight:"80vh",overflowY:"auto", background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}} className="dropIn" onClick={e=>e.stopPropagation()}>
                 <div style={{display:"flex",alignItems:"center",gap:12,padding:"16px 18px"}}>
                   <div style={{width:44,height:44,borderRadius:"50%",background:"linear-gradient(135deg,#FF6B35,#FF8C60)",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
                     {user.avatar?<img src={user.avatar} alt="av" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}}/>:<span style={{fontFamily:"'DM Sans',sans-serif",fontSize:15,fontWeight:800,color:"#fff"}}>{getInitials(user)}</span>}
@@ -2543,6 +2710,11 @@ function FitForge(){
                 <button className="profEditBtn" style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"transparent",border:"none",color:"#aaa",cursor:"pointer",padding:"12px 16px",fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif"}} onClick={()=>{setProfileOpen(false);setView("profile");}}>
                   {IC.edit} Profil bearbeiten
                 </button>
+
+                <button className="profEditBtn" style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"transparent",border:"none",color:friendsExpanded?"#FF6B35":"#aaa",cursor:"pointer",padding:"12px 16px",fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif"}} onClick={()=>setFriendsExpanded(o=>!o)}>
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg> Freunde {friendsExpanded?"▲":"▼"}
+                </button>
+                {friendsExpanded&&<div style={{padding:"0 12px 12px"}}><FriendsCard user={user} notify={showToast}/></div>}
 
                 <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"transparent",border:"none",color:"#EF476F",cursor:"pointer",padding:"10px 16px 14px",fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif"}} onClick={async()=>{setProfileOpen(false);await window.firebaseSignOut();}}>
                   <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
@@ -3388,9 +3560,6 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
   const [scanning,setScanning]=useState(false);
   const [manualBarcode,setManualBarcode]=useState("");
   const [waterAmount,setWaterAmount]=useState("");
-  const [activeTab, setActiveTab] = useState("track");
-  const [knowledgeSearch, setKnowledgeSearch] = useState("");
-
   const isFav = f => favFoods.some(x => x.name.toLowerCase() === f.name.toLowerCase());
   const toggleFav = f => {
     if (isFav(f)) setFavFoods(curr => curr.filter(x => x.name.toLowerCase() !== f.name.toLowerCase()));
@@ -3452,7 +3621,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
       try {
         const scanner = new window.Html5Qrcode("reader");
         scannerRef.current = scanner;
-        const config = { fps: 15, qrbox: { width: 300, height: 180 }, aspectRatio: 1.333, formatsToSupport: [0,1,2,3,4,5,6,7,8,9,10,11,12,13] };
+        const config = { fps: 15, qrbox: { width: 300, height: 180 }, aspectRatio: 1.333, formatsToSupport: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16] };
         scanner.start({ facingMode: "environment" }, config, (text) => {
           lookupBarcode(text);
         }).catch(err => {
@@ -3521,35 +3690,22 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
   const mealGroups=["Frühstück","Mittagessen","Abendessen","Snack","Sonstige"];
   const filtered=COMMON_FOODS.filter(f=>f.name.toLowerCase().includes(search.toLowerCase()));
 
-  const filteredKnowledge = NUTRITION_KNOWLEDGE.filter(k => 
-    k.title.toLowerCase().includes(knowledgeSearch.toLowerCase()) || 
-    k.cat.toLowerCase().includes(knowledgeSearch.toLowerCase()) ||
-    k.text.toLowerCase().includes(knowledgeSearch.toLowerCase())
-  );
-
   return (
     <div style={{...s.page, padding: isMobile ? "10px 10px 80px" : s.page.padding}}>
       <div style={s.pageHead}>
         <div style={{display:"flex",alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 12 : 16, flexDirection: isMobile ? "column" : "row", justifyContent:"space-between", width:"100%"}}>
           <div>
             <h1 style={{...s.pageTitle, fontSize: isMobile ? 24 : 32}}>Ernährung</h1>
-            <p style={s.pageSub}>{activeTab==="track" ? `${dayData.calories} kcal heute` : "Wissensdatenbank"}</p>
+            <p style={s.pageSub}>{dayData.calories} kcal heute</p>
           </div>
-          <div style={{display:"flex", gap: 8, background:"rgba(255,255,255,0.04)", padding: 4, borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)", width: isMobile ? "100%" : "auto", justifyContent: isMobile ? "center" : "flex-end"}}>
-            <button style={{...s.secBtn,border:"none",padding:"6px 14px",fontSize:11,flex: isMobile ? 1 : "initial",background:activeTab==="track"?"#FF6B35":"transparent",color:activeTab==="track"?"#fff":"#888"}} onClick={()=>setActiveTab("track")}>Tracking</button>
-            <button style={{...s.secBtn,border:"none",padding:"6px 14px",fontSize:11,flex: isMobile ? 1 : "initial",background:activeTab==="wissen"?"#FF6B35":"transparent",color:activeTab==="wissen"?"#fff":"#888"}} onClick={()=>setActiveTab("wissen")}>Wissen</button>
+          <div style={{display:"flex", gap: 8, width: isMobile ? "100%" : "auto"}}>
+            <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...s.inp,flex: isMobile ? "0 0 120px" : "0 0 150px",padding:"8px 10px", fontSize: 13}}/>
+            <button style={{...s.primaryBtn, flex:1, justifyContent:"center", padding: "8px 16px"}} onClick={()=>setShowAdd(o=>!o)}>{IC.plus} Hinzufügen</button>
           </div>
-          {activeTab==="track" && (
-            <div style={{display:"flex", gap: 8, width: isMobile ? "100%" : "auto"}}>
-              <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...s.inp,flex:1,padding:"8px 12px", fontSize: 13}}/>
-              <button style={{...s.primaryBtn, padding: "8px 16px"}} onClick={()=>setShowAdd(o=>!o)}>{IC.plus} {isMobile ? "" : "Hinzufügen"}</button>
-            </div>
-          )}
         </div>
       </div>
-      
-      {activeTab === "track" ? (
-        <>
+
+      <>
           {scanning && (
             <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.9)",zIndex:10000,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
               <div style={{width:"100%",maxWidth:400,background:"#111",borderRadius:20,overflow:"hidden",position:"relative"}}>
@@ -3565,12 +3721,29 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
           )}
 
           <div style={{...s.card,marginBottom:22, padding: isMobile ? 16 : 22}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><h3 style={s.cardTitle}>Makros</h3><div style={{fontFamily:"'DM Sans',sans-serif",fontSize: isMobile ? 16 : 18,fontWeight:800,color:"#FF6B35"}}>{dayData.calories}<span style={{fontSize:11,color:"#666",fontWeight:400}}> / {calGoal} kcal</span></div></div>
-            <div style={{height:9,background:"rgba(255,255,255,0.05)",borderRadius:5,overflow:"hidden",marginBottom:18}}><div style={{height:"100%",width:`${Math.min(dayData.calories/calGoal*100,100)}%`,background:"#FF6B35",borderRadius:5,transition:"width 0.4s"}}/></div>
-            <div style={{display:"grid",gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)",gap:12}}>
-              {[["Protein",dayData.protein||0,protGoal,"g","#00D9C0"],["Kohlenhydrate",dayData.carbs||0,carbGoal,"g","#FFD166"],["Fett",dayData.fat||0,fatGoal,"g","#A78BFA"]].map(([label,val,goal,unit,color])=>(
-                <div key={label} style={{background:"rgba(255, 255, 255, 0.02)",border:"1px solid rgba(255, 255, 255, 0.06)",backdropFilter:"blur(5px)",WebkitBackdropFilter:"blur(5px)",borderRadius:11,padding: isMobile ? "10px 14px" : "13px"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}><span style={{fontSize:11,fontWeight:600,color}}>{label}</span><span style={{fontSize:10,color:"#666"}}>{Math.round(val)}/{goal}{unit}</span></div><div style={{height:5,background:"rgba(255,255,255,0.05)",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(val/goal*100,100)}%`,background:color,borderRadius:3,transition:"width 0.4s"}}/></div></div>
-              ))}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h3 style={s.cardTitle}>Makros</h3></div>
+            <div style={{display:"grid",gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)",gap: isMobile ? 10 : 14}}>
+              {[["Kalorien",dayData.calories||0,calGoal,"kcal","#FF6B35","🔥"],["Protein",dayData.protein||0,protGoal,"g","#00D9C0","💪"],["Kohlenhydrate",dayData.carbs||0,carbGoal,"g","#FFD166","🌾"],["Fett",dayData.fat||0,fatGoal,"g","#A78BFA","🥑"]].map(([label,val,goal,unit,color,emoji])=>{
+                const pct=goal>0?Math.min(val/goal,1):0;
+                const rr=30,circ=2*Math.PI*rr;
+                const done=val>=goal;
+                return(
+                  <div key={label} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding: isMobile ? "12px 4px" : "14px 8px",backdropFilter:"blur(5px)",WebkitBackdropFilter:"blur(5px)"}}>
+                    <svg width={76} height={76} viewBox="0 0 76 76">
+                      <circle cx="38" cy="38" r={rr} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7"/>
+                      <circle cx="38" cy="38" r={rr} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
+                        strokeDasharray={`${pct*circ} ${circ}`} transform="rotate(-90 38 38)"
+                        style={{transition:"stroke-dasharray 0.6s cubic-bezier(0.16,1,0.3,1)",filter:done?`drop-shadow(0 0 5px ${color}99)`:"none"}}/>
+                      <text x="38" y="35" textAnchor="middle" fontSize="15" fontWeight="900" fill="#fff" fontFamily="DM Sans,sans-serif">{Math.round(pct*100)}%</text>
+                      <text x="38" y="48" textAnchor="middle" fontSize="9" fontFamily="DM Sans,sans-serif">{emoji}</text>
+                    </svg>
+                    <div style={{textAlign:"center"}}>
+                      <div style={{fontSize:11,fontWeight:700,color}}>{label}</div>
+                      <div style={{fontSize:10,color:"#666",marginTop:2}}>{Math.round(val)}/{goal}{unit}</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -3738,35 +3911,6 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
             )}
           </div>
         </>
-      ) : (
-        <div className="fadeIn">
-          <div style={{...s.card, marginBottom:20, padding: isMobile ? 16 : 22}}>
-            <h3 style={s.cardTitle}>Nährstoff-Wissen</h3>
-            <p style={{fontSize:13, color:"#666", marginBottom:16}}>Wichtige Informationen für deinen Fortschritt</p>
-            <input 
-              style={{...s.inp, fontSize: 13}} 
-              placeholder="Thema suchen..." 
-              value={knowledgeSearch}
-              onChange={e => setKnowledgeSearch(e.target.value)}
-            />
-          </div>
-          
-          <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap:14}}>
-            {filteredKnowledge.map(k => (
-              <div key={k.id} style={{...s.card, padding:16, display:"flex", gap:14, border:"1px solid #1E1E24"}} className="hoverCard">
-                <div style={{fontSize:28, background:"#1A1A1F", width:56, height:56, borderRadius:14, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0}}>
-                  {k.icon}
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:16, fontWeight:800, marginBottom:8}}>{k.title}</div>
-                  <div style={{fontSize:12, color:"#aaa", lineHeight:1.5}}>{k.text}</div>
-                </div>
-              </div>
-            ))}
-            {filteredKnowledge.length === 0 && <div style={{gridColumn:"1/-1", textAlign:"center", padding:40, color:"#444"}}>Keine Einträge für "{knowledgeSearch}" gefunden.</div>}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -6414,6 +6558,140 @@ function PhotoDetailModal({photo, onClose, isMobile}) {
   );
 }
 
+function FriendsCard({user,notify}){
+  const myUid=getUid();
+  const [search,setSearch]=useState("");
+  const [results,setResults]=useState([]);
+  const [searching,setSearching]=useState(false);
+  const [incoming,setIncoming]=useState([]);
+  const [outgoing,setOutgoing]=useState([]);
+  const [friends,setFriends]=useState([]);
+  const [loading,setLoading]=useState(true);
+
+  const reload=async()=>{
+    if(!myUid)return;
+    setLoading(true);
+    try{
+      const [inc,out,fr]=await Promise.all([getIncomingRequests(myUid),getOutgoingRequests(myUid),getFriends(myUid)]);
+      setIncoming(inc);setOutgoing(out);setFriends(fr);
+    }catch(e){console.warn("Freunde laden:",e.message);notify(`Freunde/Anfragen laden fehlgeschlagen: ${e.message}`,"error");}
+    setLoading(false);
+  };
+
+  useEffect(()=>{
+    reload();
+    if(myUid){
+      upsertUserProfile(myUid,user)
+        .then(profile=>{if(!profile)notify("Dein Profil konnte nicht synchronisiert werden – die Suche findet dich evtl. nicht.","error");})
+        .catch(e=>notify(`Profil-Sync fehlgeschlagen: ${e.message}`,"error"));
+    }
+  },[]);
+
+  const doSearch=async()=>{
+    if(!search.trim())return;
+    setSearching(true);
+    try{
+      const res=await searchUserProfiles(search,myUid);
+      setResults(res);
+      if(!res.length)notify("Niemanden gefunden","error");
+    }catch(e){console.warn(e);notify("Suche fehlgeschlagen","error");}
+    setSearching(false);
+  };
+
+  const request=async(profile)=>{
+    try{
+      const myProfile=await upsertUserProfile(myUid,user);
+      await sendFriendRequest(myUid,myProfile||user,profile);
+      notify(`Anfrage an ${profile.username||profile.email} gesendet! 🤝`);
+      reload();
+    }catch(e){notify(e.message||"Anfrage fehlgeschlagen","error");}
+  };
+
+  const accept=async(req)=>{
+    try{await acceptFriendRequest(req.id);notify(`Du bist jetzt mit ${req.fromUsername||req.fromEmail} befreundet! 🎉`);reload();}
+    catch(e){notify("Fehler beim Annehmen","error");}
+  };
+  const decline=async(req)=>{
+    try{await removeFriendRequest(req.id);reload();}catch(e){}
+  };
+
+  const invite=async()=>{
+    if(window.location.protocol==="file:"){
+      notify("Einladen funktioniert nur, wenn die App über eine echte Web-Adresse (nicht als lokale Datei) läuft.","error");
+      return;
+    }
+    const url=`${window.location.origin}${window.location.pathname}?ref=${myUid}`;
+    const text=`Komm auf FitForge trainieren! ${url}`;
+    if(navigator.share){
+      try{await navigator.share({title:"FitForge",text,url});return;}
+      catch(e){if(e.name==="AbortError")return;}
+    }
+    if(navigator.clipboard&&window.isSecureContext){
+      try{await navigator.clipboard.writeText(url);notify("Link kopiert! 📋");return;}catch(e){}
+    }
+    notify(`Teilen hier nicht möglich (unsicherer Kontext) – Link von Hand kopieren: ${url}`,"error");
+  };
+
+  const isRequested=uid=>outgoing.some(o=>o.to===uid)||friends.some(f=>f.uid===uid);
+
+  return (
+    <div style={{...s.card, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h3 style={s.cardTitle}>👥 Freunde</h3>
+        <button style={{...s.secBtn,padding:"6px 14px",fontSize:12}} onClick={invite}>Einladen</button>
+      </div>
+
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <input style={{...s.inp,flex:1}} placeholder="Benutzername oder E-Mail suchen..." value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()}/>
+        <button style={{...s.secBtn,padding:"0 16px"}} disabled={!search.trim()||searching} onClick={doSearch}>{searching?"...":"Suchen"}</button>
+      </div>
+
+      {results.length>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+          {results.map(p=>(
+            <div key={p.uid} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:13}}>{p.username||"(kein Username)"}</div>
+                <div style={{fontSize:11,color:"#666"}}>{p.email}</div>
+              </div>
+              <button style={{...s.secBtn,padding:"6px 12px",fontSize:12}} disabled={isRequested(p.uid)} onClick={()=>request(p)}>{isRequested(p.uid)?"Angefragt":"Hinzufügen"}</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {incoming.length>0&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Anfragen ({incoming.length})</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {incoming.map(r=>(
+              <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,183,3,0.06)",border:"1px solid rgba(255,183,3,0.25)",borderRadius:10,padding:"10px 14px"}}>
+                <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:13}}>{r.fromUsername||r.fromEmail}</div>
+                <button style={{...s.primaryBtn,padding:"6px 12px",fontSize:12}} onClick={()=>accept(r)}>Annehmen</button>
+                <button style={{background:"transparent",border:"none",color:"#666",cursor:"pointer",padding:6}} onClick={()=>decline(r)}>{IC.x}</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div style={{fontSize:11,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Deine Freunde ({friends.length})</div>
+        {loading?<div style={{color:"#666",fontSize:12}}>Lädt...</div>:
+          friends.length===0?<div style={{color:"#666",fontSize:12,fontStyle:"italic"}}>Noch keine Freunde. Nutze die Suche oben!</div>:
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {friends.map(f=>(
+              <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px"}}>
+                <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:13}}>{f.username||f.email}</div>
+              </div>
+            ))}
+          </div>
+        }
+      </div>
+    </div>
+  );
+}
+
 function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
   const [form,setForm]=useState({...user,weight:latestWeight!=null?String(latestWeight):user.weight||""});
   const [uploading,setUploading]=useState(false);
@@ -6435,15 +6713,25 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
     setUploading(false);
   };
 
-  const save=()=>{setUser(form);notify("Profil gespeichert! ✅");};
+  const save=async()=>{
+    if(form.username&&form.username.trim()){
+      const taken=await isUsernameTaken(form.username,getUid()).catch(()=>false);
+      if(taken)return notify("Dieser Benutzername ist schon vergeben","error");
+    }
+    setUser(form);
+    upsertUserProfile(getUid(),form).catch(e=>console.warn("upsertUserProfile:",e.message));
+    notify("Profil gespeichert! ✅");
+  };
 
   return(<div style={s.page}><div style={s.pageHead}><div><h1 style={s.pageTitle}>Mein Profil</h1><p style={s.pageSub}>Daten & Einstellungen</p></div></div><div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:22}}>
   <div style={{...s.card, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}}><h3 style={s.cardTitle}>Persönliche Daten</h3><div style={{display:"flex",alignItems:"center",gap:18,marginBottom:24}}><div className="avCircle" style={{width:76,height:76,borderRadius:"50%",background:"rgba(255,255,255,0.04)",border:"2px dashed rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",overflow:"hidden",flexShrink:0}} onClick={()=>fileRef.current.click()}>{form.avatar?<img src={form.avatar} alt="av" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}}/>:<span style={{fontSize:28,fontFamily:"'DM Sans',sans-serif",fontWeight:800,color:"#FF6B35"}}>{getInitials(form)}</span>}<div className="avOverlay" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s"}}>{IC.camera}</div></div><input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleAv}/><div><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:800,fontSize:16}}>{form.firstName||form.lastName?`${form.firstName} ${form.lastName}`.trim():"Dein Name"}</div></div></div>
   <div style={{...s.formGrid, gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}><div style={s.fg}><label style={s.lbl}>Vorname</label><input style={s.inp} value={form.firstName} onChange={e=>setForm(f=>({...f,firstName:e.target.value}))} placeholder="Max"/></div><div style={s.fg}><label style={s.lbl}>Nachname</label><input style={s.inp} value={form.lastName} onChange={e=>setForm(f=>({...f,lastName:e.target.value}))} placeholder="Mustermann"/></div></div>
+  <div style={s.fg}><label style={s.lbl}>Benutzername</label><input style={s.inp} value={form.username||""} onChange={e=>setForm(f=>({...f,username:e.target.value.replace(/\s+/g,"")}))} placeholder="z.B. mirco_ff"/><div style={{fontSize:11,color:"#666",marginTop:5}}>Damit dich Freunde finden können.</div></div>
   <div style={s.fg}><label style={s.lbl}>E-Mail</label><input style={s.inp} type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="max@beispiel.de"/></div>
   <div style={{...s.formGrid, gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}><div style={s.fg}><label style={s.lbl}>Gewicht (kg)</label><input style={s.inp} type="number" value={form.weight} onChange={e=>setForm(f=>({...f,weight:e.target.value}))} placeholder="80"/></div><div style={s.fg}><label style={s.lbl}>Größe (cm)</label><input style={s.inp} type="number" value={form.height} onChange={e=>setForm(f=>({...f,height:e.target.value}))} placeholder="180"/></div></div>
   <div style={s.fg}><label style={s.lbl}>Fitnessziel</label><select style={s.inp} value={form.goal} onChange={e=>setForm(f=>({...f,goal:e.target.value}))}>{["Muskelaufbau","Gewichtsverlust","Ausdauer","Fitness & Gesundheit","Kraft steigern"].map(g=><option key={g}>{g}</option>)}</select></div>
   </div>
+  <FriendsCard user={form} notify={notify}/>
   <div style={{...s.card, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}}><h3 style={{...s.cardTitle,color:"#FFB703",display:"flex",alignItems:"center",gap:8}}><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg> Arbeitswoche & Zeiten</h3>
      <p style={{fontSize:12,color:"#666",marginBottom:16,marginTop:4}}>Diese Zeiten nutzt die KI, um dein Training optimal um deinen Job herum zu planen.</p>
      <div style={s.fg}><label style={s.lbl}>Arbeitstage</label><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{FULL_WEEKDAYS.map(d=><button key={d} onClick={()=>{const wd=form.workDays||[];const nd=wd.includes(d)?wd.filter(x=>x!==d):[...wd,d];setForm(f=>({...f,workDays:nd}))}} style={{...s.dayToggle,background:(form.workDays||[]).includes(d)?"#FFB70320":"rgba(255,255,255,0.04)",borderColor:(form.workDays||[]).includes(d)?"#FFB703":"rgba(255,255,255,0.08)",color:(form.workDays||[]).includes(d)?"#FFB703":"#888"}}>{d}</button>)}</div></div>
@@ -6546,65 +6834,6 @@ const DEFAULT_RECIPES=[
   {id:33,name:"Edamame Snack",kcal:210,protein:18,carbs:14,fat:8,time:5,category:"Snack",ingredients:[{name:"Edamame (TK)",amount:"200g"},{name:"Meersalz",amount:"Prise"}],steps:["Edamame in Salzwasser 4 Min kochen.","Abgießen und mit grobem Salz bestreuen."],tags:["Vegan","High Protein"]},
   {id:34,name:"Protein Haferkekse",kcal:180,protein:8,carbs:22,fat:6,time:20,category:"Snack",ingredients:[{name:"Banane",amount:"2 Stück"},{name:"Haferflocken",amount:"150g"},{name:"Schoko-Drops",amount:"20g"}],steps:["Bananen zerdrücken, mit Haferflocken mit Schoko-Drops mischen.","Kleine Kekse formen, Schoko hinzufügen.","Bei 180°C 12 Min backen."],tags:["Veggie","Vollwertig"]},
   {id:35,name:"Rindersteak mit Brokkoli",kcal:440,protein:45,carbs:8,fat:24,time:15,category:"Abendessen",ingredients:[{name:"Hüftsteak",amount:"200g"},{name:"Brokkoli",amount:"250g"},{name:"Knoblauch",amount:"1 Zehe"}],steps:["Steak scharf anbraten.","Brokkoli dämpfen.","Brokkoli in Olivenöl mit Knoblauch kurz schwenken."],tags:["Paleo","High Protein"]},
-];
-
-const NUTRITION_KNOWLEDGE = [
-  { id: 1, title: "Protein: Muskelbaustein", cat: "Muskelaufbau", text: "Proteine sind essenziell für die Reparatur und das Wachstum von Muskelgewebe. Ziel: 1.6-2.2g pro kg Körpergewicht.", icon: "💪" },
-  { id: 2, title: "Carbs: Energiequelle", cat: "Energiewirtschaft", text: "Kohlenhydrate füllen deine Glykogenspeicher und geben dir die nötige Kraft für intensive Einheiten.", icon: "⚡" },
-  { id: 3, title: "Fette für Hormone", cat: "Gesundheit", text: "Gesunde Fette sind wichtig für den Hormonhaushalt (z.B. Testosteron). Ziel: 0.8g pro kg Körpergewicht.", icon: "🥑" },
-  { id: 4, title: "Das Kaloriendefizit", cat: "Abnehmen", text: "Zum Abnehmen ist ein Defizit nötig. Ein moderates Defizit von 300-500 kcal schützt deine Muskelmasse.", icon: "📉" },
-  { id: 5, title: "Kalorienüberschuss", cat: "Muskelaufbau", text: "Für maximales Wachstum ist ein kleiner Überschuss hilfreich. 200-300 kcal reichen meist für einen Lean Bulk.", icon: "📈" },
-  { id: 6, title: "Kreatin-Nutzen", cat: "Supplements", text: "Kreatin erhöht die Schnellkraft und das Zellvolumen. 3-5g täglich sind der Goldstandard.", icon: "💊" },
-  { id: 7, title: "Hydratation", cat: "Gesundheit", text: "30-40ml Wasser pro kg Körpergewicht plus 1L pro Trainingsstunde halten deine Leistung hoch.", icon: "💧" },
-  { id: 8, title: "Schlaf & Wachstum", cat: "Regeneration", text: "Muskelaufbau findet im Schlaf statt, nicht im Gym. Ziele 7-9 Stunden Qualitätsschlaf an.", icon: "😴" },
-  { id: 9, title: "Protein-Timing", cat: "Muskelaufbau", text: "Die Verteilung über den Tag (alle 3-5h) ist wichtiger als die Mahlzeit direkt nach dem Training.", icon: "🕒" },
-  { id: 10, title: "Ballaststoffe", cat: "Gesundheit", text: "30g+ Ballaststoffe täglich fördern die Verdauung und sorgen für eine langanhaltende Sättigung.", icon: "🥦" },
-  { id: 11, title: "Omega-3 Fettsäuren", cat: "Gesundheit", text: "Wirken entzündungshemmend und fördern die Gelenkgesundheit. Top Quellen: Lachs, Walnüsse oder Algenöl.", icon: "🐟" },
-  { id: 12, title: "Vitamin D im Winter", cat: "Supplements", text: "Ohne Sonne bildet der Körper kaum Vitamin D. Es ist kritisch für Kraft und Immunsystem.", icon: "☀️" },
-  { id: 13, title: "NEAT erklärt", cat: "Abnehmen", text: "NEAT ist die Bewegung im Alltag (Gehen, Stehen). Sie verbrennt oft mehr Kalorien als das Training selbst.", icon: "🚶" },
-  { id: 14, title: "Magnesium für die Nacht", cat: "Regeneration", text: "Magnesium am Abend entspannt die Muskulatur und kann die Schlafqualität spürbar verbessern.", icon: "🌙" },
-  { id: 15, title: "Insulin-Einfluss", cat: "Energiewirtschaft", text: "Insulin schleust Nährstoffe in die Zellen. Nach dem Training ist eine Insulinausschüttung durch Carbs erwünscht.", icon: "🍭" },
-  { id: 16, title: "Cortisol & Stress", cat: "Regeneration", text: "Dauerhafter Stress erhöht Cortisol, was den Muskelaufbau hemmt und Wassereinlagerungen begünstigt.", icon: "🤯" },
-  { id: 17, title: "Alkohol & Fitness", cat: "Gesundheit", text: "Alkohol hemmt die Proteinsynthese für bis zu 24h und senkt temporär den Testosteronspiegel.", icon: "🍺" },
-  { id: 18, title: "Refeed Days", cat: "Abnehmen", text: "In einer langen Diät können Tage mit hohen Carbs den Stoffwechsel (Leptin) kurzzeitig ankurbeln.", icon: "🍕" },
-  { id: 19, title: "Salz im Training", cat: "Energiewirtschaft", text: "Natrium ist wichtig für die Nervenleitung und den 'Pump'. Vor dem Training moderat salzen!", icon: "🧂" },
-  { id: 20, title: "Koffein-Timing", cat: "Supplements", text: "Koffein wirkt nach 30-60 Min maximal. Es steigert Kraftausdauer und Fokus im Gym.", icon: "☕" },
-  { id: 21, title: "Casein für die Nacht", cat: "Muskelaufbau", text: "Dieses langsame Protein (z.B. in Magerquark) versorgt deine Muskeln über Stunden im Schlaf.", icon: "🥛" },
-  { id: 22, title: "Flüssige Kalorien", cat: "Abnehmen", text: "Säfte und Softdrinks liefern Energie ohne Sättigung. In der Diät lieber darauf verzichten.", icon: "🥤" },
-  { id: 23, title: "Zink-Bedeutung", cat: "Gesundheit", text: "Zink unterstützt die Testosteronproduktion und das Immunsystem. Viel enthalten in Kürbiskernen.", icon: "🎃" },
-  { id: 24, title: "Vollkorn vs. Weißmehl", cat: "Energiewirtschaft", text: "Vollkornprodukte haben mehr Mikronährstoffe und halten den Blutzucker stabil.", icon: "🍞" },
-  { id: 25, title: "Sättigungsgefühl", cat: "Abnehmen", text: "Protein ist der Makronährstoff, der am stärksten sättigt. Erhöhe Protein, wenn du ständig Hunger hast.", icon: "🍗" },
-  { id: 26, title: "Mikronährstoffe", cat: "Gesundheit", text: "Vitamine und Mineralien sind die Zündkerzen des Stoffwechsels. Iss so bunt wie möglich!", icon: "🌈" },
-  { id: 27, title: "Carb Cycling", cat: "Abnehmen", text: "Low-Carb an Ruhetagen und High-Carb an Trainingstagen kann die Insulinsensitivität optimieren.", icon: "🚲" },
-  { id: 28, title: "Whey Protein", cat: "Supplements", text: "Schnell verfügbares Eiweiß. Ideal direkt nach dem Aufstehen oder nach dem Workout.", icon: "🥣" },
-  { id: 29, title: "Eisen & Sauerstoff", cat: "Gesundheit", text: "Eisenmangel führt zu schneller Ermüdung. Fleisch, Linsen und Haferflocken sind gute Quellen.", icon: "🩸" },
-  { id: 30, title: "Stressmanagement", cat: "Regeneration", text: "Meditation oder Spaziergänge senken Cortisol und verbessern so dein hormonelles Umfeld.", icon: "🧘" },
-  { id: 31, title: "Eier: Superfood", cat: "Gesundheit", text: "Eier haben die höchste biologische Wertigkeit. Das Eigelb ist voll mit Vitaminen A, D, E & K.", icon: "🥚" },
-  { id: 32, title: "Mahlzeiten-Frequenz", cat: "Grundlagen", text: "Ob 3 oder 6 Mahlzeiten ist für den Fettverlust egal, solange die Gesamtkalorien am Ende stimmen.", icon: "🔢" },
-  { id: 33, title: "Zucker in Maßen", cat: "Grundlagen", text: "Zucker ist nicht 'giftig', liefert aber null Sättigung. Halte ihn unter 10% der Tageskalorien.", icon: "🍩" },
-  { id: 34, title: "Gesunde Darmflora", cat: "Gesundheit", text: "Probiotika (Joghurt, Sauerkraut) unterstützen die Nährstoffaufnahme und das Immunsystem.", icon: "🦠" },
-  { id: 35, title: "Kalzium-Bedarf", cat: "Gesundheit", text: "Wichtig für Knochen und Muskelkontraktion. Enthalten in Milch, Käse, Brokkoli und Mineralwasser.", icon: "🦴" },
-  { id: 36, title: "Antioxidantien", cat: "Regeneration", text: "Sekundäre Pflanzenstoffe in Beeren schützen deine Zellen vor freien Radikalen nach dem Sport.", icon: "🍓" },
-  { id: 37, title: "Pre-Workout Carbs", cat: "Energiewirtschaft", text: "Eine Banane 30 Min vor dem Training liefert schnellen Treibstoff für deine Muskeln.", icon: "🍌" },
-  { id: 38, title: "Intermittierendes Fasten", cat: "Abnehmen", text: "Kein Muss, kann aber helfen, in einem Kaloriendefizit zu bleiben, indem man später isst.", icon: "⌛" },
-  { id: 39, title: "Volumen-Essen", cat: "Abnehmen", text: "Iss Lebensmittel mit geringer Kaloriendichte (Gemüse, Beeren), um dich satt zu fühlen.", icon: "🥗" },
-  { id: 40, title: "Creatin-Ladephase", cat: "Supplements", text: "Unnötig. 3-5g am Tag füllen deine Speicher sicher innerhalb von etwa 3-4 Wochen.", icon: "⚖️" },
-  { id: 41, title: "Muskelkater-Mythen", cat: "Regeneration", text: "Muskelkater ist kein Indikator für Muskelwachstum, sondern oft nur für ungewohnte Bewegung.", icon: "🩹" },
-  { id: 42, title: "Tiefkühl-Gemüse", cat: "Grundlagen", text: "Wird oft direkt nach der Ernte gefroren und hat daher meist mehr Vitamine als 'frisches' aus dem Laden.", icon: "🧊" },
-  { id: 43, title: "Meal Prep Vorteile", cat: "Grundlagen", text: "Wer plant, sündigt seltener. Meal Prep spart Zeit, Geld und stellt deine Makros sicher.", icon: "🍱" },
-  { id: 44, title: "Protein-Absorption", cat: "Grundlagen", text: "Dein Körper kann mehr als 30g Protein pro Mahlzeit nutzen. Er braucht nur länger zum Verdauen.", icon: "🔄" },
-  { id: 45, title: "Cheat Meals Psychologie", cat: "Grundlagen", text: "Ein geplantes Cheat-Meal kann helfen, langfristig diszipliniert zu bleiben. Bleib aber bei 80/20.", icon: "🍔" },
-  { id: 46, title: "Salz & Blutdruck", cat: "Gesundheit", text: "Für Athleten ist Salz wichtig (Elektrolyte), aber wer Bluthochdruck hat, sollte vorsichtiger sein.", icon: "📉" },
-  { id: 47, title: "Zitronenwasser am Morgen", cat: "Grundlagen", text: "Guter Start zur Hydratation. Es 'verbrennt' aber kein Fett, wie oft behauptet wird.", icon: "🍋" },
-  { id: 48, title: "Grüner Tee Extrakt", cat: "Supplements", text: "Kann den Stoffwechsel minimal erhöhen, ersetzt aber niemals das Kaloriendefizit.", icon: "🍵" },
-  { id: 49, title: "Anabole Resistenz", cat: "Muskelaufbau", text: "Mit steigendem Alter braucht der Körper pro Mahlzeit mehr Protein (40g+), um den Aufbau zu triggern.", icon: "👴" },
-  { id: 50, title: "Vegane Proteinquellen", cat: "Grundlagen", text: "Kombiniere Getreide und Hülsenfrüchte (z.B. Reis & Bohnen), um alle Aminosäuren zu erhalten.", icon: "🌱" },
-  { id: 51, title: "BCAA Unfug?", cat: "Supplements", text: "BCAAs sind in Whey enthalten. Zusätzliche BCAAs bringen meist nur etwas bei Training im Fasten.", icon: "🧪" },
-  { id: 52, title: "Sojaprotein-Mythen", cat: "Grundlagen", text: "Soja ist ein vollwertiges Protein. Die enthaltenen Phytoöstrogene schaden dem Mann in Maßen nicht.", icon: "🥛" },
-  { id: 53, title: "Laktose-Sensitivität", cat: "Gesundheit", text: "Wer auf Milchprodukte mit Blähungen reagiert, sollte laktosefreie Alternativen testen.", icon: "🧀" },
-  { id: 54, title: "Gluten-Check", cat: "Gesundheit", text: "Gluten ist für 95% der Menschen harmlos. Nur bei Zöliakie oder Entzündungen ein Problem.", icon: "🌾" },
-  { id: 55, title: "Heißhunger-Prävention", cat: "Abnehmen", text: "Oft ein Zeichen von Schlafmangel. Schlaf reguliert Hungerhormone (Ghrelin & Leptin).", icon: "🍫" },
-  { id: 60, title: "Mindful Eating", cat: "Abnehmen", text: "Langsam essen und kauen. Dein Gehirn merkt erst nach 20 Min, dass der Magen voll ist.", icon: "🧘" },
 ];
 
 const CAT_COLORS={"Frühstück":"#FFD166","Mittagessen":"#FF6B35","Abendessen":"#A78BFA","Snack":"#00D9C0"};
@@ -8559,7 +8788,7 @@ function WPEntryModal({dayName,editEntry,plans,library=[],dayEntries,onSave,onDe
         )}
 
         {/* Time */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+        <div className="wp-time-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
           <div><label style={lbl}>Startzeit *</label><input style={inp} type="time" value={startTime} onChange={e=>setStartTime(e.target.value)}/></div>
           <div><label style={lbl}>Endzeit (optional)</label><input style={inp} type="time" value={endTime} onChange={e=>setEndTime(e.target.value)}/></div>
         </div>
@@ -9371,6 +9600,7 @@ const css=`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@40
   }
   @media(max-width:380px){
     .checkin-grid{grid-template-columns:1fr!important;}
+    .wp-time-grid{grid-template-columns:1fr!important;}
   }
   .hiit-glow {
     filter: drop-shadow(0 0 5px rgba(255, 209, 102, 0.4));
