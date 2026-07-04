@@ -6686,7 +6686,22 @@ function ShareWithFriendsModal({item,user,onClose,notify}){
     try{
       const myProfile=await upsertUserProfile(myUid,user).catch(()=>({username:user.username,firstName:user.firstName,lastName:user.lastName,email:user.email}));
       await shareItemWithFriends(myUid,myProfile,[...selected],item.type,item.name,item.payload);
-      notify(`„${item.name}" mit ${selected.size} Freund${selected.size===1?"":"en"} geteilt! 📤`);
+      // WICHTIG: Mit aktivierter Offline-Persistenz gilt ein Schreibvorgang schon
+      // als "fertig", sobald er lokal gespeichert ist – nicht wenn er den Server
+      // erreicht. Deshalb warten wir explizit auf die Server-Bestätigung, damit der
+      // Empfänger das Geteilte auch wirklich bekommt (sonst hängt es nur lokal fest).
+      let confirmed=true;
+      try{
+        await Promise.race([
+          window.firebaseDb.waitForPendingWrites(),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),9000))
+        ]);
+      }catch(e){confirmed=false;}
+      if(confirmed){
+        notify(`„${item.name}" mit ${selected.size} Freund${selected.size===1?"":"en"} geteilt! 📤`);
+      }else{
+        notify("Teilen lokal gespeichert, aber noch nicht zum Server gesendet (Verbindung/Warteschlange). Es wird nachgesendet, sobald die Verbindung frei ist.","error");
+      }
       onClose();
     }catch(e){notify(`Teilen fehlgeschlagen: ${e.message}`,"error");setSharing(false);}
   };
