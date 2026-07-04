@@ -289,7 +289,9 @@ const upsertUserProfile = async (uid, user) => {
     email: user.email || "",
     emailLower: (user.email || "").trim().toLowerCase(),
     firstName: user.firstName || "",
-    lastName: user.lastName || ""
+    lastName: user.lastName || "",
+    firstNameLower: (user.firstName || "").trim().toLowerCase(),
+    lastNameLower: (user.lastName || "").trim().toLowerCase()
   };
   await window.firebaseDoc(window.firebaseDb, "userProfiles", uid).set(profile, { merge: true });
   return profile;
@@ -305,16 +307,21 @@ const searchUserProfiles = async (term, myUid) => {
   if (!window.firebaseDb || !term || !term.trim()) return [];
   const t = term.trim();
   const col = window.firebaseDoc(window.firebaseDb, "userProfiles");
-  let snap;
   if (t.includes("@")) {
-    snap = await col.where("emailLower", "==", t.toLowerCase()).limit(10).get();
-  } else {
-    const low = t.toLowerCase();
-    snap = await col.where("usernameLower", ">=", low).where("usernameLower", "<=", low + "").limit(10).get();
+    const snap = await col.where("emailLower", "==", t.toLowerCase()).limit(10).get();
+    return snap.docs.map(d => d.data()).filter(p => p.uid !== myUid);
   }
-  return snap.docs.map(d => d.data()).filter(p => p.uid !== myUid);
+  const low = t.toLowerCase();
+  const prefixQuery = field => col.where(field, ">=", low).where(field, "<=", low + "").limit(10).get();
+  const [byUsername, byFirstName, byLastName] = await Promise.all([
+    prefixQuery("usernameLower"),
+    prefixQuery("firstNameLower"),
+    prefixQuery("lastNameLower")
+  ]);
+  const merged = new Map();
+  [...byUsername.docs, ...byFirstName.docs, ...byLastName.docs].forEach(d => merged.set(d.id, d.data()));
+  return [...merged.values()].filter(p => p.uid !== myUid);
 };
-
 const friendReqId = (fromUid, toUid) => `${fromUid}_${toUid}`;
 
 const sendFriendRequest = async (myUid, myProfile, otherProfile) => {
@@ -2625,6 +2632,10 @@ function FitForge(){
                 <div style={{height:1,background:"#1E1E24",margin:"0 16px"}}/>
                 <button className="profEditBtn" style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"transparent",border:"none",color:"#aaa",cursor:"pointer",padding:"12px 16px",fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif"}} onClick={()=>{setProfileOpen(false);setView("profile");}}>
                   {IC.edit} Profil bearbeiten
+                </button>
+
+                <button className="profEditBtn" style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"transparent",border:"none",color:"#aaa",cursor:"pointer",padding:"12px 16px",fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif"}} onClick={()=>{setProfileOpen(false);setView("profile");}}>
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg> Freunde
                 </button>
 
                 <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"transparent",border:"none",color:"#EF476F",cursor:"pointer",padding:"10px 16px 14px",fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif"}} onClick={async()=>{setProfileOpen(false);await window.firebaseSignOut();}}>
@@ -6628,6 +6639,7 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
   <div style={{...s.formGrid, gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}><div style={s.fg}><label style={s.lbl}>Gewicht (kg)</label><input style={s.inp} type="number" value={form.weight} onChange={e=>setForm(f=>({...f,weight:e.target.value}))} placeholder="80"/></div><div style={s.fg}><label style={s.lbl}>Größe (cm)</label><input style={s.inp} type="number" value={form.height} onChange={e=>setForm(f=>({...f,height:e.target.value}))} placeholder="180"/></div></div>
   <div style={s.fg}><label style={s.lbl}>Fitnessziel</label><select style={s.inp} value={form.goal} onChange={e=>setForm(f=>({...f,goal:e.target.value}))}>{["Muskelaufbau","Gewichtsverlust","Ausdauer","Fitness & Gesundheit","Kraft steigern"].map(g=><option key={g}>{g}</option>)}</select></div>
   </div>
+  <FriendsCard user={form} notify={notify}/>
   <div style={{...s.card, background:"#16161A", backdropFilter:"none", WebkitBackdropFilter:"none"}}><h3 style={{...s.cardTitle,color:"#FFB703",display:"flex",alignItems:"center",gap:8}}><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg> Arbeitswoche & Zeiten</h3>
      <p style={{fontSize:12,color:"#666",marginBottom:16,marginTop:4}}>Diese Zeiten nutzt die KI, um dein Training optimal um deinen Job herum zu planen.</p>
      <div style={s.fg}><label style={s.lbl}>Arbeitstage</label><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{FULL_WEEKDAYS.map(d=><button key={d} onClick={()=>{const wd=form.workDays||[];const nd=wd.includes(d)?wd.filter(x=>x!==d):[...wd,d];setForm(f=>({...f,workDays:nd}))}} style={{...s.dayToggle,background:(form.workDays||[]).includes(d)?"#FFB70320":"rgba(255,255,255,0.04)",borderColor:(form.workDays||[]).includes(d)?"#FFB703":"rgba(255,255,255,0.08)",color:(form.workDays||[]).includes(d)?"#FFB703":"#888"}}>{d}</button>)}</div></div>
@@ -6677,7 +6689,6 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
       }}>{IC.plus} Supplement hinzufügen</button>
     </div>
   </div>
-  <FriendsCard user={form} notify={notify}/>
   </div>
   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:22,gap:12}}>
     <button style={{...s.primaryBtn,flex:1}} onClick={save}>💾 Speichern</button>
