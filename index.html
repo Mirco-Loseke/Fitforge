@@ -473,6 +473,10 @@ const uploadToStorage = async (file, path) => {
     return await window.firebaseGetDownloadURL(storageRef);
   } catch(e) {
     console.warn("Storage upload fallback to compressed base64:", e.message);
+    // Sichtbar machen, WARUM Storage fehlschlägt (meist fehlende Storage-Regeln =
+    // "storage/unauthorized"). Dann landet das Bild nur als base64 lokal und kommt
+    // nicht auf andere Geräte.
+    if (window.dbg) dbg(`⚠️ Bild-Upload zu Firebase Storage fehlgeschlagen (${e.code || e.message}) – Bild bleibt nur lokal. Storage-Regeln prüfen!`, '#f80');
     const isProgress = path.includes("progress");
     const maxDim = isProgress ? 700 : 300;
     return await compressImage(file, maxDim, maxDim, 0.5);
