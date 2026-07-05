@@ -10070,6 +10070,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
   
   const [viewMode, setViewMode] = useState(() => window.innerWidth <= 768 ? 1 : 7);
   const [dayOffset, setDayOffset]=useState(0);
+  const [timelineMode, setTimelineMode]=useState(false);
 
   const switchToMode = (m) => {
     setViewMode(m);
@@ -10113,6 +10114,24 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
   const getDayEntries=dayIdx=>(weekData.entries[dayIdx]||[]).slice().sort((a,b)=>a.startTime.localeCompare(b.startTime));
 
   const addEntry=(dayIdx,entry)=>{
+    if(entry.recurring){
+      // Wiederkehrender Eintrag: in dieser + den nächsten 8 Wochen anlegen (gleicher Wochentag)
+      const seriesId=entry.seriesId||uid();
+      setWeekPlans(wp=>{
+        const next={...wp};
+        for(let i=0;i<9;i++){
+          const key=addDays(currentMonday,i*7).toISOString().split("T")[0];
+          const cur=next[key]||{entries:{}};
+          const dayArr=[...((cur.entries||{})[dayIdx]||[])];
+          if(dayArr.some(e=>e.seriesId===seriesId))continue;
+          dayArr.push({...entry,id:uid(),seriesId});
+          next[key]={...cur,entries:{...(cur.entries||{}),[dayIdx]:dayArr}};
+        }
+        return next;
+      });
+      notify("Eintrag angelegt & für 8 Folgewochen wiederholt! 🔁");
+      return;
+    }
     setWeekData(w=>({...w,entries:{...w.entries,[dayIdx]:[...(w.entries[dayIdx]||[]),{...entry,id:uid()}]}}));
     notify("Eintrag hinzugefügt! ✅");
   };
@@ -10172,6 +10191,50 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
 
   // Ist-Abgleich: wurde an diesem Tag ein Training mit diesem Plan absolviert?
   const isTrainingDone=(entry,dayISO)=>entry.type==="training"&&(data.workouts||[]).some(w=>w.date===dayISO&&String(w.planId)===String(entry.planId));
+
+  // Erweiterter Erledigt-Check für den Erfüllungsgrad (Training, Dehnen, Mahlzeit)
+  const isEntryDone=(entry,dayISO)=>{
+    if(entry.type==="training")return isTrainingDone(entry,dayISO);
+    if(entry.type==="stretching")return (data.workouts||[]).some(w=>{
+      if(w.date!==dayISO)return false;
+      const plan=data.plans.find(p=>p.id===w.planId);
+      return /dehn|stretch|mobility/i.test(w.name||"")||((plan?.types)||[]).some(t=>/dehn|stretch|mobility/i.test(t));
+    });
+    if(entry.type==="meal")return ((nutrition[dayISO]||{}).meals||[]).length>0;
+    return null; // rest/other zählen nicht
+  };
+
+  // Wochen-Erfüllungsgrad über alle zählbaren Einträge
+  const weekStats=(()=>{
+    let total=0,done=0;
+    for(let d=0;d<7;d++){
+      const dd=addDays(currentMonday,d);
+      const iso=`${dd.getFullYear()}-${String(dd.getMonth()+1).padStart(2,"0")}-${String(dd.getDate()).padStart(2,"0")}`;
+      getDayEntries(d).forEach(e=>{
+        const st=isEntryDone(e,iso);
+        if(st===null)return;
+        total++;
+        if(st)done++;
+      });
+    }
+    return {total,done,pct:total>0?Math.round(done/total*100):0};
+  })();
+
+  // Vorwoche mit einem Klick in die aktuelle Woche kopieren
+  const copyPrevWeek=()=>{
+    const prevKey=addDays(currentMonday,-7).toISOString().split("T")[0];
+    const prev=weekPlans[prevKey];
+    const count=prev?Object.values(prev.entries||{}).reduce((a,arr)=>a+(arr||[]).length,0):0;
+    if(!count){notify("Die Vorwoche hat keine Einträge.","error");return;}
+    setWeekData(w=>{
+      const ne={...w.entries};
+      Object.entries(prev.entries||{}).forEach(([d,arr])=>{
+        ne[d]=[...(ne[d]||[]),...(arr||[]).map(e=>({...e,id:uid()}))];
+      });
+      return{...w,entries:ne};
+    });
+    notify(`${count} Einträge aus der Vorwoche übernommen! 📋`);
+  };
 
   const prevWeek=()=>setCurrentMonday(d=>addDays(d,-7));
   const nextWeek=()=>setCurrentMonday(d=>addDays(d,7));
@@ -10278,6 +10341,12 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
   const entryTitleSize=density==="dense"?11:density==="compact"?12:13;
   const dayMinHeight=viewMode===1?420:viewMode===3?400:(visibleMax<=1?230:visibleMax<=2?290:visibleMax<=4?360:440);
 
+  // Timeline-Ansicht: Stundenraster 05–23 Uhr
+  const t2m=t=>{const p=(t||"08:00").split(":");return (parseInt(p[0])||0)*60+(parseInt(p[1])||0);};
+  const TL_START=5*60, TL_END=23*60, TL_PXH=38;
+  const tlY=mins=>(Math.max(TL_START,Math.min(TL_END,mins))-TL_START)/60*TL_PXH;
+  const tlHeight=(TL_END-TL_START)/60*TL_PXH;
+
   return(
     <div style={{padding:"28px 24px 56px",maxWidth:1100,margin:"0 auto"}}>
       {/* Header */}
@@ -10291,11 +10360,33 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
               {isCurrentWeek && <span style={{color:"#FF6B35"}}>●</span>}
             </div>
           </div>
-          
+
+          {/* Wochen-Erfüllungsgrad */}
+          {weekStats.total>0&&(()=>{
+            const rr=15,circ=2*Math.PI*rr;
+            const full=weekStats.done===weekStats.total;
+            const col=full?"#06D6A0":"#FF6B35";
+            return (
+              <div title={`${weekStats.done} von ${weekStats.total} geplanten Einträgen erledigt`} style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.03)",border:`1px solid ${full?"rgba(6,214,160,0.35)":"rgba(255,255,255,0.08)"}`,borderRadius:14,padding:"6px 12px 6px 8px",boxShadow:full?"0 0 18px rgba(6,214,160,0.15)":"none"}}>
+                <svg width="38" height="38" viewBox="0 0 38 38">
+                  <circle cx="19" cy="19" r={rr} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="4"/>
+                  <circle cx="19" cy="19" r={rr} fill="none" stroke={col} strokeWidth="4" strokeLinecap="round"
+                    strokeDasharray={`${weekStats.pct/100*circ} ${circ}`} transform="rotate(-90 19 19)"
+                    style={{transition:"stroke-dasharray 0.6s cubic-bezier(0.16,1,0.3,1)",filter:`drop-shadow(0 0 4px ${col}70)`}}/>
+                  <text x="19" y="23" textAnchor="middle" fontSize="10" fontWeight="900" fill={col} fontFamily="DM Sans,sans-serif">{full?"✓":`${weekStats.pct}%`}</text>
+                </svg>
+                <div>
+                  <div style={{fontSize:13,fontWeight:900,color:"#F0EDE8",fontFamily:"'DM Sans',sans-serif",lineHeight:1.1}}>{weekStats.done}/{weekStats.total}</div>
+                  <div style={{fontSize:9,fontWeight:700,color:"#666",textTransform:"uppercase",letterSpacing:0.5}}>erledigt</div>
+                </div>
+              </div>
+            );
+          })()}
+
           <div style={{display:"flex", background:"rgba(255, 255, 255, 0.04)", padding:4, borderRadius:12, border:"1px solid rgba(255, 255, 255, 0.08)", backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)"}}>
             {[1,3,7].map(m => (
-              <button 
-                key={m} 
+              <button
+                key={m}
                 onClick={()=>switchToMode(m)}
                 style={{
                   border:"none", padding:"6px 12px", borderRadius:9, cursor:"pointer", fontSize:11, fontWeight:800,
@@ -10307,6 +10398,18 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                 {m}T
               </button>
             ))}
+            <button
+              onClick={()=>setTimelineMode(t=>!t)}
+              title="Timeline-Ansicht (Stundenraster)"
+              style={{
+                border:"none", padding:"6px 12px", borderRadius:9, cursor:"pointer", fontSize:11, fontWeight:800,
+                background:timelineMode?"#4CC9F0":"transparent",
+                color:timelineMode?"#000":"#888",
+                transition:"all 0.2s"
+              }}
+            >
+              🕐
+            </button>
           </div>
         </div>
 
@@ -10326,6 +10429,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
           </div>
           <div style={{width:1, height:24, background:"rgba(255, 255, 255, 0.08)"}} />
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button style={{...s.secBtn,padding:"9px 13px",fontSize:13,display:"flex",alignItems:"center",gap:6,background:"rgba(76,201,240,0.1)",borderColor:"rgba(76,201,240,0.3)",color:"#4CC9F0"}} onClick={copyPrevWeek} title="Alle Einträge der Vorwoche in diese Woche kopieren">📋 Vorwoche</button>
             <button style={{...s.secBtn,padding:"9px 13px",fontSize:13,display:"flex",alignItems:"center",gap:6,background:"rgba(6,214,160,0.1)",borderColor:"rgba(6,214,160,0.3)",color:"#06D6A0"}} onClick={exportToICal}>📅 iCal</button>
             <button style={{...s.secBtn,padding:"9px 13px",fontSize:13,display:"flex",alignItems:"center",gap:6,position:"relative"}} onClick={()=>setShowTemplates(true)}>
               📋 Vorlagen
@@ -10400,12 +10504,90 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                     </div>
                     <div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:800,fontSize:15,color:isToday?"#F0EDE8":"#aaa"}}>{fmtShort(dayDate)}</div>
                   </div>
-                  {isPast && <div style={{color:"#00D9C0", fontSize:14}}>{IC.check}</div>}
+                  {(()=>{
+                    const countable=entries.map(e=>isEntryDone(e,dayISO)).filter(st=>st!==null);
+                    if(!countable.length)return null;
+                    const doneCnt=countable.filter(Boolean).length;
+                    if(doneCnt===countable.length)return <div title="Alle Einträge erledigt" style={{color:"#06D6A0",fontSize:14,filter:"drop-shadow(0 0 4px rgba(6,214,160,0.5))"}}>{IC.check}</div>;
+                    if((isPast||isToday)&&doneCnt>0)return <span title={`${doneCnt}/${countable.length} erledigt`} style={{fontSize:9,fontWeight:900,color:"#FFD166",background:"rgba(255,209,102,0.12)",border:"1px solid rgba(255,209,102,0.3)",borderRadius:6,padding:"2px 5px"}}>{doneCnt}/{countable.length}</span>;
+                    if(isPast)return <span title="Geplante Einträge verpasst" style={{width:8,height:8,borderRadius:"50%",background:"#EF476F",display:"inline-block",boxShadow:"0 0 6px rgba(239,71,111,0.5)"}}/>;
+                    return null;
+                  })()}
                 </div>
                 <button className="wpAddBtn" onClick={()=>{setEntryDay(dayIdx);setEditEntry(null);setShowEntryForm(true);}} style={{width:26,height:26,borderRadius:"50%",background:"linear-gradient(135deg,#FF6B35,#FF8C5A)",border:"none",color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:16,lineHeight:1,boxShadow:"0 2px 10px rgba(255,107,53,0.3)",transition:"all 0.2s"}}>+</button>
               </div>
 
+              {/* Timeline-Ansicht */}
+              {timelineMode&&(()=>{
+                const dayName=WP_DAY_NAMES[dayIdx];
+                const isWorkDay=(user.workDays||[]).includes(dayName);
+                const workBlocks=[];
+                if(isWorkDay&&user.workStart&&user.workEnd){
+                  workBlocks.push({from:t2m(user.workStart),to:t2m(user.workEnd),label:"Arbeit"});
+                }
+                const nowMins=(()=>{const n=new Date();return n.getHours()*60+n.getMinutes();})();
+                return (
+                  <div style={{flex:1,position:"relative",margin:"8px 6px 10px",height:tlHeight,minHeight:tlHeight}}>
+                    {/* Stundenlinien */}
+                    {Array.from({length:(TL_END-TL_START)/60+1},(_,h)=>{
+                      const mins=TL_START+h*60;
+                      return (
+                        <div key={h} style={{position:"absolute",top:tlY(mins),left:0,right:0,borderTop:`1px solid rgba(255,255,255,${mins%120===0?0.06:0.03})`,pointerEvents:"none"}}>
+                          {mins%120===0&&<span style={{position:"absolute",top:-6,left:0,fontSize:7.5,color:"#444",fontWeight:700}}>{String(mins/60).padStart(2,"0")}</span>}
+                        </div>
+                      );
+                    })}
+                    {/* Arbeitszeit-Block */}
+                    {workBlocks.map((b,bi)=>(
+                      <div key={bi} style={{position:"absolute",top:tlY(b.from),height:Math.max(10,tlY(b.to)-tlY(b.from)),left:0,right:0,background:"repeating-linear-gradient(45deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 6px, transparent 6px, transparent 12px)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:6,pointerEvents:"none",display:"flex",alignItems:"flex-start",justifyContent:"flex-end",padding:3}}>
+                        <span style={{fontSize:7.5,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:0.5}}>💼 {b.label}</span>
+                      </div>
+                    ))}
+                    {/* Jetzt-Linie */}
+                    {isToday&&nowMins>=TL_START&&nowMins<=TL_END&&(
+                      <div style={{position:"absolute",top:tlY(nowMins),left:-2,right:-2,borderTop:"2px solid #EF476F",zIndex:5,pointerEvents:"none",boxShadow:"0 0 8px rgba(239,71,111,0.5)"}}>
+                        <span style={{position:"absolute",left:-3,top:-3.5,width:6,height:6,borderRadius:"50%",background:"#EF476F"}}/>
+                      </div>
+                    )}
+                    {/* Einträge als Blöcke */}
+                    {entries.map(entry=>{
+                      const meta=ENTRY_TYPES[entry.type]||ENTRY_TYPES.other;
+                      const plan=entry.type==="training"?data.plans.find(p=>p.id===parseInt(entry.planId)):null;
+                      const title=entry.type==="training"?(plan?.name||"Training")
+                        :entry.type==="meal"?(entry.mealPreset||entry.mealName||"Mahlzeit")
+                        :entry.type==="stretching"?(entry.stretchName||"Dehnen")
+                        :entry.type==="rest"?"Ruhetag"
+                        :(entry.title||"Eintrag");
+                      const from=t2m(entry.startTime);
+                      const to=entry.endTime?t2m(entry.endTime):from+60;
+                      const top=tlY(from);
+                      const h=Math.max(24,tlY(Math.max(to,from+30))-top);
+                      const done=isEntryDone(entry,dayISO)===true;
+                      const col=done?"#06D6A0":(plan?.color||meta.color);
+                      return (
+                        <div key={entry.id} draggable
+                          onDragStart={e=>{e.dataTransfer.effectAllowed="move";setDragInfo({dayIdx,entryId:entry.id});}}
+                          onDragEnd={()=>{setDragInfo(null);setDragOverDay(null);}}
+                          onClick={()=>{setEntryDay(dayIdx);setEditEntry(entry);setShowEntryForm(true);}}
+                          title={`${title} · ${entry.startTime}${entry.endTime?" – "+entry.endTime:""}`}
+                          style={{position:"absolute",top,height:h,left:2,right:2,zIndex:3,cursor:"grab",overflow:"hidden",
+                            background:done?"rgba(6,214,160,0.14)":meta.bg,border:`1px solid ${col}55`,borderLeft:`3px solid ${col}`,borderRadius:7,padding:"3px 6px",
+                            boxShadow:done?"0 0 10px rgba(6,214,160,0.15)":"0 2px 8px rgba(0,0,0,0.3)"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:3,minWidth:0}}>
+                            <span style={{fontSize:9,flexShrink:0}}>{done?"✅":meta.icon}</span>
+                            {entry.recurring&&<span style={{fontSize:8,flexShrink:0}}>🔁</span>}
+                            <span style={{fontSize:10,fontWeight:800,color:done?"#06D6A0":"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</span>
+                          </div>
+                          {h>=36&&<div style={{fontSize:8.5,color:"#888",marginTop:1}}>{entry.startTime}{entry.endTime?` – ${entry.endTime}`:""}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               {/* Entries */}
+              {!timelineMode&&(
               <div style={{flex:1,padding:"8px 8px 10px",display:"flex",flexDirection:"column",gap:5,overflowY:"auto"}}>
                 {!entries.length&&(
                   <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,padding:"16px 8px"}}>
@@ -10443,6 +10625,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                           {density==="dense"?(
                             <div style={{display:"flex",alignItems:"center",gap:4,minWidth:0}}>
                               <span style={{fontSize:11,flexShrink:0}}>{done?"✅":meta.icon}</span>
+                              {entry.recurring&&<span style={{fontSize:9,flexShrink:0}} title="Wiederkehrender Eintrag">🔁</span>}
                               <span style={{fontSize:entryTitleSize,fontWeight:700,color:done?"#06D6A0":"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</span>
                             </div>
                           ):(
@@ -10450,6 +10633,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                               <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}>
                                 <span style={{fontSize:12}}>{done?"✅":meta.icon}</span>
                                 <span style={{fontSize:10,fontWeight:700,color:done?"#06D6A0":meta.color,textTransform:"uppercase",letterSpacing:"0.3px"}}>{done?"Absolviert":meta.label}</span>
+                                {entry.recurring&&<span style={{fontSize:9}} title="Wiederkehrender Eintrag (8 Wochen)">🔁</span>}
                               </div>
                               <div style={{fontSize:entryTitleSize,fontWeight:700,color:done?"#06D6A0":"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
                             </>
@@ -10470,6 +10654,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                   );
                 })}
               </div>
+              )}
             </div>
           );
         })}
@@ -10673,6 +10858,7 @@ function WPEntryModal({dayName,editEntry,plans,library=[],dayEntries,onSave,onDe
   const [title,setTitle]=useState(editEntry?.title||"");
   const stretchOptions = library.filter(ex=>(ex.types||[]).includes("Stretching / Dehnen")).map(ex=>ex.name);
   const [stretchName,setStretchName]=useState(editEntry?.stretchName||stretchOptions[0]||"");
+  const [recurring,setRecurring]=useState(false);
 
   // Prevent duplicate training plans on same day
   const usedPlanIds=dayEntries.filter(e=>e.type==="training"&&e.id!==editEntry?.id).map(e=>String(e.planId));
@@ -10684,6 +10870,8 @@ function WPEntryModal({dayName,editEntry,plans,library=[],dayEntries,onSave,onDe
     if(type==="meal"){base.mealPreset=mealPreset;base.mealName=mealName;base.calories=calories;}
     if(type==="stretching"){base.stretchName=stretchName;}
     if(type==="other"){base.title=title;}
+    if(!editEntry&&recurring){base.recurring=true;}
+    if(editEntry?.recurring){base.recurring=true;base.seriesId=editEntry.seriesId;}
     onSave(base);
   };
 
@@ -10784,7 +10972,24 @@ function WPEntryModal({dayName,editEntry,plans,library=[],dayEntries,onSave,onDe
           <div><label style={lbl}>Startzeit *</label><input style={inp} type="time" value={startTime} onChange={e=>setStartTime(e.target.value)}/></div>
           <div><label style={lbl}>Endzeit (optional)</label><input style={inp} type="time" value={endTime} onChange={e=>setEndTime(e.target.value)}/></div>
         </div>
-        <div style={{...s.fg,marginBottom:20}}><label style={lbl}>Notizen (optional)</label><textarea style={{...inp,minHeight:56,resize:"vertical"}} placeholder="Hinweise, Ziele..." value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+        <div style={{...s.fg,marginBottom:14}}><label style={lbl}>Notizen (optional)</label><textarea style={{...inp,minHeight:56,resize:"vertical"}} placeholder="Hinweise, Ziele..." value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+
+        {/* Wiederkehrend */}
+        {!editEntry?(
+          <div onClick={()=>setRecurring(r=>!r)} style={{display:"flex",alignItems:"center",gap:12,background:recurring?"rgba(76,201,240,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${recurring?"rgba(76,201,240,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:12,padding:"11px 14px",marginBottom:20,cursor:"pointer",transition:"all 0.2s"}}>
+            <span style={{fontSize:18}}>🔁</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:800,color:recurring?"#4CC9F0":"#aaa"}}>Jede Woche wiederholen</div>
+              <div style={{fontSize:10,color:"#666",marginTop:2}}>Wird automatisch in die nächsten 8 Wochen eingetragen ({dayName})</div>
+            </div>
+            <div style={{...s.toggle,...(recurring?{...s.toggleOn,background:"#4CC9F0"}:{})}}><div style={{...s.thumb,...(recurring?s.thumbOn:{})}}/></div>
+          </div>
+        ):editEntry.recurring?(
+          <div style={{display:"flex",alignItems:"center",gap:10,background:"rgba(76,201,240,0.06)",border:"1px solid rgba(76,201,240,0.2)",borderRadius:12,padding:"9px 14px",marginBottom:20}}>
+            <span style={{fontSize:14}}>🔁</span>
+            <span style={{fontSize:11,color:"#4CC9F0",fontWeight:700}}>Teil einer wöchentlichen Serie – Änderungen gelten nur für diesen Termin.</span>
+          </div>
+        ):<div style={{marginBottom:6}}/>}
 
         <div style={{display:"flex",gap:8}}>
           {editEntry&&<button style={{...s.secBtn,padding:"11px 13px",color:"#EF476F",borderColor:"#EF476F44"}} onClick={onDelete}>{IC.trash}</button>}
