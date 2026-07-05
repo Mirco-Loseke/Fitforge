@@ -114,6 +114,18 @@ input[type="date"] { text-align: center; justify-content: center; align-items: c
 .barCol:hover rect{opacity:1;}
 .barCol:hover text{fill:#F0EDE8;}
 @keyframes lineDraw{from{stroke-dashoffset:1;}to{stroke-dashoffset:0;}}
+@keyframes chalCardIn{from{opacity:0;transform:translateY(18px) scale(0.97);}to{opacity:1;transform:translateY(0) scale(1);}}
+.chalCardIn{animation:chalCardIn 0.5s cubic-bezier(0.16,1,0.3,1) both;}
+@keyframes ringIn{from{stroke-dashoffset:214;}}
+.ringIn{animation:ringIn 1.1s cubic-bezier(0.4,0,0.2,1) both;}
+@keyframes barIn{from{width:0;}}
+.chalBarIn{animation:barIn 1s cubic-bezier(0.4,0,0.2,1) both;}
+@keyframes chalShimmer{from{transform:translateX(-100%);}to{transform:translateX(400%);}}
+@keyframes trophyFloat{0%,100%{transform:translateY(0) rotate(-3deg);}50%{transform:translateY(-5px) rotate(3deg);}}
+@keyframes urgentPulse{0%,100%{opacity:1;}50%{opacity:0.45;}}
+@keyframes winGlow{0%,100%{box-shadow:0 0 18px rgba(255,209,102,0.12), inset 0 1px 1px rgba(255,255,255,0.08);}50%{box-shadow:0 0 32px rgba(255,209,102,0.28), inset 0 1px 1px rgba(255,255,255,0.08);}}
+.chalCard{transition:transform 0.25s cubic-bezier(0.16,1,0.3,1), box-shadow 0.25s;}
+.chalCard:hover{transform:translateY(-4px);box-shadow:0 14px 36px rgba(0,0,0,0.45);}
 .lineDraw{stroke-dasharray:1;animation:lineDraw 0.9s cubic-bezier(0.4,0,0.2,1) both;}
 .pageEnter{animation:pageEnter 0.4s cubic-bezier(0.16,1,0.3,1) both;}body.modal-open{overflow:hidden!important;height:100%;}
 [data-modal-overlay]{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;overflow:hidden!important;-webkit-overflow-scrolling:touch;}
@@ -376,7 +388,24 @@ const getFriends = async (myUid) => {
   ]);
   const fromFriends = asFrom.docs.map(d => ({ id: d.id, uid: d.data().to, username: d.data().toUsername, email: d.data().toEmail }));
   const toFriends = asTo.docs.map(d => ({ id: d.id, uid: d.data().from, username: d.data().fromUsername, email: d.data().fromEmail }));
-  return [...fromFriends, ...toFriends];
+  const allFriends = [...fromFriends, ...toFriends];
+  
+  await Promise.all(allFriends.map(async f => {
+    try {
+      const prof = await getUserProfile(f.uid);
+      if (prof) {
+        const fullName = `${prof.firstName || ""} ${prof.lastName || ""}`.trim();
+        f.username = prof.username || f.username || "";
+        f.displayName = fullName || f.username || f.email || "";
+        f.email = prof.email || f.email || "";
+      } else {
+        f.displayName = f.username || f.email || "";
+      }
+    } catch(e) {
+      f.displayName = f.username || f.email || "";
+    }
+  }));
+  return allFriends;
 };
 
 const acceptFriendRequest = async (reqId) => {
@@ -391,9 +420,11 @@ const removeFriendRequest = async (reqId) => {
 // Landet in der Collection "sharedItems"; der Empfänger sieht sie oben in den
 // Benachrichtigungen und kann sie importieren.
 const shareItemWithFriends = async (fromUid, fromProfile, friendUids, type, itemName, payload) => {
-  const fromName = (fromProfile && (fromProfile.username
-    || `${fromProfile.firstName || ""} ${fromProfile.lastName || ""}`.trim()
-    || fromProfile.email)) || "Ein Freund";
+  const fromName = (fromProfile && (
+    `${fromProfile.firstName || ""} ${fromProfile.lastName || ""}`.trim()
+    || fromProfile.username
+    || fromProfile.email
+  )) || "Ein Freund";
   await Promise.all((friendUids || []).map(to => {
     const id = `${fromUid}_${to}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     return window.firebaseDoc(window.firebaseDb, "sharedItems", id).set({
@@ -406,7 +437,16 @@ const getIncomingSharedItems = async (myUid) => {
   if (!window.firebaseDb || !myUid) return [];
   try {
     const snap = await window.firebaseDoc(window.firebaseDb, "sharedItems").where("to", "==", myUid).where("status", "==", "pending").get();
-    return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    await Promise.all(items.map(async item => {
+      try {
+        const prof = await getUserProfile(item.from);
+        if (prof) {
+          item.fromName = `${prof.firstName || ""} ${prof.lastName || ""}`.trim() || prof.username || prof.email || item.fromName || "Ein Freund";
+        }
+      } catch(e) {}
+    }));
+    return items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   } catch (e) { console.warn("getIncomingSharedItems:", e.message); return []; }
 };
 
@@ -1298,6 +1338,7 @@ function FitForge(){
   const [library,setLibrary]=useState(()=>ls("library", []));
   const [weekPlans,setWeekPlans]=useState({});
   const [favFoods,setFavFoods]=useState([]);
+  const [challenges,setChallenges]=useState([]);
   
   const [authUser,setAuthUser]=useState(null);
   const profileSyncTimerRef=useRef(null);
@@ -1761,7 +1802,123 @@ function FitForge(){
       deletedPlanIds, deletedWorkoutIds, deletedWeightDates
     });
   };
-  
+
+  const mergeUser = (local, remote) => {
+    if (!local) return remote;
+    if (!remote) return local;
+    const lpTime = local.updatedAt || 0;
+    const rpTime = remote.updatedAt || 0;
+    return rpTime > lpTime ? { ...local, ...remote } : { ...remote, ...local };
+  };
+
+  const mergePRs = (local, remote) => {
+    if (!local) return remote;
+    if (!remote) return local;
+    const merged = { ...local };
+    for (const key in remote) {
+      if (!merged[key]) {
+        merged[key] = remote[key];
+      } else {
+        const localDate = new Date(merged[key].date || 0);
+        const remoteDate = new Date(remote[key].date || 0);
+        if (remoteDate > localDate) {
+          merged[key] = remote[key];
+        }
+      }
+    }
+    return purgeDemoPRs(merged);
+  };
+
+  const mergeNutrition = (local, remote) => {
+    if (!local) return remote;
+    if (!remote) return local;
+    const merged = { ...local };
+    for (const date in remote) {
+      if (!merged[date]) {
+        merged[date] = remote[date];
+      } else {
+        const localDay = merged[date] || { calories: 0, protein: 0, carbs: 0, fat: 0, meals: [], waterLog: [] };
+        const remoteDay = remote[date] || { calories: 0, protein: 0, carbs: 0, fat: 0, meals: [], waterLog: [] };
+        
+        const deletedMealIds = [...new Set([...(localDay.deletedMealIds||[]), ...(remoteDay.deletedMealIds||[])])];
+        const deletedWaterIds = [...new Set([...(localDay.deletedWaterIds||[]), ...(remoteDay.deletedWaterIds||[])])];
+
+        const mealsMap = new Map();
+        (localDay.meals || []).forEach(m => { if (m && m.id) mealsMap.set(m.id, m); });
+        (remoteDay.meals || []).forEach(m => { if (m && m.id) mealsMap.set(m.id, m); });
+        const mergedMeals = [...mealsMap.values()].filter(m => !deletedMealIds.includes(m.id));
+        
+        const waterMap = new Map();
+        (localDay.waterLog || []).forEach(w => { if (w && w.id) waterMap.set(w.id, w); });
+        (remoteDay.waterLog || []).forEach(w => { if (w && w.id) waterMap.set(w.id, w); });
+        const mergedWater = [...waterMap.values()].filter(w => !deletedWaterIds.includes(w.id));
+        
+        let calories = 0, protein = 0, carbs = 0, fat = 0;
+        mergedMeals.forEach(m => {
+          calories += m.calories || 0;
+          protein += m.protein || 0;
+          carbs += m.carbs || 0;
+          fat += m.fat || 0;
+        });
+        
+        merged[date] = {
+          ...localDay,
+          ...remoteDay,
+          calories,
+          protein,
+          carbs,
+          fat,
+          meals: mergedMeals,
+          waterLog: mergedWater,
+          deletedMealIds,
+          deletedWaterIds
+        };
+      }
+    }
+    return merged;
+  };
+
+  const mergeWeekPlans = (local, remote) => {
+    if (!local) return remote;
+    if (!remote) return local;
+    const merged = { ...local };
+    for (const weekKey in remote) {
+      if (!merged[weekKey]) {
+        merged[weekKey] = remote[weekKey];
+      } else {
+        const localWeek = merged[weekKey] || { entries: {}, deletedEntryIds: [] };
+        const remoteWeek = remote[weekKey] || { entries: {}, deletedEntryIds: [] };
+        
+        const deletedEntryIds = [...new Set([...(localWeek.deletedEntryIds||[]), ...(remoteWeek.deletedEntryIds||[])])];
+        const mergedEntries = { ...localWeek.entries };
+        
+        const allDays = new Set([
+          ...Object.keys(localWeek.entries || {}),
+          ...Object.keys(remoteWeek.entries || {})
+        ]);
+        
+        allDays.forEach(dayIdx => {
+          const localDayEntries = localWeek.entries?.[dayIdx] || [];
+          const remoteDayEntries = remoteWeek.entries?.[dayIdx] || [];
+          
+          const entriesMap = new Map();
+          localDayEntries.forEach(e => { if (e && e.id) entriesMap.set(e.id, e); });
+          remoteDayEntries.forEach(e => { if (e && e.id) entriesMap.set(e.id, e); });
+          
+          mergedEntries[dayIdx] = [...entriesMap.values()].filter(e => !deletedEntryIds.includes(e.id));
+        });
+        
+        merged[weekKey] = {
+          ...localWeek,
+          ...remoteWeek,
+          entries: mergedEntries,
+          deletedEntryIds
+        };
+      }
+    }
+    return merged;
+  };
+
   // ── Body Scroll Lock when any modal is open ─────────────────────────────
   useEffect(() => {
     const anyOpen = logModal || planModal || !!weeklyReport || rescueModalOpen;
@@ -1885,7 +2042,7 @@ function FitForge(){
     setNutrition(n=>{
       const d = n[checklistToday];
       if(!d) return n;
-      return {...n, [checklistToday]: {...d, waterLog:(d.waterLog||[]).filter(w=>w.id!==id)}};
+      return {...n, [checklistToday]: {...d, waterLog:(d.waterLog||[]).filter(w=>w.id!==id), deletedWaterIds:[...(d.deletedWaterIds||[]), id]}};
     });
   };
 
@@ -2102,6 +2259,9 @@ function FitForge(){
               setLoaded(true);
             }
 
+            // Ignoriere lokale, noch nicht bestätigte Schreibvorgänge des eigenen Geräts
+            if (snap.metadata && snap.metadata.hasPendingWrites) return;
+
             if (snap.exists) {
               const cloudVal = snap.data().value;
               const cloudStr = JSON.stringify(cloudVal);
@@ -2113,13 +2273,11 @@ function FitForge(){
                     const merged = mergeData(prevLocal, cloudVal);
                     const withPhotos = { ...merged, photos: prevLocal.photos || [], exercisePhotos: prevLocal.exercisePhotos || {} };
                     localStorage.setItem(`ff_${uid}_data`, JSON.stringify(withPhotos));
-                    // KRITISCH: lastSyncRef EXAKT so serialisieren wie syncToCloud("data")
-                    // schreibt (ohne photos/exercisePhotos, base64-gestrippt). Sonst hält
-                    // syncToCloud die eben empfangenen Cloud-Daten für neu und lädt sie
-                    // sofort wieder hoch → Endlos-Schreibschleife, die die Firestore-
-                    // Warteschlange verstopft und ALLE weiteren Writes blockiert.
-                    const { photos: _p, exercisePhotos: _e, ...dataNoPhotos } = withPhotos;
-                    lastSyncRef.current["data"] = JSON.stringify(stripBase64(dataNoPhotos, "data"));
+                    // KRITISCH: lastSyncRef auf den echten Cloud-Stand setzen.
+                    // Falls die lokalen Daten Änderungen enthalten, ist withPhotos anders als cloudVal
+                    // und syncToCloud wird gestartet, um die Änderungen hochzuladen.
+                    const cloudCleaned = stripBase64(cloudVal, "data");
+                    lastSyncRef.current["data"] = JSON.stringify(cloudCleaned);
                     return withPhotos;
                   });
                 } else if (key === "photos") {
@@ -2136,34 +2294,34 @@ function FitForge(){
                   });
                 } else if (key === "user") {
                   setUser(prevLocal => {
-                    const merged = { ...prevLocal, ...cloudVal };
+                    const merged = mergeUser(prevLocal, cloudVal);
                     const mergedStr = JSON.stringify(merged);
                     localStorage.setItem(`ff_${uid}_user`, mergedStr);
-                    lastSyncRef.current["user"] = mergedStr;
+                    lastSyncRef.current["user"] = cloudStr;
                     return merged;
                   });
                 } else if (key === "prs") {
                   setPrs(prevLocal => {
-                    const merged = purgeDemoPRs({ ...prevLocal, ...cloudVal });
+                    const merged = mergePRs(prevLocal, cloudVal);
                     const mergedStr = JSON.stringify(merged);
                     localStorage.setItem(`ff_${uid}_prs`, mergedStr);
-                    lastSyncRef.current["prs"] = mergedStr;
+                    lastSyncRef.current["prs"] = cloudStr;
                     return merged;
                   });
                 } else if (key === "nutrition") {
                   setNutrition(prevLocal => {
-                    const merged = { ...prevLocal, ...cloudVal };
+                    const merged = mergeNutrition(prevLocal, cloudVal);
                     const mergedStr = JSON.stringify(merged);
                     localStorage.setItem(`ff_${uid}_nutrition`, mergedStr);
-                    lastSyncRef.current["nutrition"] = mergedStr;
+                    lastSyncRef.current["nutrition"] = cloudStr;
                     return merged;
                   });
                 } else if (key === "weekPlans") {
                   setWeekPlans(prevLocal => {
-                    const merged = { ...prevLocal, ...cloudVal };
+                    const merged = mergeWeekPlans(prevLocal, cloudVal);
                     const mergedStr = JSON.stringify(merged);
                     localStorage.setItem(`ff_${uid}_weekPlans`, mergedStr);
-                    lastSyncRef.current["weekPlans"] = mergedStr;
+                    lastSyncRef.current["weekPlans"] = cloudStr;
                     return merged;
                   });
                 } else {
@@ -2201,6 +2359,22 @@ function FitForge(){
           });
           unsubs.push(unsub);
         });
+
+        // Setup challenges realtime listener
+        try {
+          const chalQuery = window.firebaseDb.collection("challenges").where("participants", "array-contains", uid);
+          const chalUnsub = window.firebaseOnSnapshot(chalQuery, (snap) => {
+            if (cancelled) return;
+            if (snap.metadata && snap.metadata.hasPendingWrites) return;
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setChallenges(list);
+          }, (err) => {
+            console.warn("Challenges listener error:", err.message);
+          });
+          unsubs.push(chalUnsub);
+        } catch(e) {
+          console.warn("Could not setup challenges listener:", e.message);
+        }
       } else {
         if (window.dbg) dbg('🚪 Nutzer ausgeloggt', '#ff0');
         setLoaded(false);
@@ -2217,6 +2391,7 @@ function FitForge(){
         setNutrition({});
         setWeekPlans({});
         setFavFoods([]);
+        setChallenges([]);
         lastSyncRef.current = {};
       }
 
@@ -2224,26 +2399,39 @@ function FitForge(){
       const libRef = window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library");
       const libUnsub = window.firebaseOnSnapshot(libRef, (snap) => {
         if (cancelled) return;
+
+        // Ignoriere lokale, noch nicht bestätigte Schreibvorgänge des eigenen Geräts
+        if (snap.metadata && snap.metadata.hasPendingWrites) {
+          if (!loaded && fbUser) {
+            const allPrivateLoaded = Object.values(loadedKeysRef.current).every(v => v);
+            if (allPrivateLoaded) setLoaded(true);
+          }
+          return;
+        }
+
         if (snap.exists) {
-            const libVal = snap.data().value || [];
+            const snapData = snap.data();
+            const libVal = snapData.value || [];
+            const cloudDeletedIds = snapData.deletedIds || [];
+
+            // Union local and cloud deleted IDs
+            let localDeleted; try { localDeleted = JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]"); } catch(e){ localDeleted = []; }
+            const unionDeleted = [...new Set([...localDeleted, ...cloudDeletedIds])];
+            localStorage.setItem("ff_lib_deleted", JSON.stringify(unionDeleted.slice(-500)));
+
             const libStr = JSON.stringify(libVal);
             if (libStr !== lastSyncRef.current["library"]) {
               if (window.dbg) dbg('📚 Gemeinsame Bibliothek empfangen – wird zusammengeführt', '#0ff');
-              // NICHT blind überschreiben: lokale (noch nicht synchronisierte) Übungen
-              // bewahren, gelöschte per Tombstone ausschließen, bei Konflikt die
-              // neuere Version (per _m Zeitstempel) nehmen.
               setLibrary(prevLocal => {
-                let deleted; try { deleted = new Set(JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]")); } catch(e){ deleted = new Set(); }
+                const deletedSet = new Set(unionDeleted);
                 const pick = (a,b) => (((b&&b._m)||0) >= ((a&&a._m)||0) ? b : a);
                 const byId = new Map();
-                libVal.forEach(ex => { if(ex&&ex.id!=null&&!deleted.has(ex.id)) byId.set(ex.id, ex); });
-                (prevLocal||[]).forEach(ex => { if(!ex||ex.id==null||deleted.has(ex.id)) return; byId.set(ex.id, byId.has(ex.id)?pick(byId.get(ex.id),ex):ex); });
+                libVal.forEach(ex => { if(ex&&ex.id!=null&&!deletedSet.has(ex.id)) byId.set(ex.id, ex); });
+                (prevLocal||[]).forEach(ex => { if(!ex||ex.id==null||deletedSet.has(ex.id)) return; byId.set(ex.id, byId.has(ex.id)?pick(byId.get(ex.id),ex):ex); });
                 const merged = [...byId.values()];
                 localStorage.setItem("ff_library", JSON.stringify(merged));
                 return merged;
               });
-              // Cloud-Stand als Basis merken; falls das Merge lokale Zusätze enthält,
-              // erkennt der Sync-Effekt die Differenz und schiebt die Vereinigung hoch.
               lastSyncRef.current["library"] = libStr;
             }
         }
@@ -2415,7 +2603,8 @@ function FitForge(){
         showToast(`Achtung: Deine Übungsbibliothek ist sehr groß (${sizeKB.toFixed(0)} KB). Bitte weniger/kleinere Bilder verwenden, sonst kann nicht gespeichert werden.`, "error");
       }
       try {
-        await window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: cleanedLib });
+        let localDeleted; try { localDeleted = JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]"); } catch(e){ localDeleted = []; }
+        await window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: cleanedLib, deletedIds: localDeleted });
         // Auf echte Server-Bestätigung warten (Offline-Persistenz meldet sonst
         // schon "fertig", wenn nur lokal gespeichert wurde).
         try {
@@ -2512,6 +2701,20 @@ function FitForge(){
           try{const cur=JSON.parse(localStorage.getItem("ff_wptemplates")||"[]");cur.push({id:Math.random().toString(36).slice(2,9),name,entries,savedAt:Date.now(),favorite:true});localStorage.setItem("ff_wptemplates",JSON.stringify(cur));}catch(e){}
         }
         showToast(`Wochenplan „${name}" zu deinen Vorlagen hinzugefügt! 📅`);
+      }else if(item.type==="challenge"){
+        const cid=item.payload.challengeId;
+        const challengeRef=window.firebaseDoc(window.firebaseDb,"challenges",cid);
+        const snap=await challengeRef.get();
+        if(snap.exists){
+          const data=snap.data();
+          const participants=[...new Set([...(data.participants||[]),authUser.uid])];
+          const progress={...(data.progress||{}),[authUser.uid]:0};
+          const penaltyApplied={...(data.penaltyApplied||{}),[authUser.uid]:false};
+          await challengeRef.update({participants,progress,penaltyApplied});
+          showToast(`Challenge „${data.title}“ beigetreten! 🏆`);
+        }else{
+          showToast("Diese Challenge existiert nicht mehr.","error");
+        }
       }
       await dismissSharedItem(item.id);
       setSharedInbox(inb=>inb.filter(x=>x.id!==item.id));
@@ -2542,7 +2745,10 @@ function FitForge(){
         fbSet("nutrition", nutrition),
         fbSet("weekPlans", weekPlans),
         fbSet("favFoods", favFoods),
-        window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: stripBase64(library, "library") })
+        (() => {
+          let localDeleted; try { localDeleted = JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]"); } catch(e){ localDeleted = []; }
+          return window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: stripBase64(library, "library"), deletedIds: localDeleted });
+        })()
       ]);
       let confirmed=true;
       try{
@@ -2645,7 +2851,7 @@ function FitForge(){
       if (migrated) {
         if (window.dbg) dbg("🔄 Migration: Rückwirkende Forge Points berechnet", "#FFD166");
         setData(d => ({ ...d, workouts: updatedWorkouts }));
-        setUser(u => ({ ...u, forgePoints: (u.forgePoints || 0) + totalEarned }));
+        setUser(u => ({ ...u, forgePoints: (u.forgePoints || 0) + totalEarned, updatedAt: Date.now() }));
         showToast(`Retroaktiv ${totalEarned} Forge Points für alte Trainings gutgeschrieben! 🪙`);
       }
     }
@@ -2682,7 +2888,7 @@ function FitForge(){
     if (ySupplements.length>0 && !yStretchDone) penalties.push({id:Date.now()+100,date:yesterday,points:pcfg.penaltyStretch,label:"Stretching nicht gemacht",type:"penalty",emoji:CHECKIN_ICONS.stretching});
     if (penalties.length>0) {
       const totalPenalty=penalties.reduce((s,p)=>s+p.points,0);
-      setUser(u=>({...u,forgePoints:Math.max(0,(u.forgePoints||0)+totalPenalty),pointsLog:[...(u.pointsLog||[]),...penalties]}));
+      setUser(u=>({...u,forgePoints:Math.max(0,(u.forgePoints||0)+totalPenalty),pointsLog:[...(u.pointsLog||[]),...penalties], updatedAt: Date.now()}));
     }
   }, [loaded]);
 
@@ -2765,6 +2971,61 @@ function FitForge(){
       if(nkc > okc) {
         setPrs(p=>({...p,[k]:{...p[k], name:exName, kcal:nkc, date:today}}));
         showToast(`🏆 Neuer Kcal-PR: ${exName} – ${nkc}kcal!`);
+      }
+    }
+  };
+
+  const updateChallengesProgress = async (workoutVolume, workoutKm, details = {}) => {
+    if (!authUser || !challenges.length) return;
+    const uid = authUser.uid;
+    const active = challenges.filter(c => c.status === "active" && c.participants.includes(uid));
+    if (!active.length) return;
+
+    for (const c of active) {
+      let contribution = 0;
+      if (c.type === "workouts") {
+        contribution = 1;
+      } else if (c.type === "weight") {
+        contribution = workoutVolume;
+      } else if (c.type === "km") {
+        contribution = workoutKm;
+      } else if (c.type === "hiit") {
+        contribution = details.isHiit ? 1 : 0;
+      } else if (c.type === "sets") {
+        contribution = details.setCount || 0;
+      } else if (c.type === "stretch") {
+        contribution = details.isStretch ? 1 : 0;
+      }
+
+      if (contribution <= 0) continue;
+
+      try {
+        const challengeRef = window.firebaseDoc(window.firebaseDb, "challenges", c.id);
+        const snap = await challengeRef.get();
+        if (snap.exists) {
+          const freshData = snap.data();
+          const currentProgress = (freshData.progress || {})[uid] || 0;
+          const newProgressVal = currentProgress + contribution;
+          const progress = { ...(freshData.progress || {}), [uid]: newProgressVal };
+          const currentValue = Object.values(progress).reduce((a, b) => a + b, 0);
+          
+          let status = freshData.status || "active";
+          if (currentValue >= freshData.targetValue) {
+            status = "completed";
+          }
+          
+          await challengeRef.update({
+            progress,
+            currentValue,
+            status
+          });
+          
+          if (status === "completed" && freshData.status !== "completed") {
+            showToast(`Challenge „${freshData.title}“ erfolgreich beendet! 🏆`);
+          }
+        }
+      } catch(e) {
+        console.warn("Error updating challenge progress:", e.message);
       }
     }
   };
@@ -2855,7 +3116,8 @@ function FitForge(){
             ["fortschritt","Fortschritt",IC.progress],
             ["wochenplan","Wochenplan",IC.calendar],
             ["nutrition","Ernährung",(<NutritionViewIcon favFoods={favFoods} nutrition={nutrition}/>)],
-            ["goals","Forge Points",IC.goals]
+            ["goals","Forge Points",IC.goals],
+            ["challenges","Challenges",IC.trophy]
           ].map(([id,label,icon])=>(
             <button key={id} style={{...s.navItem,...(view===id?s.navOn:{})}} onClick={()=>{setView(id);setPresetPlanId(null);setAutoOpenAdd(null);setPresetMealType(null);setStretchFilter(false);closeAll();if(isMobile)setSidebarOpen(false);}}><span style={{display:"flex",flexShrink:0}}>{icon}</span><span>{label}</span></button>
           ))}
@@ -2894,14 +3156,30 @@ function FitForge(){
                   {sharedInbox.map(item=>(
                     <div key={item.id} style={{padding:"12px 16px",borderBottom:"1px solid #1E1E24",background:"rgba(255,107,53,0.05)"}}>
                       <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
-                        <div style={{width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,background:"#1A1A1F"}}>📤</div>
+                        <div style={{width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,background:"#1A1A1F"}}>
+                          {item.type==="challenge" ? "🏆" : "📤"}
+                        </div>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontWeight:700,fontSize:12}}>{item.fromName||"Ein Freund"} hat dir {item.type==="plan"?"einen Trainingsplan":"einen Wochenplan"} geteilt</div>
+                          <div style={{fontWeight:700,fontSize:12}}>
+                            {item.type==="challenge" 
+                              ? `${item.fromName||"Ein Freund"} lädt dich ein`
+                              : `${item.fromName||"Ein Freund"} hat dir ${item.type==="plan"?"einen Trainingsplan":"einen Wochenplan"} geteilt`
+                            }
+                          </div>
                           <div style={{color:"#FF6B35",fontSize:12,fontWeight:700,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.itemName}</div>
+                          {item.type==="challenge" && item.payload && (
+                            <div style={{fontSize:10,color:"#888",marginTop:3,lineHeight:1.3}}>
+                              Ziel: <strong style={{color:"#A78BFA"}}>{item.payload.targetValue} {item.payload.type === "km" ? "km" : item.payload.type === "weight" ? "kg" : item.payload.type === "hiit" ? "HIIT-Trainings" : item.payload.type === "sets" ? "Sätze" : item.payload.type === "stretch" ? "Dehn-Trainings" : "Trainings"}</strong><br/>
+                              Frist: <strong>{new Date(item.payload.deadline).toLocaleDateString("de-DE")}</strong><br/>
+                              Strafe: <strong style={{color:"#EF476F"}}>-{item.payload.penaltyPoints} FP</strong>
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div style={{display:"flex",gap:8,marginTop:10}}>
-                        <button style={{...s.primaryBtn,flex:1,justifyContent:"center",padding:"7px 10px",fontSize:12}} onClick={()=>importSharedItem(item)}>Übernehmen</button>
+                        <button style={{...s.primaryBtn,flex:1,justifyContent:"center",padding:"7px 10px",fontSize:12}} onClick={()=>importSharedItem(item)}>
+                          {item.type==="challenge" ? "Teilnehmen" : "Übernehmen"}
+                        </button>
                         <button style={{...s.secBtn,padding:"7px 12px",fontSize:12}} onClick={()=>dismissSharedInboxItem(item)}>Verwerfen</button>
                       </div>
                     </div>
@@ -2938,16 +3216,6 @@ function FitForge(){
                   {IC.edit} Profil bearbeiten
                 </button>
 
-                <button className="profEditBtn" style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"transparent",border:"none",color:uploadingAll?"#4CC9F0":"#aaa",cursor:uploadingAll?"default":"pointer",padding:"12px 16px 4px",fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif"}} disabled={uploadingAll} onClick={forceUploadAll}>
-                  {uploadingAll
-                    ? <><span style={{width:14,height:14,border:"2px solid #4CC9F0",borderTopColor:"transparent",borderRadius:"50%",display:"inline-block",animation:"spin 0.7s linear infinite"}}/> Lädt hoch…</>
-                    : <><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg> Meine Daten jetzt hochladen</>}
-                </button>
-                <div style={{padding:"0 16px 10px 40px",fontSize:10,color:"#666",lineHeight:1.4}}>
-                  {uploadingAll ? "Wird zum Server gesendet…"
-                    : lastUploadTime ? `✅ Zuletzt hochgeladen: ${new Date(lastUploadTime).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}`
-                    : "Schiebt alle lokalen Daten gezielt in die Cloud."}
-                </div>
 
                 <button className="profEditBtn" style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"transparent",border:"none",color:friendsExpanded?"#FF6B35":"#aaa",cursor:"pointer",padding:"12px 16px",fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif"}} onClick={()=>setFriendsExpanded(o=>!o)}>
                   <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg> Freunde {friendsExpanded?"▲":"▼"}
@@ -2971,12 +3239,13 @@ function FitForge(){
           {view==="plans"&&<Plans data={data} setData={setData} onNew={()=>setPlanModal(true)} onEdit={p=>{setEditPlan(p);setPlanModal(true);}} notify={showToast} library={library}/>}
           {view==="library"&&<LibraryPage library={library} setLibrary={setLibrary} notify={showToast}/>}
           {view==="wochenplan"&&<WochenplanPage weekPlans={weekPlans} setWeekPlans={setWeekPlans} data={data} user={user} library={library} notify={showToast} favFoods={favFoods} nutrition={nutrition}/>}
-          {view==="log"&&<LogWorkout user={user} setUser={setUser} data={data} setData={setData} notify={showToast} prs={prs} onSavePR={savePR} library={library} activeWorkout={activeWorkout} setActiveWorkout={setActiveWorkout} presetPlanId={presetPlanId} setView={setView} isMobile={isMobile} stretchFilter={stretchFilter} setStretchFilter={setStretchFilter}/>}
-          {view==="history"&&<History data={data} setData={setData} selWO={selWO} setSelWO={setSelWO} notify={showToast} library={library} setWeeklyReport={setWeeklyReport} isMobile={isMobile}/>}
+          {view==="log"&&<LogWorkout user={user} setUser={setUser} data={data} setData={setData} notify={showToast} prs={prs} onSavePR={savePR} library={library} activeWorkout={activeWorkout} setActiveWorkout={setActiveWorkout} presetPlanId={presetPlanId} setView={setView} isMobile={isMobile} stretchFilter={stretchFilter} setStretchFilter={setStretchFilter} updateChallengesProgress={updateChallengesProgress}/>}
+          {view==="history"&&<History data={data} setData={setData} selWO={selWO} setSelWO={setSelWO} notify={showToast} library={library} setWeeklyReport={setWeeklyReport} isMobile={isMobile} challenges={challenges}/>}
           {view==="stats"&&<Stats data={data} prs={prs} nutrition={nutrition} user={user}/>}
           {view==="fortschritt"&&<ProgressPage data={data} setData={setData} user={user} notify={showToast} isMobile={isMobile} autoOpenAdd={autoOpenAdd==="fortschritt"}/>}
           {view==="nutrition"&&<Nutrition nutrition={nutrition} setNutrition={setNutrition} user={user} notify={showToast} favFoods={favFoods} setFavFoods={setFavFoods} isMobile={isMobile} autoOpenAdd={autoOpenAdd==="nutrition"} presetMealType={presetMealType}/>}
           {view==="goals"&&<ForgePointsPage user={user} setUser={setUser} isMobile={isMobile}/>}
+          {view==="challenges"&&<ChallengesPage user={user} setUser={setUser} notify={showToast} isMobile={isMobile}/>}
           {view==="profile"&&<ProfilePage user={user} setUser={setUser} notify={showToast} isMobile={isMobile} onRescue={rescueWorkouts} latestWeight={(()=>{const lw=[...(data.weightHistory||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];return lw?.value||parseFloat(user.weight)||null;})()}/>}
         </div>
       </main>
@@ -3810,7 +4079,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
   const waterGoal=parseInt(user.waterGoal)||2500;
   const waterTotal=(dayData.waterLog||[]).reduce((a,w)=>a+w.ml,0);
   const addWater=ml=>{if(!ml||ml<=0)return;setNutrition(n=>{const d=n[selDate]||{calories:0,protein:0,carbs:0,fat:0,meals:[],waterLog:[]};return{...n,[selDate]:{...d,waterLog:[...(d.waterLog||[]),{id:Date.now(),ml,time:new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}]}};});notify(`${ml} ml hinzugefügt! 💧`);};
-  const delWater=id=>{setNutrition(n=>{const d=n[selDate];if(!d)return n;return{...n,[selDate]:{...d,waterLog:(d.waterLog||[]).filter(w=>w.id!==id)}};});};
+  const delWater=id=>{setNutrition(n=>{const d=n[selDate];if(!d)return n;return{...n,[selDate]:{...d,waterLog:(d.waterLog||[]).filter(w=>w.id!==id),deletedWaterIds:[...(d.deletedWaterIds||[]),id]}};});};
 
   const lookupBarcode = async (code) => {
     setApiLoading(true);
@@ -3925,7 +4194,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
   const calGoal=user.calorieGoal||2500,protGoal=user.proteinGoal||150,carbGoal=Math.round(calGoal*0.5/4),fatGoal=Math.round(calGoal*0.3/9);
   const addMeal=()=>{if(!meal.name||!meal.calories)return notify("Name und Kalorien ausfüllen","error");const entry={...meal,id:Date.now(),calories:parseInt(meal.calories)||0,protein:parseFloat(meal.protein)||0,carbs:parseFloat(meal.carbs)||0,fat:parseFloat(meal.fat)||0};setNutrition(n=>{const d=n[selDate]||{calories:0,protein:0,carbs:0,fat:0,meals:[]};return{...n,[selDate]:{calories:d.calories+entry.calories,protein:d.protein+entry.protein,carbs:d.carbs+entry.carbs,fat:d.fat+entry.fat,meals:[...d.meals,entry]}};});notify(`${meal.name} hinzugefügt! ✅`);setMeal({name:"",calories:"",protein:"",carbs:"",fat:"",mealType:"Frühstück",amount:100,baseCalories:0,baseProtein:0,baseCarbs:0,baseFat:0});setShowAdd(false);};
   const quickAdd=food=>{setNutrition(n=>{const d=n[selDate]||{calories:0,protein:0,carbs:0,fat:0,meals:[]};return{...n,[selDate]:{calories:d.calories+food.calories,protein:d.protein+food.protein,carbs:d.carbs+food.carbs,fat:d.fat+food.fat,meals:[...d.meals,{...food,id:Date.now(),mealType:"Sonstige"}]}};});notify(`${food.name} hinzugefügt!`);};
-  const delMeal=id=>{setNutrition(n=>{const d=n[selDate];if(!d)return n;const rm=d.meals.find(m=>m.id===id);if(!rm)return n;return{...n,[selDate]:{calories:Math.max(0,d.calories-rm.calories),protein:Math.max(0,d.protein-rm.protein),carbs:Math.max(0,d.carbs-rm.carbs),fat:Math.max(0,d.fat-rm.fat),meals:d.meals.filter(m=>m.id!==id)}};});notify("Eintrag gelöscht");};
+  const delMeal=id=>{setNutrition(n=>{const d=n[selDate];if(!d)return n;const rm=d.meals.find(m=>m.id===id);if(!rm)return n;return{...n,[selDate]:{...d,calories:Math.max(0,d.calories-rm.calories),protein:Math.max(0,d.protein-rm.protein),carbs:Math.max(0,d.carbs-rm.carbs),fat:Math.max(0,d.fat-rm.fat),meals:d.meals.filter(m=>m.id!==id),deletedMealIds:[...(d.deletedMealIds||[]),id]}};});notify("Eintrag gelöscht");};
   const mealGroups=["Frühstück","Mittagessen","Abendessen","Snack","Sonstige"];
   const filtered=COMMON_FOODS.filter(f=>f.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -4203,7 +4472,7 @@ const calcDist = (lat1, lon1, lat2, lon2) => {
   return 12742 * Math.asin(Math.sqrt(a));
 };
 
-function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activeWorkout,setActiveWorkout,presetPlanId,isMobile,stretchFilter,setStretchFilter}){
+function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activeWorkout,setActiveWorkout,presetPlanId,isMobile,stretchFilter,setStretchFilter,updateChallengesProgress}){
 
   const resolvePhoto = ex => {
     if (!ex) return null;
@@ -4713,10 +4982,16 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
       earnedPoints += ptsBreakdown.prs;
     }
 
+    if (updateChallengesProgress) {
+      const isStretch = (plan && (plan.types || []).some(t => t === "Mobility / Dehnen" || t === "Stretching / Dehnen" || t === "Mobility / Beweglichkeit")) || /dehnen|stretching|mobility/i.test(plan?.name || "") || stretchFilter;
+      const setCount = hiitMode ? 0 : parsed.reduce((acc, ex) => acc + (ex.sets || []).length, 0);
+      updateChallengesProgress(totalVolume, totalKm, { isHiit: hiitMode, setCount, isStretch });
+    }
+
     if(setUser) setUser(u => {
       const newLog=[...(u.pointsLog||[])];
       newLog.push({id:Date.now(),date,points:earnedPoints,label:`Training abgeschlossen: ${plan?.name||"Training"}`,type:"workout",emoji:CHECKIN_ICONS.training});
-      return {...u,forgePoints:(u.forgePoints||0)+earnedPoints,pointsLog:newLog};
+      return {...u,forgePoints:(u.forgePoints||0)+earnedPoints,pointsLog:newLog, updatedAt: Date.now()};
     });
 
     setData(d=>({...d,workouts:[{ id:Date.now(), planId:parseInt(planId), name:plan?.name||"Training", date, duration:workoutDuration, exercises:parsed, startTime, endTime, hiitMode, earnedPoints, ptsBreakdown },...d.workouts]}));
@@ -5632,7 +5907,83 @@ function GpsAnalytics({ path, targetPace }) {
 }
 
 
-function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isMobile}){
+function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isMobile,challenges}){
+
+  const [addToChallengeWO, setAddToChallengeWO] = useState(null);
+
+  const handleAssignToChallenge = async (challengeId) => {
+    const w = addToChallengeWO;
+    if (!w) return;
+    const uid = getUid();
+    
+    try {
+      const challengeRef = window.firebaseDoc(window.firebaseDb, "challenges", challengeId);
+      const snap = await challengeRef.get();
+      if (!snap.exists) {
+        notify("Diese Challenge existiert nicht mehr.", "error");
+        return;
+      }
+      
+      const freshData = snap.data();
+      const processed = freshData.processedWorkouts || [];
+      if (processed.includes(w.id)) {
+        notify("Dieses Training wurde dieser Challenge bereits gutgeschrieben!", "error");
+        setAddToChallengeWO(null);
+        return;
+      }
+      
+      let contribution = 0;
+      if (freshData.type === "workouts") {
+        contribution = 1;
+      } else if (freshData.type === "weight") {
+        contribution = (w.exercises||[]).reduce((a,e) => {
+          if (e.isHiit) return a; 
+          return a + (e.sets||[]).reduce((b,s) => b + (s.done !== false ? (parseFloat(s.weight)||0) * (parseInt(s.reps)||0) : 0), 0);
+        }, 0);
+      } else if (freshData.type === "km") {
+        contribution = (w.exercises||[]).reduce((a,e) => a + (e.sets||[]).reduce((b,s) => b + (parseFloat(s.km)||0), 0), 0);
+      } else if (freshData.type === "hiit") {
+        contribution = w.hiitMode ? 1 : 0;
+      } else if (freshData.type === "sets") {
+        contribution = w.hiitMode ? 0 : (w.exercises||[]).reduce((a,e) => a + (e.sets||[]).filter(s => s.done !== false).length, 0);
+      } else if (freshData.type === "stretch") {
+        const plan = data.plans.find(p => p.id === w.planId);
+        const isStretch = (plan && (plan.types || []).some(t => t === "Mobility / Dehnen" || t === "Stretching / Dehnen" || t === "Mobility / Beweglichkeit")) || /dehnen|stretching|mobility/i.test(plan?.name || "") || /dehnen|stretching|mobility/i.test(w.name || "");
+        contribution = isStretch ? 1 : 0;
+      }
+      
+      if (contribution <= 0) {
+        notify("Dieses Training enthält keine relevanten Werte für diese Challenge.", "warning");
+        setAddToChallengeWO(null);
+        return;
+      }
+      
+      const progress = { ...(freshData.progress || {}) };
+      const currentProgress = progress[uid] || 0;
+      progress[uid] = currentProgress + contribution;
+      
+      const currentValue = Object.values(progress).reduce((a, b) => a + b, 0);
+      const processedWorkouts = [...processed, w.id];
+      
+      let status = freshData.status || "active";
+      if (currentValue >= freshData.targetValue) {
+        status = "completed";
+      }
+      
+      await challengeRef.update({
+        progress,
+        currentValue,
+        status,
+        processedWorkouts
+      });
+      
+      const unitLabel = freshData.type === "km" ? "km" : freshData.type === "weight" ? "kg" : freshData.type === "sets" ? "Sätze" : freshData.type === "hiit" ? "HIIT-Trainings" : freshData.type === "stretch" ? "Dehn-Trainings" : "Trainings";
+      notify(`+${contribution} ${unitLabel} erfolgreich zu „${freshData.title}“ hinzugefügt! 🏆`);
+      setAddToChallengeWO(null);
+    } catch(e) {
+      notify(`Fehler beim Hinzufügen zur Challenge: ${e.message}`, "error");
+    }
+  };
 
   const sorted=[...data.workouts].sort((a,b)=>new Date(b.date)-new Date(a.date));
   const del=id=>{setData(d=>({...d,workouts:d.workouts.filter(w=>w.id!==id),deletedWorkoutIds:[...(d.deletedWorkoutIds||[]),id]}));setSelWO(null);notify("Training gelöscht");};
@@ -5692,8 +6043,14 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
           </div>
 
 
-          <div style={{color:"#888",fontSize:13,display:"flex",gap:10,alignItems:"center",marginBottom:18}}>
+          <div style={{color:"#888",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
             <span>📅 {new Date(w.date).toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"})}</span>
+            <button 
+              style={{...s.secBtn, padding:"6px 12px", fontSize:12, borderColor:"#FFD166", color:"#FFD166", display:"flex", alignItems:"center", gap:6, background:"rgba(255,209,102,0.15)", textShadow:"0 0 10px rgba(255,209,102,0.3)"}} 
+              onClick={() => setAddToChallengeWO(w)}
+            >
+              🏆 Zu Challenge hinzufügen
+            </button>
           </div>
           
           <div style={{display:"flex",background:"rgba(255,255,255,0.03)",borderRadius:16,overflow:"hidden",marginBottom:26,border:"1px solid rgba(255,255,255,0.07)"}}>
@@ -5953,6 +6310,7 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               {group.workouts.map(w=>{
                 const plan=data.plans.find(p=>p.id===w.planId);
+                const assignedTo=(challenges||[]).filter(c=>(c.processedWorkouts||[]).includes(w.id));
                 return(
                   <div key={w.id} style={{...s.histCard,padding:18, borderLeft:`5px solid ${plan?.color || "rgba(255,255,255,0.2)"}`, borderTop:"1px solid rgba(255,255,255,0.1)", borderRight:"1px solid rgba(255,255,255,0.06)", borderBottom:"1px solid rgba(255,255,255,0.06)", background:plan?`linear-gradient(135deg, ${plan.color}1A 0%, ${plan.color}08 40%, rgba(18,18,24,0.55) 100%)`:"linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 60%), rgba(18,18,24,0.5)", backdropFilter:"blur(24px) saturate(190%)", WebkitBackdropFilter:"blur(24px) saturate(190%)", boxShadow:plan?`inset 0 1px 1px rgba(255,255,255,0.1), 0 8px 32px rgba(0,0,0,0.35)`:"inset 0 1px 1px rgba(255,255,255,0.08), 0 8px 32px rgba(0,0,0,0.3)", flexDirection:"column", alignItems:"stretch", borderRadius:16, position:"relative", overflow:"visible"}} className="histCard" onClick={()=>setSelWO(w.id)}>
                     {w.earnedPoints && (
@@ -5979,13 +6337,43 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
                         <span>+{w.earnedPoints}</span>
                       </div>
                     )}
+                    {assignedTo.length > 0 && (
+                      <div title={assignedTo.map(c => c.title).join(", ")} style={{
+                        position: "absolute",
+                        bottom: "-10px",
+                        right: 14,
+                        background: "linear-gradient(135deg, rgba(255,209,102,0.18) 0%, rgba(255,159,28,0.14) 100%)",
+                        border: "1px solid rgba(255,209,102,0.4)",
+                        backdropFilter: "blur(8px)",
+                        WebkitBackdropFilter: "blur(8px)",
+                        color: "#FFD166",
+                        padding: "3px 9px",
+                        borderRadius: "8px",
+                        fontSize: "10px",
+                        fontWeight: "900",
+                        fontFamily: "'DM Sans',sans-serif",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        boxShadow: "0 2px 10px rgba(255,209,102,0.2)",
+                        zIndex: 10,
+                        whiteSpace: "nowrap"
+                      }}>
+                        <span>🏆</span>
+                        <span>{assignedTo.length > 1 ? `${assignedTo.length} Challenges` : assignedTo[0].title.length > 16 ? assignedTo[0].title.slice(0,14)+"…" : assignedTo[0].title}</span>
+                      </div>
+                    )}
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
                         <div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:800,fontSize:isMobile?16:18,color:plan?.color || "#F0EDE8"}}>{w.name}</div>
                         {w.hiitMode && <div style={{display:"flex",color:"#FFD166",filter:"drop-shadow(0 0 5px rgba(255,209,102,0.5))"}} className="hiit-glow">{IC.bolt}</div>}
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <div style={{display:"flex",gap:4,fontSize:10,fontWeight:700,color:"#888"}}>
+                        <div style={{display:"flex",gap:4,fontSize:10,fontWeight:700,color:"#888",alignItems:"center"}}>
+                          <strong style={{fontWeight:900,color:"#F0EDE8"}}>{(() => {
+                            const parts = (w.date || "").split('-');
+                            return parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : "";
+                          })()},</strong>
                           <span>{w.startTime || "--"}</span>
                           <span style={{color:"#444"}}>-</span>
                           <span>{w.endTime || "--"}</span>
@@ -5994,7 +6382,7 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
                       </div>
                     </div>
                     
-                    <div style={{display:"grid",gridTemplateColumns: w.hiitMode ? "repeat(2,1fr)" : (isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)"),gap:10,marginBottom:12}}>
+                    <div style={{display:"grid",gridTemplateColumns: w.hiitMode ? "repeat(2,1fr)" : "repeat(3,1fr)",gap:10,marginBottom:12}}>
                       <div style={{textAlign:"center",padding:"10px 8px",background:"rgba(255,107,53,0.06)",borderRadius:12,border:"1px solid rgba(255,107,53,0.18)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",boxShadow:"inset 0 1px 0 rgba(255,107,53,0.12)"}}>
                         <div style={{fontSize:10,color:"#666",marginBottom:2,textTransform:"uppercase",fontWeight:700}}>Dauer</div>
                         <div style={{fontSize:13,fontWeight:800,color:"#FF6B35"}}>{w.duration} min</div>
@@ -6030,10 +6418,6 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
                         <div style={{fontSize:13,fontWeight:800,color:"#00D9C0"}}>
                           {w.exercises.length}
                         </div>
-                      </div>
-                      <div style={{textAlign:"center",padding:"10px 8px",background:"rgba(255,255,255,0.04)",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.06)"}}>
-                        <div style={{fontSize:10,color:"#666",marginBottom:2,textTransform:"uppercase",fontWeight:700}}>Datum</div>
-                        <div style={{fontSize:11,fontWeight:800,color:"#F0EDE8"}}>{fmtDate(w.date)}</div>
                       </div>
                     </div>
 
@@ -6094,6 +6478,52 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
           </div>
         </div>
       )}
+      {addToChallengeWO && (() => {
+        const uid = getUid();
+        const active = (challenges || []).filter(c => c.status === "active" && (c.participants || []).includes(uid));
+        return (
+          <Overlay onClick={e => e.target === e.currentTarget && setAddToChallengeWO(null)}>
+            <div style={{...s.modal, maxWidth: 420, maxHeight:"80vh", overflowY:"auto"}}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+                <h3 style={{...s.modalTitle, margin:0}}>🏆 Challenge auswählen</h3>
+                <button style={{background:"transparent", border:"none", color:"#666", cursor:"pointer"}} onClick={() => setAddToChallengeWO(null)}>{IC.x}</button>
+              </div>
+              
+              <p style={{fontSize:13, color:"#888", marginBottom:16}}>Wähle eine aktive Challenge, um das Training „<strong>{addToChallengeWO.name}</strong>“ anzurechnen:</p>
+              
+              {active.length === 0 ? (
+                <div style={{textAlign:"center", padding:"20px 0", color:"#666", fontStyle:"italic", fontSize:13}}>Du nimmst aktuell an keinen aktiven Challenges teil.</div>
+              ) : (
+                <div style={{display:"flex", flexDirection:"column", gap:10, marginBottom:16}}>
+                  {active.map(c => {
+                    const unitLabel = c.type === "km" ? "km" : c.type === "weight" ? "kg" : c.type === "hiit" ? "HIIT-Trainings" : c.type === "sets" ? "Sätze" : c.type === "stretch" ? "Dehn-Trainings" : "Trainings";
+                    const isAlreadyAssigned = (c.processedWorkouts || []).includes(addToChallengeWO.id);
+                    return (
+                      <div key={c.id} style={{display:"flex", alignItems:"center", justifyStyle:"space-between", justifyContent:"space-between", background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:12, padding:"12px 14px", gap:10}}>
+                        <div style={{flex:1, minWidth:0}}>
+                          <div style={{fontWeight:700, fontSize:13, color:"#F0EDE8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{c.title}</div>
+                          <div style={{fontSize:11, color:"#888", marginTop:2}}>Ziel: {c.targetValue} {unitLabel} · Fortschritt: {c.currentValue}</div>
+                        </div>
+                        {isAlreadyAssigned ? (
+                          <span style={{fontSize:11, fontWeight:700, color:"#666", background:"rgba(255,255,255,0.03)", padding:"6px 12px", borderRadius:8}}>Bereits angerechnet</span>
+                        ) : (
+                          <button 
+                            style={{...s.secBtn, padding:"6px 12px", fontSize:11, borderColor: "#FFD166", color: "#FFD166"}}
+                            onClick={() => handleAssignToChallenge(c.id)}
+                          >
+                            Zuweisen
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <button style={{...s.secBtn, width:"100%"}} onClick={() => setAddToChallengeWO(null)}>Abbrechen</button>
+            </div>
+          </Overlay>
+        );
+      })()}
     </div>
   );
 }
@@ -6861,8 +7291,18 @@ function ShareWithFriendsModal({item,user,onClose,notify}){
                 <button key={f.uid} onClick={()=>toggle(f.uid)} style={{display:"flex",alignItems:"center",gap:10,background:sel?"rgba(255,107,53,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${sel?"#FF6B35":"rgba(255,255,255,0.08)"}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",textAlign:"left",width:"100%"}}>
                   <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${sel?"#FF6B35":"#444"}`,background:sel?"#FF6B35":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fff"}}>{sel&&IC.check}</div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:13,color:"#F0EDE8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.username||f.email||"Freund"}</div>
-                    {f.username&&f.email&&<div style={{fontSize:11,color:"#888",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.email}</div>}
+                    {(() => {
+                      const primary = f.displayName || f.username || f.email || "Freund";
+                      const secondaryParts = [];
+                      if (f.username && f.username !== primary) secondaryParts.push(f.username);
+                      if (f.email && f.email !== primary) secondaryParts.push(f.email);
+                      return (
+                        <>
+                          <div style={{fontWeight:700,fontSize:13,color:"#F0EDE8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{primary}</div>
+                          {secondaryParts.length > 0 && <div style={{fontSize:11,color:"#888",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:2}}>{secondaryParts.join(" · ")}</div>}
+                        </>
+                      );
+                    })()}
                   </div>
                 </button>
               );
@@ -7019,14 +7459,586 @@ function FriendsCard({user,notify}){
         {loading?<div style={{color:"#666",fontSize:12}}>Lädt...</div>:
           friends.length===0?<div style={{color:"#666",fontSize:12,fontStyle:"italic"}}>Noch keine Freunde. Nutze die Suche oben!</div>:
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {friends.map(f=>(
-              <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px"}}>
-                <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:13}}>{f.username||f.email}</div>
-              </div>
-            ))}
+            {friends.map(f=>{
+              const primary = f.displayName || f.username || f.email || "Freund";
+              const secondaryParts = [];
+              if (f.username && f.username !== primary) secondaryParts.push(f.username);
+              if (f.email && f.email !== primary) secondaryParts.push(f.email);
+              return (
+                <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:13}}>{primary}</div>
+                    {secondaryParts.length > 0 && <div style={{fontSize:11,color:"#666",marginTop:2}}>{secondaryParts.join(" · ")}</div>}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         }
       </div>
+    </div>
+  );
+}
+
+function ChallengeTypeSelect({value, onChange, height=48}){
+  const [open,setOpen]=useState(false);
+  const OPTIONS = [
+    { value: "workouts", name: "Trainings (Anzahl)",          icon: "🏋️", color: "#06D6A0" },
+    { value: "km",       name: "Kilometer (Cardio)",          icon: "🏃", color: "#4CC9F0" },
+    { value: "weight",   name: "Volumen (Gesamtgewicht kg)",  icon: "💪", color: "#A78BFA" },
+    { value: "hiit",     name: "HIIT-Trainings (Anzahl)",     icon: "⚡", color: "#FFD166" },
+    { value: "sets",     name: "Sätze (Anzahl gesamt)",       icon: "🔢", color: "#FF6B35" },
+    { value: "stretch",  name: "Dehn-Trainings (Anzahl)",     icon: "🧘", color: "#06D6A0" },
+  ];
+  const selected = OPTIONS.find(o => o.value === value) || OPTIONS[0];
+  
+  return (
+    <div style={{position:"relative"}}>
+      <button type="button" style={{
+        ...s.inp, 
+        display:"flex", 
+        alignItems:"center", 
+        height, 
+        width:"100%", 
+        borderRadius:14, 
+        borderColor: selected.color, 
+        color: selected.color, 
+        background: `linear-gradient(135deg, ${selected.color}18 0%, rgba(18,18,24,0.6) 100%)`, 
+        paddingRight:42, 
+        paddingLeft:16, 
+        cursor:"pointer", 
+        appearance:"none", 
+        WebkitAppearance:"none", 
+        MozAppearance:"none", 
+        fontFamily:"'DM Sans',sans-serif", 
+        fontWeight:600, 
+        fontSize:14, 
+        textAlign:"left", 
+        boxShadow: open ? "inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 3px rgba(255,107,53,0.12)" : "inset 0 1px 0 rgba(255,255,255,0.08)"
+      }} onClick={()=>setOpen(o=>!o)}>
+        <span style={{overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{selected.icon} {selected.name}</span>
+        <span style={{position:"absolute", right:16, top:"50%", transform: open ? "translateY(-50%) rotate(180deg)" : "translateY(-50%)", transition:"transform 0.2s", display:"flex", pointerEvents:"none"}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={selected.color} strokeWidth="2.2"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </button>
+      {open && <>
+        <div style={{position:"fixed", inset:0, zIndex:40}} onClick={()=>setOpen(false)}/>
+        <div className="dropIn" style={{position:"absolute", top:"calc(100% + 8px)", left:0, right:0, zIndex:41, background:"#16161A", border:"1px solid #1E1E24", borderRadius:14, overflow:"hidden", boxShadow:"0 20px 60px rgba(0,0,0,0.6)", maxHeight:280, overflowY:"auto"}}>
+          {OPTIONS.map((o,i)=>(
+            <div key={o.value} className="dropdownOptRow" style={{
+              display:"flex", 
+              alignItems:"center", 
+              gap:10, 
+              padding:"11px 14px", 
+              cursor:"pointer", 
+              fontSize:14, 
+              fontWeight:600, 
+              color: value===o.value ? o.color : "#aaa", 
+              borderTop: i>0 ? "1px solid rgba(255,255,255,0.06)" : "none"
+            }} onClick={()=>{onChange(o.value); setOpen(false);}}>
+              <span style={{fontSize:16, flexShrink:0}}>{o.icon}</span>
+              <span style={{flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{o.name}</span>
+              {value===o.value && <span style={{color:o.color, display:"flex", flexShrink:0}}>{IC.check}</span>}
+            </div>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+function ChallengesPage({user,setUser,notify,isMobile}){
+  const myUid=getUid();
+  const [challenges,setChallenges]=useState([]);
+  const [tab,setTab]=useState("active");
+  const [createOpen,setCreateOpen]=useState(false);
+  const [userNames,setUserNames]=useState({});
+  const [invitingChallenge,setInvitingChallenge]=useState(null);
+  const [friends,setFriends]=useState([]);
+  const [friendsLoading,setFriendsLoading]=useState(false);
+  const [submitting,setSubmitting]=useState(false);
+  const [sendingInvites, setSendingInvites] = useState({});
+  const [form,setForm]=useState({
+    title:"",
+    description:"",
+    type:"workouts",
+    targetValue:10,
+    deadline:"",
+    penaltyPoints:100
+  });
+
+  // Real-time listener for challenges
+  useEffect(()=>{
+    if(!myUid)return;
+    const chalQuery = window.firebaseDb.collection("challenges").where("participants", "array-contains", myUid);
+    const unsub = window.firebaseOnSnapshot(chalQuery, (snap) => {
+      if (snap.metadata && snap.metadata.hasPendingWrites) return;
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setChallenges(list);
+      
+      setSendingInvites(prev => {
+        const next = { ...prev };
+        list.forEach(c => {
+          (c.invited || []).forEach(uid => {
+            if (next[uid]) delete next[uid];
+          });
+        });
+        return next;
+      });
+    }, (err) => {
+      console.warn("Challenges query listener error:", err.message);
+    });
+    return unsub;
+  },[myUid]);
+
+  // Load profiles for participants to display their real names
+  useEffect(() => {
+    const uids = new Set();
+    challenges.forEach(c => {
+      (c.participants || []).forEach(uid => {
+        if (!userNames[uid]) uids.add(uid);
+      });
+    });
+    if (uids.size > 0) {
+      Promise.all([...uids].map(async uid => {
+        try {
+          const prof = await getUserProfile(uid);
+          return { uid, name: prof ? (`${prof.firstName || ""} ${prof.lastName || ""}`.trim() || prof.username || prof.email) : "Sportler" };
+        } catch(e) {
+          return { uid, name: "Sportler" };
+        }
+      })).then(res => {
+        setUserNames(prev => {
+          const next = { ...prev };
+          res.forEach(r => { next[r.uid] = r.name; });
+          return next;
+        });
+      });
+    }
+  }, [challenges]);
+
+  // Check deadline and apply penalties client-side
+  useEffect(() => {
+    if (!myUid || !challenges.length) return;
+    
+    const checkFailedChallenges = async () => {
+      const today = todayStr();
+      for (const c of challenges) {
+        const isPastDeadline = c.deadline < today;
+        const isParticipant = (c.participants || []).includes(myUid);
+        
+        // 1. Creator or anyone online can update status to failed in Firestore
+        if (c.status === "active" && isPastDeadline) {
+          try {
+            await window.firebaseDoc(window.firebaseDb, "challenges", c.id).update({ status: "failed" });
+          } catch(e) {
+            console.warn("Failed challenge status update error:", e.message);
+          }
+        }
+
+        // 2. Apply penalty locally if failed and not yet applied
+        if (c.status === "failed" && isParticipant && (!c.penaltyApplied || c.penaltyApplied[myUid] === false)) {
+          try {
+            const penalty = parseInt(c.penaltyPoints) || 0;
+            if (penalty > 0) {
+              setUser(u => {
+                const newLog = [...(u.pointsLog || [])];
+                if (newLog.some(l => l.type === "challenge_fail" && l.challengeId === c.id)) return u;
+                newLog.push({
+                  id: Date.now(),
+                  date: today,
+                  points: -penalty,
+                  label: `Challenge fehlgeschlagen: ${c.title}`,
+                  type: "challenge_fail",
+                  challengeId: c.id,
+                  emoji: "❌"
+                });
+                return { ...u, forgePoints: Math.max(0, (u.forgePoints || 0) - penalty), pointsLog: newLog, updatedAt: Date.now() };
+              });
+            }
+            
+            // Set penaltyApplied[myUid] = true in Firestore
+            const challengeRef = window.firebaseDoc(window.firebaseDb, "challenges", c.id);
+            const freshSnap = await challengeRef.get();
+            if (freshSnap.exists) {
+              const freshApplied = { ...(freshSnap.data().penaltyApplied || {}), [myUid]: true };
+              await challengeRef.update({ penaltyApplied: freshApplied });
+            }
+            notify(`Challenge „${c.title}“ fehlgeschlagen! -${penalty} FP ❌`, "error");
+          } catch(e) {
+            console.warn("Applying penalty error:", e.message);
+          }
+        }
+      }
+    };
+
+    checkFailedChallenges();
+  }, [challenges, myUid]);
+
+  // Load friends for inviting
+  const openInvite = (challenge) => {
+    setInvitingChallenge(challenge);
+    setFriendsLoading(true);
+    getFriends(myUid).then(fr => {
+      const seen = new Map();
+      fr.forEach(f => { if(!seen.has(f.uid)) seen.set(f.uid, f); });
+      setFriends([...seen.values()]);
+      setFriendsLoading(false);
+    }).catch(() => setFriendsLoading(false));
+  };
+
+  const inviteFriend = async (friendUid) => {
+    const liveChallenge = challenges.find(c => c.id === invitingChallenge?.id) || invitingChallenge;
+    if (!liveChallenge) return;
+    setSendingInvites(prev => ({ ...prev, [friendUid]: true }));
+    try {
+      const myProfile = await upsertUserProfile(myUid, user).catch(() => ({ username: user.username, firstName: user.firstName, lastName: user.lastName, email: user.email }));
+      const payload = {
+        challengeId: liveChallenge.id,
+        title: liveChallenge.title,
+        targetValue: liveChallenge.targetValue,
+        type: liveChallenge.type,
+        deadline: liveChallenge.deadline,
+        penaltyPoints: liveChallenge.penaltyPoints
+      };
+      await shareItemWithFriends(myUid, myProfile, [friendUid], "challenge", liveChallenge.title, payload);
+      
+      const challengeRef = window.firebaseDoc(window.firebaseDb, "challenges", liveChallenge.id);
+      const freshSnap = await challengeRef.get();
+      if (freshSnap.exists) {
+        const freshData = freshSnap.data();
+        const invited = [...new Set([...(freshData.invited || []), friendUid])];
+        await challengeRef.update({ invited });
+      }
+      
+      notify("Einladung gesendet! 🤝");
+    } catch(e) {
+      notify(`Einladung fehlgeschlagen: ${e.message}`, "error");
+      setSendingInvites(prev => ({ ...prev, [friendUid]: false }));
+    }
+  };
+
+  const createChallenge = async () => {
+    if (!form.title.trim() || !form.deadline) return notify("Bitte fülle alle Pflichtfelder aus.", "error");
+    setSubmitting(true);
+    try {
+      const id = `chal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const newChal = {
+        id,
+        title: form.title.trim(),
+        description: form.description.trim(),
+        creator: myUid,
+        creatorName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || user.email || "Sportler",
+        type: form.type,
+        targetValue: parseFloat(form.targetValue) || 10,
+        currentValue: 0,
+        deadline: form.deadline,
+        participants: [myUid],
+        progress: { [myUid]: 0 },
+        penaltyApplied: { [myUid]: false },
+        penaltyPoints: parseInt(form.penaltyPoints) || 100,
+        status: "active",
+        createdAt: Date.now()
+      };
+      await window.firebaseDoc(window.firebaseDb, "challenges", id).set(newChal);
+      notify("Challenge erstellt! 🏆");
+      setCreateOpen(false);
+      setForm({ title:"", description:"", type:"workouts", targetValue:10, deadline:"", penaltyPoints:100 });
+    } catch(e) {
+      notify(`Erstellung fehlgeschlagen: ${e.message}`, "error");
+    }
+    setSubmitting(false);
+  };
+
+  const activeChallenges = challenges.filter(c => c.status === "active");
+  const pastChallenges = challenges.filter(c => c.status !== "active");
+  const list = tab === "active" ? activeChallenges : pastChallenges;
+  const wonCount = challenges.filter(c => c.status === "completed").length;
+  const lostCount = challenges.filter(c => c.status === "failed").length;
+  const winRate = (wonCount + lostCount) > 0 ? Math.round(wonCount / (wonCount + lostCount) * 100) : null;
+
+  return (
+    <div style={{...s.page, padding: isMobile ? "10px 10px 80px" : s.page.padding, position: "relative"}}>
+      <div style={{...s.pageHead, display: "flex", justifyContent: "space-between", alignItems: "center"}}>
+        <div>
+          <h1 style={{...s.pageTitle, fontSize: isMobile ? 26 : 32}}><span style={{display:"inline-block", animation:"trophyFloat 3s ease-in-out infinite", marginRight:8}}>🏆</span>Challenges</h1>
+          <p style={s.pageSub}>{activeChallenges.length} aktive Challenges mit deinen Freunden</p>
+        </div>
+        <button style={s.primaryBtn} onClick={() => setCreateOpen(true)}>{IC.plus} Neue Challenge</button>
+      </div>
+
+      {/* Stats overview */}
+      <div style={{display:"grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap:12, marginBottom:22}}>
+        {[
+          {label:"Aktiv", value:activeChallenges.length, color:"#06D6A0", icon:"🔥"},
+          {label:"Gewonnen", value:wonCount, color:"#FFD166", icon:"🏅"},
+          {label:"Verloren", value:lostCount, color:"#EF476F", icon:"💀"},
+          {label:"Erfolgsquote", value:winRate === null ? "–" : `${winRate}%`, color:"#A78BFA", icon:"📈"}
+        ].map((st,i)=>(
+          <div key={st.label} className="statCard chalCardIn" style={{animationDelay:`${i*0.07}s`, background:`linear-gradient(160deg, ${st.color}14 0%, rgba(255,255,255,0.02) 60%)`, border:`1px solid ${st.color}30`, borderRadius:16, padding:"14px 16px", display:"flex", flexDirection:"column", gap:4}}>
+            <div style={{display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+              <span style={{fontSize:10, fontWeight:800, color:"#888", textTransform:"uppercase", letterSpacing:"0.5px"}}>{st.label}</span>
+              <span style={{fontSize:14}}>{st.icon}</span>
+            </div>
+            <div style={{fontFamily:"'DM Sans',sans-serif", fontWeight:900, fontSize:24, color:st.color, textShadow:`0 0 18px ${st.color}50`}}>{st.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:"flex", gap:10, marginBottom:20, borderBottom:"1px solid rgba(255,255,255,0.06)", paddingBottom:10}}>
+        <button onClick={() => setTab("active")} style={{background:"transparent", border:"none", color:tab==="active"?"#FF6B35":"#666", fontWeight:800, fontSize:14, padding:"6px 12px", cursor:"pointer", borderBottom:tab==="active"?"2px solid #FF6B35":"none", transition:"color 0.2s"}}>Aktiv ({activeChallenges.length})</button>
+        <button onClick={() => setTab("history")} style={{background:"transparent", border:"none", color:tab==="history"?"#FF6B35":"#666", fontWeight:800, fontSize:14, padding:"6px 12px", cursor:"pointer", borderBottom:tab==="history"?"2px solid #FF6B35":"none", transition:"color 0.2s"}}>Verlauf ({pastChallenges.length})</button>
+      </div>
+
+      {list.length === 0 ? (
+        <div className="chalCardIn" style={{textAlign:"center",padding:"50px 20px",border:"2px dashed rgba(255,255,255,0.08)",borderRadius:18,background:"rgba(255,255,255,0.02)"}}>
+          <div style={{fontSize:38,marginBottom:10, display:"inline-block", animation:"trophyFloat 3s ease-in-out infinite"}}>🏆</div>
+          <div style={{fontSize:15,fontWeight:800,color:"#888",marginBottom:6}}>Keine Challenges gefunden</div>
+          <div style={{fontSize:12,color:"#555"}}>Erstelle eine neue Challenge und lade deine Freunde ein!</div>
+        </div>
+      ) : (
+        <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 16}}>
+          {list.map((c, cardIdx) => {
+            const progressPercent = Math.min(100, Math.round((c.currentValue / c.targetValue) * 100)) || 0;
+            const unitLabel = c.type === "km" ? "km" : c.type === "weight" ? "kg" : c.type === "hiit" ? "HIIT-Trainings" : c.type === "sets" ? "Sätze" : c.type === "stretch" ? "Dehn-Trainings" : "Trainings";
+            const deadlineFormatted = new Date(c.deadline).toLocaleDateString("de-DE");
+            const daysLeft = Math.ceil((new Date(c.deadline + "T23:59:59") - new Date()) / 86400000);
+            const isDone = c.status === "completed";
+            const isFailed = c.status === "failed";
+            const accent = isDone ? "#FFD166" : isFailed ? "#EF476F" : "#FF6B35";
+            const RING_R = 34, RING_C = 2 * Math.PI * RING_R;
+            const ringOffset = RING_C * (1 - progressPercent / 100);
+            const gradId = `chalGrad_${c.id}`;
+            const ranked = [...(c.participants || [])].sort((a, b) => ((c.progress || {})[b] || 0) - ((c.progress || {})[a] || 0));
+            const topProgress = Math.max(1, ...ranked.map(p => (c.progress || {})[p] || 0));
+            const medals = ["🥇", "🥈", "🥉"];
+            const urgency = daysLeft <= 2 ? "#EF476F" : daysLeft <= 7 ? "#FFD166" : "#06D6A0";
+
+            return (
+              <div key={c.id} className="chalCard chalCardIn" style={{...s.card, animationDelay:`${cardIdx*0.08}s`, background:`linear-gradient(150deg, ${accent}12 0%, rgba(255,255,255,0.02) 45%, rgba(18,18,24,0.5) 100%)`, border:`1px solid ${accent}30`, borderRadius:18, padding: 18, position:"relative", overflow:"hidden", ...(isDone ? {animation:`chalCardIn 0.5s cubic-bezier(0.16,1,0.3,1) ${cardIdx*0.08}s both, winGlow 2.5s ease-in-out infinite`} : {}), ...(isFailed ? {filter:"saturate(0.75)"} : {})}}>
+                {/* decorative glow blob */}
+                <div style={{position:"absolute", top:-60, right:-60, width:160, height:160, borderRadius:"50%", background:`radial-gradient(circle, ${accent}22 0%, transparent 70%)`, pointerEvents:"none"}}/>
+
+                <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, marginBottom:10}}>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:6}}>
+                      <h3 style={{...s.cardTitle, margin: 0, fontSize: 16, color:"#F0EDE8"}}>{c.title}</h3>
+                      <span style={{
+                        fontSize: 10, fontWeight: 900, padding: "3px 8px", borderRadius: 6,
+                        background: c.status === "active" ? "rgba(6,214,160,0.12)" : isDone ? "rgba(255,209,102,0.12)" : "rgba(239,71,111,0.12)",
+                        color: c.status === "active" ? "#06D6A0" : isDone ? "#FFD166" : "#EF476F",
+                        border: `1px solid ${c.status === "active" ? "rgba(6,214,160,0.2)" : isDone ? "rgba(255,209,102,0.2)" : "rgba(239,71,111,0.2)"}`
+                      }}>
+                        {c.status === "active" ? "Aktiv" : isDone ? "🏅 Erfolgreich" : "Fehlgeschlagen"}
+                      </span>
+                    </div>
+                    <p style={{fontSize: 12, color: "#888", margin: 0, lineHeight: 1.4}}>{c.description || "Keine Beschreibung vorhanden."}</p>
+                  </div>
+
+                  {/* Progress ring */}
+                  <div style={{position:"relative", width:76, height:76, flexShrink:0}}>
+                    <svg width="76" height="76" viewBox="0 0 76 76">
+                      <defs>
+                        <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#A78BFA"/>
+                          <stop offset="100%" stopColor={accent}/>
+                        </linearGradient>
+                      </defs>
+                      <circle cx="38" cy="38" r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6"/>
+                      <circle className="ringIn" cx="38" cy="38" r={RING_R} fill="none" stroke={`url(#${gradId})`} strokeWidth="6" strokeLinecap="round"
+                        strokeDasharray={RING_C} strokeDashoffset={ringOffset}
+                        transform="rotate(-90 38 38)" style={{filter:`drop-shadow(0 0 6px ${accent}60)`, animationDelay:`${0.2 + cardIdx*0.08}s`}}/>
+                    </svg>
+                    <div style={{position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center"}}>
+                      <span style={{fontFamily:"'DM Sans',sans-serif", fontWeight:900, fontSize:16, color:accent}}>{progressPercent}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:14, fontSize:11}}>
+                  <div style={{background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 6px", borderRadius:10, textAlign:"center"}}>
+                    <div style={{fontSize:9, color:"#666", textTransform:"uppercase", fontWeight:800, marginBottom:2}}>Frist</div>
+                    <strong style={{color:"#F0EDE8", fontSize:11}}>{deadlineFormatted}</strong>
+                  </div>
+                  <div style={{background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 6px", borderRadius:10, textAlign:"center"}}>
+                    <div style={{fontSize:9, color:"#666", textTransform:"uppercase", fontWeight:800, marginBottom:2}}>Verbleibend</div>
+                    {c.status === "active" ? (
+                      <strong style={{color:urgency, fontSize:11, ...(daysLeft <= 2 ? {animation:"urgentPulse 1.2s ease-in-out infinite"} : {})}}>
+                        {daysLeft <= 0 ? "Heute!" : daysLeft === 1 ? "1 Tag" : `${daysLeft} Tage`} ⏳
+                      </strong>
+                    ) : (
+                      <strong style={{color:"#666", fontSize:11}}>Beendet</strong>
+                    )}
+                  </div>
+                  <div style={{background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 6px", borderRadius:10, textAlign:"center"}}>
+                    <div style={{fontSize:9, color:"#666", textTransform:"uppercase", fontWeight:800, marginBottom:2}}>Strafe</div>
+                    <strong style={{color:"#EF476F", fontSize:11}}>-{c.penaltyPoints} FP</strong>
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div style={{marginBottom:14}}>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5, fontSize:12}}>
+                    <span style={{color:"#888"}}>Gemeinsamer Fortschritt</span>
+                    <strong style={{color:"#FFD166"}}>{c.currentValue} / {c.targetValue} {unitLabel}</strong>
+                  </div>
+                  <div style={{width:"100%", height:10, background:"rgba(255,255,255,0.05)", borderRadius:5, overflow:"hidden", position:"relative"}}>
+                    <div className="chalBarIn" style={{width:`${progressPercent}%`, height:"100%", background:`linear-gradient(90deg, #A78BFA 0%, ${accent} 100%)`, borderRadius:5, position:"relative", overflow:"hidden", animationDelay:`${0.25 + cardIdx*0.08}s`, boxShadow:`0 0 10px ${accent}50`}}>
+                      {c.status === "active" && progressPercent > 5 && (
+                        <div style={{position:"absolute", top:0, left:0, height:"100%", width:"35%", background:"linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%)", animation:"chalShimmer 2.4s ease-in-out infinite"}}/>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Participant leaderboard */}
+                <div style={{borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:10, marginTop:10}}>
+                  <div style={{fontSize:11, fontWeight:800, color:"#555", textTransform:"uppercase", marginBottom:8}}>Rangliste ({ranked.length})</div>
+                  <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                    {ranked.map((pUid, rank) => {
+                      const pProgress = (c.progress || {})[pUid] || 0;
+                      const pPercent = Math.round((pProgress / c.targetValue) * 100) || 0;
+                      const relWidth = Math.min(100, Math.round((pProgress / topProgress) * 100)) || 0;
+                      const isMe = pUid === myUid;
+                      const name = userNames[pUid] || (isMe ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Ich" : "Sportler");
+                      const barColor = isMe ? "#FF6B35" : rank === 0 ? "#FFD166" : "#A78BFA";
+                      return (
+                        <div key={pUid}>
+                          <div style={{display:"flex", justifyContent:"space-between", fontSize:12, alignItems:"center", marginBottom:3}}>
+                            <span style={{color: isMe ? "#FF6B35" : "#aaa", fontWeight: isMe ? 800 : 500, display:"flex", alignItems:"center", gap:5}}>
+                              <span style={{fontSize:12, width:16, display:"inline-block"}}>{medals[rank] || `${rank+1}.`}</span>
+                              {name} {isMe && <span style={{fontSize:10, color:"#FF6B35", background:"rgba(255,107,53,0.12)", border:"1px solid rgba(255,107,53,0.25)", padding:"1px 6px", borderRadius:5}}>Ich</span>}
+                            </span>
+                            <span style={{color:"#ccc", fontWeight:700, fontSize:11}}>{pProgress} {unitLabel} · {pPercent}%</span>
+                          </div>
+                          <div style={{width:"100%", height:5, background:"rgba(255,255,255,0.04)", borderRadius:3, overflow:"hidden"}}>
+                            <div className="chalBarIn" style={{width:`${relWidth}%`, height:"100%", background:barColor, borderRadius:3, opacity:0.85, animationDelay:`${0.35 + rank*0.1 + cardIdx*0.08}s`, boxShadow:`0 0 6px ${barColor}60`}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {c.status === "active" && (
+                  <button style={{...s.secBtn, width:"100%", marginTop:14, padding:"8px 0", fontSize:12, justifyContent:"center", display:"flex", alignItems:"center", gap:6}} onClick={() => openInvite(c)}>
+                    {IC.plus} Freunde einladen
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Creation Modal */}
+      {createOpen && (
+        <Overlay onClick={e => e.target === e.currentTarget && setCreateOpen(false)}>
+          <div style={{...s.modal, maxWidth: 450, maxHeight:"90vh", overflowY:"auto"}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+              <h3 style={{...s.modalTitle, margin:0}}>🏆 Neue Challenge</h3>
+              <button style={{background:"transparent", border:"none", color:"#666", cursor:"pointer"}} onClick={() => setCreateOpen(false)}>{IC.x}</button>
+            </div>
+            
+            <div style={{display:"flex", flexDirection:"column", gap:14, marginBottom:20}}>
+              <div>
+                <label style={s.lbl}>Name der Challenge *</label>
+                <input style={s.inp} placeholder="Z.B. 100km Laufen im Juli" value={form.title} onChange={e => setForm({...form, title:e.target.value})}/>
+              </div>
+
+              <div>
+                <label style={s.lbl}>Beschreibung</label>
+                <textarea style={{...s.inp, height:60, resize:"none", fontFamily:"inherit"}} placeholder="Z.B. Wir laufen diesen Monat gemeinsam 100km für die Ausdauer!" value={form.description} onChange={e => setForm({...form, description:e.target.value})}/>
+              </div>
+
+              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
+                <div>
+                  <label style={s.lbl}>Ziel-Typ</label>
+                  <ChallengeTypeSelect value={form.type} onChange={val => setForm({...form, type:val})}/>
+                </div>
+                <div>
+                  <label style={s.lbl}>Zielwert <span style={{color:"#666", fontWeight:400}}>
+                    ({form.type==="km" ? "km" : form.type==="weight" ? "kg" : form.type==="sets" ? "Sätze" : form.type==="hiit" ? "HIIT-Einheiten" : form.type==="stretch" ? "Dehn-Einheiten" : "Trainings"})
+                  </span></label>
+                  <input 
+                    type="number" 
+                    style={s.inp} 
+                    value={form.targetValue} 
+                    placeholder={form.type==="km" ? "z.B. 100" : form.type==="weight" ? "z.B. 5000" : form.type==="sets" ? "z.B. 200" : form.type==="hiit" ? "z.B. 10" : form.type==="stretch" ? "z.B. 8" : "z.B. 20"}
+                    onChange={e => setForm({...form, targetValue:e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
+                <div>
+                  <label style={s.lbl}>Frist (Zieldatum) *</label>
+                  <input type="date" style={s.inp} value={form.deadline} onChange={e => setForm({...form, deadline:e.target.value})}/>
+                </div>
+                <div>
+                  <label style={s.lbl}>F.P. Strafe bei Fehlschlag</label>
+                  <input type="number" style={s.inp} value={form.penaltyPoints} onChange={e => setForm({...form, penaltyPoints:e.target.value})}/>
+                </div>
+              </div>
+            </div>
+
+            <div style={{display:"flex", gap:10}}>
+              <button style={{...s.secBtn, flex:1}} onClick={() => setCreateOpen(false)}>Abbrechen</button>
+              <button style={{...s.primaryBtn, flex:1, justifyContent:"center"}} disabled={submitting} onClick={createChallenge}>{submitting ? "Erstellt..." : "Erstellen"}</button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {invitingChallenge && (() => {
+        const liveChallenge = challenges.find(c => c.id === invitingChallenge.id) || invitingChallenge;
+        return (
+          <Overlay onClick={e => e.target === e.currentTarget && setInvitingChallenge(null)}>
+            <div style={{...s.modal, maxWidth: 400, maxHeight:"80vh", overflowY:"auto"}}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+                <h3 style={{...s.modalTitle, margin:0}}>👥 Freunde einladen</h3>
+                <button style={{background:"transparent", border:"none", color:"#666", cursor:"pointer"}} onClick={() => setInvitingChallenge(null)}>{IC.x}</button>
+              </div>
+              
+              <p style={{fontSize:13, color:"#888", marginBottom:16}}>Lade Freunde zur Challenge „<span style={{color:"#F0EDE8", fontWeight:700}}>{liveChallenge.title}</span>“ ein:</p>
+              
+              {friendsLoading ? <div style={{color:"#666", fontSize:13, textAlign:"center", padding:"24px 0"}}>Lade Freunde...</div> :
+                friends.length === 0 ? <div style={{color:"#666", fontSize:13, textAlign:"center", padding:"24px 0", fontStyle:"italic"}}>Du hast noch keine Freunde hinzugefügt.</div> :
+                <div style={{display:"flex", flexDirection:"column", gap:8, marginBottom:16}}>
+                  {friends.map(f => {
+                     const alreadyIn = (liveChallenge.participants || []).includes(f.uid);
+                     const isInvited = (liveChallenge.invited || []).includes(f.uid) || sendingInvites[f.uid];
+                     return (
+                       <div key={f.uid} style={{display:"flex", alignItems:"center", gap:10, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:"10px 14px"}}>
+                         <div style={{flex:1, minWidth:0}}>
+                           <div style={{fontWeight:700, fontSize:13}}>{f.displayName || f.username || f.email || "Freund"}</div>
+                           {f.username && f.email && <div style={{fontSize:11, color:"#888"}}>{f.email}</div>}
+                         </div>
+                         {alreadyIn ? (
+                           <span style={{fontSize:12, fontWeight:700, color:"#06D6A0", background:"rgba(6,214,160,0.1)", border:"1px solid rgba(6,214,160,0.2)", padding:"6px 12px", borderRadius:10}}>Beigetreten</span>
+                         ) : isInvited ? (
+                           <span style={{fontSize:12, fontWeight:700, color:"#FFD166", background:"rgba(255,209,102,0.1)", border:"1px solid rgba(255,209,102,0.2)", padding:"6px 12px", borderRadius:10}}>
+                             {sendingInvites[f.uid] ? "Eingeladen..." : "Eingeladen"}
+                           </span>
+                         ) : (
+                           <button 
+                             style={{...s.secBtn, padding:"6px 12px", fontSize:12, borderColor: "#FF6B35", color: "#FF6B35"}} 
+                             disabled={sendingInvites[f.uid]}
+                             onClick={() => inviteFriend(f.uid)}
+                           >
+                             Einladen
+                           </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              }
+              <button style={{...s.secBtn, width:"100%"}} onClick={() => setInvitingChallenge(null)}>Fertig</button>
+            </div>
+          </Overlay>
+        );
+      })()}
     </div>
   );
 }
@@ -7057,8 +8069,10 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
       const taken=await isUsernameTaken(form.username,getUid()).catch(()=>false);
       if(taken)return notify("Dieser Benutzername ist schon vergeben","error");
     }
-    setUser(form);
-    upsertUserProfile(getUid(),form).catch(e=>console.warn("upsertUserProfile:",e.message));
+    const updatedForm = { ...form, updatedAt: Date.now() };
+    setForm(updatedForm);
+    setUser(updatedForm);
+    upsertUserProfile(getUid(),updatedForm).catch(e=>console.warn("upsertUserProfile:",e.message));
     notify("Profil gespeichert! ✅");
   };
 
@@ -7090,7 +8104,7 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
             <div style={{fontWeight:700,fontSize:13}}>{sp.name}{sp.amount?` · ${sp.amount}`:""}</div>
             <div style={{fontSize:10,color:"#666",marginTop:2}}>{(sp.days||[]).length===7?"Täglich":(sp.days||[]).join(", ")||"Keine Tage gewählt"}</div>
           </div>
-          <button style={{background:"transparent",border:"none",color:"#EF476F",cursor:"pointer",padding:4,display:"flex"}} onClick={()=>{const next=(form.supplements||[]).filter(x=>x.id!==sp.id);setForm(f=>({...f,supplements:next}));setUser(u=>({...u,supplements:next}));}}>{IC.trash}</button>
+          <button style={{background:"transparent",border:"none",color:"#EF476F",cursor:"pointer",padding:4,display:"flex"}} onClick={()=>{const next=(form.supplements||[]).filter(x=>x.id!==sp.id);setForm(f=>({...f,supplements:next}));setUser(u=>({...u,supplements:next,updatedAt:Date.now()}));}}>{IC.trash}</button>
         </div>
       ))}
       {!(form.supplements||[]).length && <div style={{color:"#666",fontSize:12,textAlign:"center",padding:"10px 0"}}>Noch keine Supplements eingetragen.</div>}
@@ -7114,7 +8128,7 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
         const newItem={id:Date.now(),name:newSupp.name.trim(),amount:newSupp.amount.trim(),days:newSupp.days||[]};
         const next=[...(form.supplements||[]),newItem];
         setForm(f=>({...f,supplements:next}));
-        setUser(u=>({...u,supplements:next}));
+        setUser(u=>({...u,supplements:next,updatedAt:Date.now()}));
         setNewSupp({name:"",amount:"",days:[]});
         notify("Supplement gespeichert! ✅");
       }}>{IC.plus} Supplement hinzufügen</button>
@@ -7123,10 +8137,6 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
   </div>
   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:22,gap:12}}>
     <button style={{...s.primaryBtn,flex:1}} onClick={save}>💾 Speichern</button>
-    {onRescue&&<button onClick={onRescue} style={{display:"flex",alignItems:"center",gap:7,padding:"12px 16px",borderRadius:12,border:"1px solid rgba(6,214,160,0.3)",background:"rgba(6,214,160,0.06)",color:"#06D6A0",cursor:"pointer",fontSize:13,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>
-      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-      Daten retten
-    </button>}
   </div></div>);}
 // ─── Docs Page ────────────────────────────────────────────────────────────────
 
@@ -7530,7 +8540,7 @@ function ForgePointsPage({user, setUser, isMobile}){
           ))}
           <div style={{display:"flex",gap:10,marginTop:18}}>
             <button onClick={()=>setShowSettings(false)} style={{flex:1,padding:"11px 0",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#888",fontSize:13,fontWeight:700,cursor:"pointer"}}>Abbrechen</button>
-            <button onClick={()=>{setUser(u=>({...u,pointsConfig:editCfg}));setShowSettings(false);}} style={{flex:2,padding:"11px 0",borderRadius:12,border:"none",background:"linear-gradient(135deg,#FF6B35,#FF8C42)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Speichern</button>
+            <button onClick={()=>{setUser(u=>({...u,pointsConfig:editCfg,updatedAt:Date.now()}));setShowSettings(false);}} style={{flex:2,padding:"11px 0",borderRadius:12,border:"none",background:"linear-gradient(135deg,#FF6B35,#FF8C42)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Speichern</button>
           </div>
         </div>
       )}
@@ -7633,7 +8643,7 @@ function GoalsPage({user,setUser,data,notify,isMobile}){
 
   const redeemReward = (id, cost) => {
     if (fp < cost) return notify("Nicht genug Forge Points!", "error");
-    setUser(u => ({...u, forgePoints: (u.forgePoints||0) - cost}));
+    setUser(u => ({...u, forgePoints: (u.forgePoints||0) - cost, updatedAt: Date.now()}));
     setRewards(r => r.map(x => x.id === id ? {...x, redeemed: true} : x));
     notify("Belohnung erfolgreich eingelöst! 🎉");
   };
@@ -8485,7 +9495,11 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
   };
 
   const deleteEntry=(dayIdx,entryId)=>{
-    setWeekData(w=>({...w,entries:{...w.entries,[dayIdx]:(w.entries[dayIdx]||[]).filter(e=>e.id!==entryId)}}));
+    setWeekData(w=>({
+      ...w,
+      deletedEntryIds:[...(w.deletedEntryIds||[]), entryId],
+      entries:{...w.entries,[dayIdx]:(w.entries[dayIdx]||[]).filter(e=>e.id!==entryId)}
+    }));
     notify("Eintrag gelöscht");
   };
 
@@ -10137,7 +11151,26 @@ ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(
 // ── Service Worker: macht die App offline nutzbar & beschleunigt das Laden ──
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      // Beim Start einmalig prüfen, ob ein Update vorliegt
+      reg.update().catch(() => {});
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // Informiere den User diskret, lade aber NIEMALS automatisch neu, um den User nicht zu stören.
+              if (window.showToast) {
+                window.showToast("Ein Update wurde im Hintergrund installiert und wird beim nächsten Start aktiv! 🚀", "info");
+              }
+            }
+          });
+        }
+      });
+    }).catch(err => {
+      console.warn("Service Worker Registrierung fehlgeschlagen:", err);
+    });
   });
 }
 </script>

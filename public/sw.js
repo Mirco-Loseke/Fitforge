@@ -34,6 +34,14 @@ const NEVER_CACHE_HOSTS = [
   'www.googleapis.com',
 ];
 
+function shouldNeverCache(url) {
+  const host = url.hostname;
+  return NEVER_CACHE_HOSTS.includes(host) ||
+         host.endsWith('googleapis.com') ||
+         host.endsWith('firebaseio.com') ||
+         host.includes('firebase');
+}
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(PRECACHE);
@@ -63,13 +71,14 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  if (NEVER_CACHE_HOSTS.includes(url.hostname)) return;
+  if (shouldNeverCache(url)) return;
 
   // Navigation (Seitenaufruf): network-first, offline aus dem Cache
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
       try {
-        const fresh = await fetch(req);
+        // Bypasse den Browser-HTTP-Cache für den Navigations-Fetch, um immer die aktuellste index.html zu laden
+        const fresh = await fetch(req, { cache: 'no-store' }).catch(() => fetch(req));
         if (fresh && fresh.ok) {
           const cache = await caches.open(PRECACHE);
           // Vercel liefert für alle Pfade index.html – unter '/' cachen
