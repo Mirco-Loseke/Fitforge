@@ -5956,6 +5956,55 @@ function GpsAnalytics({ path, targetPace }) {
 }
 
 
+// Generisches, gestyltes Dropdown (statt nativem <select>) im App-Design
+function FFSelect({ value, onChange, options, width, accent = "#FF6B35" }) {
+  const [open, setOpen] = useState(false);
+  const sel = options.find(o => o.value === value) || options[0];
+  const active = sel.value !== "all";
+  const color = sel.color || accent;
+  return (
+    <div style={{ position: "relative", width: width || "auto", minWidth: 130 }}>
+      <button type="button" onClick={() => setOpen(o => !o)} style={{
+        display: "flex", alignItems: "center", gap: 8, width: "100%",
+        padding: "9px 32px 9px 12px", borderRadius: 12, cursor: "pointer",
+        fontFamily: "'DM Sans',sans-serif", fontWeight: 700, fontSize: 12, textAlign: "left",
+        background: active ? `linear-gradient(135deg, ${color}1A 0%, rgba(18,18,24,0.6) 100%)` : "rgba(255,255,255,0.04)",
+        border: `1px solid ${active ? color : "rgba(255,255,255,0.1)"}`,
+        color: active ? color : "#aaa",
+        appearance: "none", WebkitAppearance: "none",
+        boxShadow: open ? `inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 3px ${color}20` : "inset 0 1px 0 rgba(255,255,255,0.06)",
+        transition: "border-color 0.2s, background 0.2s, box-shadow 0.2s"
+      }}>
+        {sel.dot && <span style={{ width: 8, height: 8, borderRadius: "50%", background: sel.dot, flexShrink: 0 }}/>}
+        {sel.icon && <span style={{ flexShrink: 0 }}>{sel.icon}</span>}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sel.label}</span>
+        <span style={{ position: "absolute", right: 10, top: "50%", transform: open ? "translateY(-50%) rotate(180deg)" : "translateY(-50%)", transition: "transform 0.2s", display: "flex", pointerEvents: "none" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={active ? color : "#666"} strokeWidth="2.2"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </button>
+      {open && <>
+        <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setOpen(false)}/>
+        <div className="dropIn" style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: "100%", width: "max-content", maxWidth: 280, zIndex: 41, background: "#16161A", border: "1px solid #1E1E24", borderRadius: 12, overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", maxHeight: 280, overflowY: "auto" }}>
+          {options.map((o, i) => (
+            <div key={o.value} className="dropdownOptRow" style={{
+              display: "flex", alignItems: "center", gap: 9, padding: "10px 13px", cursor: "pointer",
+              fontSize: 12, fontWeight: 600,
+              color: value === o.value ? (o.color || accent) : "#aaa",
+              background: value === o.value ? `${o.color || accent}10` : "transparent",
+              borderTop: i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none"
+            }} onClick={() => { onChange(o.value); setOpen(false); }}>
+              {o.dot && <span style={{ width: 8, height: 8, borderRadius: "50%", background: o.dot, flexShrink: 0 }}/>}
+              {o.icon && <span style={{ fontSize: 14, flexShrink: 0 }}>{o.icon}</span>}
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.label}</span>
+              {value === o.value && <span style={{ color: o.color || accent, display: "flex", flexShrink: 0 }}>{IC.check}</span>}
+            </div>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+
 // Fortschrittskurve einer Übung über alle Trainings (Max-Gewicht, Volumen, e1RM)
 function ExerciseProgressModal({ name, workouts, onClose, isMobile }) {
   const [metric, setMetric] = useState("max");
@@ -6460,26 +6509,38 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
       {sorted.length > 0 && !compMode && (
         <div className="chalCardIn" style={{display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center"}}>
           <input
-            style={{...s.inp, flex:"1 1 160px", minWidth:140, padding:"9px 12px", fontSize:13}}
+            style={{...s.inp, flex:"1 1 160px", minWidth:140, padding:"9px 12px", fontSize:13, borderRadius:12}}
             placeholder="🔍 Übung oder Training suchen…"
             value={filters.search}
             onChange={e=>setFilters(f=>({...f, search:e.target.value}))}
           />
-          <select style={{...s.inp, width:"auto", padding:"9px 10px", fontSize:12}} value={filters.plan} onChange={e=>setFilters(f=>({...f, plan:e.target.value}))}>
-            <option value="all">Alle Pläne</option>
-            {data.plans.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <select style={{...s.inp, width:"auto", padding:"9px 10px", fontSize:12}} value={filters.type} onChange={e=>setFilters(f=>({...f, type:e.target.value}))}>
-            <option value="all">Alle Arten</option>
-            <option value="__hiit">⚡ HIIT</option>
-            {typeOptions.map(t=><option key={t} value={t}>{t}</option>)}
-          </select>
-          <select style={{...s.inp, width:"auto", padding:"9px 10px", fontSize:12}} value={filters.range} onChange={e=>setFilters(f=>({...f, range:e.target.value}))}>
-            <option value="all">Gesamter Zeitraum</option>
-            <option value="30">Letzte 30 Tage</option>
-            <option value="90">Letzte 3 Monate</option>
-            <option value="365">Letztes Jahr</option>
-          </select>
+          <FFSelect
+            value={filters.plan}
+            onChange={v=>setFilters(f=>({...f, plan:v}))}
+            options={[
+              {value:"all", label:"Alle Pläne", icon:"📋"},
+              ...data.plans.map(p=>({value:p.id, label:p.name, dot:p.color, color:p.color}))
+            ]}
+          />
+          <FFSelect
+            value={filters.type}
+            onChange={v=>setFilters(f=>({...f, type:v}))}
+            options={[
+              {value:"all", label:"Alle Arten", icon:"🎯"},
+              {value:"__hiit", label:"HIIT", icon:"⚡", color:"#FFD166"},
+              ...typeOptions.map(t=>({value:t, label:t, dot:TYPE_COLORS[t]||"#888", color:TYPE_COLORS[t]}))
+            ]}
+          />
+          <FFSelect
+            value={filters.range}
+            onChange={v=>setFilters(f=>({...f, range:v}))}
+            options={[
+              {value:"all", label:"Gesamter Zeitraum", icon:"🗓️"},
+              {value:"30", label:"Letzte 30 Tage", icon:"🗓️"},
+              {value:"90", label:"Letzte 3 Monate", icon:"🗓️"},
+              {value:"365", label:"Letztes Jahr", icon:"🗓️"}
+            ]}
+          />
           {activeFilterCount > 0 && (
             <button style={{...s.secBtn, padding:"8px 12px", fontSize:11, borderColor:"#EF476F", color:"#EF476F", display:"flex", alignItems:"center", gap:5}} onClick={()=>setFilters({plan:"all", type:"all", range:"all", search:""})}>
               {IC.x} Zurücksetzen ({activeFilterCount})
