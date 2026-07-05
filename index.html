@@ -5956,6 +5956,92 @@ function GpsAnalytics({ path, targetPace }) {
 }
 
 
+// Fortschrittskurve einer Übung über alle Trainings (Max-Gewicht, Volumen, e1RM)
+function ExerciseProgressModal({ name, workouts, onClose, isMobile }) {
+  const [metric, setMetric] = useState("max");
+  const points = React.useMemo(() => {
+    const res = [];
+    [...workouts].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(w => {
+      (w.exercises || []).forEach(ex => {
+        if (ex.isHiit || ex.name !== name) return;
+        let maxW = 0, vol = 0, e1rm = 0;
+        (ex.sets || []).forEach(st => {
+          if (st.done === false) return;
+          const wt = parseFloat(st.weight) || 0, reps = parseInt(st.reps) || 0;
+          if (wt > maxW) maxW = wt;
+          vol += wt * reps;
+          const est = reps > 0 ? wt * (1 + reps / 30) : wt;
+          if (est > e1rm) e1rm = est;
+        });
+        if (maxW > 0 || vol > 0) res.push({ date: w.date, max: maxW, vol, e1rm: Math.round(e1rm * 10) / 10 });
+      });
+    });
+    return res.slice(-20);
+  }, [name, workouts]);
+
+  const METRICS = [["max", "Max-Gewicht", "kg", "#FF6B35"], ["vol", "Volumen", "kg", "#A78BFA"], ["e1rm", "e1RM", "kg", "#FFD166"]];
+  const [, mLabel, mUnit, mColor] = METRICS.find(m => m[0] === metric);
+  const vals = points.map(p => p[metric]);
+  const vMax = Math.max(1, ...vals), vMin = Math.min(...vals, vMax);
+  const W = 320, H = 150, L = 10, R = 310, T = 14, B = 122;
+  const X = i => points.length > 1 ? L + (i / (points.length - 1)) * (R - L) : (L + R) / 2;
+  const Y = v => B - ((v - vMin * 0.9) / Math.max(1, vMax - vMin * 0.9)) * (B - T);
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${X(i).toFixed(1)},${Y(p[metric]).toFixed(1)}`).join(" ");
+  const first = vals[0] || 0, last = vals[vals.length - 1] || 0;
+  const delta = first > 0 ? Math.round((last - first) / first * 100) : null;
+
+  return (
+    <Overlay onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="dropIn" style={{ ...s.modal, maxWidth: 480, maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <h3 style={{ ...s.modalTitle, margin: 0, fontSize: 17 }}>📈 {name}</h3>
+          <button style={{ background: "transparent", border: "none", color: "#666", cursor: "pointer" }} onClick={onClose}>{IC.x}</button>
+        </div>
+        <div style={{ fontSize: 11, color: "#666", marginBottom: 14 }}>{points.length} Trainings mit dieser Übung{delta !== null && delta !== 0 && <> · <b style={{ color: delta > 0 ? "#06D6A0" : "#EF476F" }}>{delta > 0 ? "▲ +" : "▼ "}{delta}%</b> seit dem ersten Eintrag</>}</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {METRICS.map(([key, label, , color]) => (
+            <button key={key} onClick={() => setMetric(key)} style={{ flex: 1, padding: "7px 0", borderRadius: 10, cursor: "pointer", fontSize: 11, fontWeight: 800, background: metric === key ? `${color}1F` : "rgba(255,255,255,0.03)", border: `1px solid ${metric === key ? color : "rgba(255,255,255,0.08)"}`, color: metric === key ? color : "#888", transition: "all 0.2s" }}>{label}</button>
+          ))}
+        </div>
+        {points.length < 2 ? (
+          <div style={{ textAlign: "center", padding: "30px 0", color: "#666", fontSize: 13, fontStyle: "italic" }}>Noch nicht genug Daten – mindestens 2 Trainings mit dieser Übung nötig.</div>
+        ) : (
+          <>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+              <defs>
+                <linearGradient id="exProgFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={mColor} stopOpacity="0.25" />
+                  <stop offset="100%" stopColor={mColor} stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {[0.25, 0.5, 0.75].map(f => <line key={f} x1={L} y1={T + (B - T) * f} x2={R} y2={T + (B - T) * f} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />)}
+              <path d={`${path} L${X(points.length - 1).toFixed(1)},${B} L${X(0).toFixed(1)},${B} Z`} fill="url(#exProgFill)" className="fadeIn" />
+              <path className="lineDraw" pathLength="1" d={path} fill="none" stroke={mColor} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 4px ${mColor}70)` }} />
+              {points.map((p, i) => (
+                <g key={i}>
+                  <circle cx={X(i)} cy={Y(p[metric])} r="3" fill={mColor} className="fadeIn">
+                    <title>{`${new Date(p.date).toLocaleDateString("de-DE")}: ${p[metric]} ${mUnit}`}</title>
+                  </circle>
+                  {(i === 0 || i === points.length - 1 || p[metric] === vMax) && (
+                    <text x={X(i)} y={Y(p[metric]) - 7} textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"} fontSize="8" fontWeight="800" fill={p[metric] === vMax ? "#FFD166" : "#888"}>{p[metric]}</text>
+                  )}
+                </g>
+              ))}
+              {points.map((p, i) => (points.length <= 8 || i % Math.ceil(points.length / 6) === 0 || i === points.length - 1) ? (
+                <text key={"d" + i} x={X(i)} y={H - 8} textAnchor="middle" fontSize="7" fill="#555">{new Date(p.date).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}</text>
+              ) : null)}
+            </svg>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, fontSize: 11 }}>
+              <span style={{ color: "#666" }}>Best: <b style={{ color: "#FFD166" }}>{vMax} {mUnit}</b></span>
+              <span style={{ color: "#666" }}>Zuletzt: <b style={{ color: mColor }}>{last} {mUnit}</b></span>
+            </div>
+          </>
+        )}
+      </div>
+    </Overlay>
+  );
+}
+
 function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isMobile,challenges}){
 
   const [addToChallengeWO, setAddToChallengeWO] = useState(null);
@@ -6048,6 +6134,42 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
   const [compMode, setCompMode] = useState(false);
   const [compSel, setCompSel] = useState([]);
   const [showComp, setShowComp] = useState(false);
+  const [filters, setFilters] = useState({plan:"all", type:"all", range:"all", search:""});
+  const [exGraph, setExGraph] = useState(null);
+
+  const woVol = w => (w.exercises||[]).reduce((a,e) => {
+    if (e.isHiit) return a;
+    return a + (e.sets||[]).reduce((b,st) => b + (st.done !== false ? (parseFloat(st.weight)||0) * (parseInt(st.reps)||0) : 0), 0);
+  }, 0);
+
+  const typeOptions = React.useMemo(() => {
+    const set = new Set(data.plans.flatMap(p => p.types || []));
+    return [...set].sort();
+  }, [data.plans]);
+
+  const activeFilterCount = (filters.plan!=="all"?1:0)+(filters.type!=="all"?1:0)+(filters.range!=="all"?1:0)+(filters.search.trim()?1:0);
+
+  const filtered = sorted.filter(w => {
+    if (filters.plan !== "all" && w.planId !== filters.plan) return false;
+    if (filters.type !== "all") {
+      if (filters.type === "__hiit") { if (!w.hiitMode) return false; }
+      else {
+        const plan = data.plans.find(p => p.id === w.planId);
+        if (!((plan?.types) || []).includes(filters.type)) return false;
+      }
+    }
+    if (filters.range !== "all") {
+      const days = parseInt(filters.range);
+      if (new Date(w.date) < new Date(Date.now() - days * 86400000)) return false;
+    }
+    if (filters.search.trim()) {
+      const q = filters.search.trim().toLowerCase();
+      const inName = (w.name || "").toLowerCase().includes(q);
+      const inEx = (w.exercises || []).some(e => (e.name || "").toLowerCase().includes(q));
+      if (!inName && !inEx) return false;
+    }
+    return true;
+  });
   
   const getWeekNumber = (d) => {
     const t = new Date(d.getTime());
@@ -6067,7 +6189,7 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
     return `${mon.toLocaleDateString("de-DE", {day:"2-digit", month:"2-digit"})} - ${sun.toLocaleDateString("de-DE", {day:"2-digit", month:"2-digit"})}`;
   };
 
-  const grouped = sorted.reduce((acc, w) => {
+  const grouped = filtered.reduce((acc, w) => {
     const d = new Date(w.date);
     const wn = getWeekNumber(d);
     const yr = d.getFullYear();
@@ -6221,7 +6343,10 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
               return(
                 <div key={i} style={{...s.exBlock,background:"rgba(255,255,255,0.03)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",border:"1px solid rgba(255,255,255,0.07)",padding:18}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                    <div style={{fontWeight:800,fontSize:16}}>{ex.name}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                      <div style={{fontWeight:800,fontSize:16}}>{ex.name}</div>
+                      <button title="Fortschritt anzeigen" style={{background:"rgba(255,107,53,0.1)",border:"1px solid rgba(255,107,53,0.25)",borderRadius:8,padding:"3px 8px",fontSize:12,cursor:"pointer",color:"#FF6B35",flexShrink:0,lineHeight:1.2}} onClick={e=>{e.stopPropagation();setExGraph(ex.name);}}>📈</button>
+                    </div>
                     <div style={{display:"flex",gap:6}}>
                       {eVol > 0 && <div style={{fontSize:10,fontWeight:700,color:"#A78BFA",background:"#A78BFA15",padding:"3px 8px",borderRadius:6}}>{eVol}kg</div>}
                       {eKcal > 0 && <div style={{fontSize:10,fontWeight:700,color:"#FF6B6B",background:"#FF6B6B15",padding:"3px 8px",borderRadius:6}}>{eKcal} kcal</div>}
@@ -6299,6 +6424,7 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
             {IC.trash} Training aus Verlauf löschen
           </button>
         </div>
+        {exGraph && <ExerciseProgressModal name={exGraph} workouts={data.workouts} onClose={()=>setExGraph(null)} isMobile={isMobile}/>}
       </div>
     );
   }
@@ -6330,16 +6456,133 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
           >Vergleichen</button>
         </div>
       )}
+      {/* Filterleiste */}
+      {sorted.length > 0 && !compMode && (
+        <div className="chalCardIn" style={{display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center"}}>
+          <input
+            style={{...s.inp, flex:"1 1 160px", minWidth:140, padding:"9px 12px", fontSize:13}}
+            placeholder="🔍 Übung oder Training suchen…"
+            value={filters.search}
+            onChange={e=>setFilters(f=>({...f, search:e.target.value}))}
+          />
+          <select style={{...s.inp, width:"auto", padding:"9px 10px", fontSize:12}} value={filters.plan} onChange={e=>setFilters(f=>({...f, plan:e.target.value}))}>
+            <option value="all">Alle Pläne</option>
+            {data.plans.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <select style={{...s.inp, width:"auto", padding:"9px 10px", fontSize:12}} value={filters.type} onChange={e=>setFilters(f=>({...f, type:e.target.value}))}>
+            <option value="all">Alle Arten</option>
+            <option value="__hiit">⚡ HIIT</option>
+            {typeOptions.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+          <select style={{...s.inp, width:"auto", padding:"9px 10px", fontSize:12}} value={filters.range} onChange={e=>setFilters(f=>({...f, range:e.target.value}))}>
+            <option value="all">Gesamter Zeitraum</option>
+            <option value="30">Letzte 30 Tage</option>
+            <option value="90">Letzte 3 Monate</option>
+            <option value="365">Letztes Jahr</option>
+          </select>
+          {activeFilterCount > 0 && (
+            <button style={{...s.secBtn, padding:"8px 12px", fontSize:11, borderColor:"#EF476F", color:"#EF476F", display:"flex", alignItems:"center", gap:5}} onClick={()=>setFilters({plan:"all", type:"all", range:"all", search:""})}>
+              {IC.x} Zurücksetzen ({activeFilterCount})
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Heatmap + Trainingsarten-Verteilung */}
+      {sorted.length > 0 && !compMode && (()=>{
+        // Aktivitäts-Heatmap: letzte 12 Wochen, Score = Volumen + Dauer
+        const dayScore = {};
+        data.workouts.forEach(w => { dayScore[w.date] = (dayScore[w.date]||0) + woVol(w) + (parseInt(w.duration)||0)*10; });
+        const nowD = new Date(); nowD.setHours(12,0,0,0);
+        const dow = (nowD.getDay()+6)%7; // Mo=0
+        const monday = new Date(nowD.getTime() - dow*86400000);
+        const weeks = [];
+        for (let wi=11; wi>=0; wi--) {
+          const col = [];
+          for (let di=0; di<7; di++) {
+            const d = new Date(monday.getTime() - wi*7*86400000 + di*86400000);
+            const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+            col.push({ds, future: d > nowD, score: dayScore[ds]||0, label: d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"})});
+          }
+          weeks.push(col);
+        }
+        const maxScore = Math.max(1, ...weeks.flat().map(c=>c.score));
+        // Trainingsarten-Verteilung: letzte 4 Wochen
+        const cutoff = Date.now() - 28*86400000;
+        const typeCount = {}; let typeTotal = 0;
+        data.workouts.forEach(w => {
+          if (new Date(w.date) < cutoff) return;
+          if (w.hiitMode) { typeCount["⚡ HIIT"]=(typeCount["⚡ HIIT"]||0)+1; typeTotal++; }
+          const plan = data.plans.find(p=>p.id===w.planId);
+          ((plan?.types)||[]).forEach(t => { typeCount[t]=(typeCount[t]||0)+1; typeTotal++; });
+        });
+        const distEntries = Object.entries(typeCount).sort((a,b)=>b[1]-a[1]).slice(0,6);
+        return (
+          <div style={{display:"grid", gridTemplateColumns:isMobile?"1fr":"3fr 2fr", gap:12, marginBottom:20}}>
+            <div className="chalCardIn" style={{animationDelay:"0.05s", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:16, padding:"14px 16px"}}>
+              <div style={{fontSize:11, fontWeight:800, color:"#888", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:10}}>🔥 Aktivität · letzte 12 Wochen</div>
+              <div style={{display:"flex", gap:3, justifyContent:"space-between"}}>
+                {weeks.map((col,wi)=>(
+                  <div key={wi} style={{display:"flex", flexDirection:"column", gap:3, flex:1}}>
+                    {col.map(cell=>(
+                      <div key={cell.ds} title={cell.future?"":`${cell.label}${cell.score>0?` · aktiv`:" · kein Training"}`} style={{
+                        width:"100%", aspectRatio:"1", borderRadius:3,
+                        background: cell.future ? "transparent" : cell.score>0 ? `rgba(255,107,53,${Math.max(0.2, Math.min(1, cell.score/maxScore)).toFixed(2)})` : "rgba(255,255,255,0.045)",
+                        boxShadow: cell.score/maxScore > 0.7 ? "0 0 5px rgba(255,107,53,0.5)" : "none"
+                      }}/>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div style={{display:"flex", justifyContent:"space-between", marginTop:6, fontSize:9, color:"#555"}}>
+                <span>{weeks[0][0].label}</span><span>heute</span>
+              </div>
+            </div>
+            <div className="chalCardIn" style={{animationDelay:"0.1s", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:16, padding:"14px 16px"}}>
+              <div style={{fontSize:11, fontWeight:800, color:"#888", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:10}}>🎯 Trainingsarten · 4 Wochen</div>
+              {distEntries.length === 0 ? (
+                <div style={{fontSize:11, color:"#555", fontStyle:"italic", padding:"14px 0", textAlign:"center"}}>Keine Trainings in den letzten 4 Wochen.</div>
+              ) : (
+                <div style={{display:"flex", flexDirection:"column", gap:7}}>
+                  {distEntries.map(([t, cnt], i)=>{
+                    const pct = Math.round(cnt/typeTotal*100);
+                    const color = TYPE_COLORS[t] || "#FFD166";
+                    return (
+                      <div key={t}>
+                        <div style={{display:"flex", justifyContent:"space-between", fontSize:10, marginBottom:2}}>
+                          <span style={{color:"#aaa", fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{t}</span>
+                          <span style={{color, fontWeight:900, flexShrink:0}}>{pct}%</span>
+                        </div>
+                        <div style={{width:"100%", height:5, background:"rgba(255,255,255,0.04)", borderRadius:3, overflow:"hidden"}}>
+                          <div className="chalBarIn" style={{width:`${pct}%`, height:"100%", background:color, borderRadius:3, opacity:0.85, animationDelay:`${0.2+i*0.08}s`, boxShadow:`0 0 6px ${color}60`}}/>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {!sorted.length&&<div style={{textAlign:"center",padding:"70px 20px",border:"2px dashed rgba(255,255,255,0.08)",borderRadius:18,background:"rgba(255,255,255,0.02)"}}>
         <div style={{width:64,height:64,margin:"0 auto 16px",borderRadius:"50%",background:"rgba(255,107,53,0.08)",border:"1px dashed rgba(255,107,53,0.3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28}}>🏋️</div>
         <div style={{fontSize:15,fontWeight:800,color:"#888",marginBottom:6}}>Noch keine Trainings aufgezeichnet</div>
         <div style={{fontSize:12,color:"#555"}}>Starte dein erstes Training – dein Verlauf erscheint dann hier.</div>
       </div>}
+      {sorted.length > 0 && !filtered.length && (
+        <div className="fadeIn" style={{textAlign:"center",padding:"40px 20px",border:"2px dashed rgba(255,255,255,0.08)",borderRadius:18,background:"rgba(255,255,255,0.02)"}}>
+          <div style={{fontSize:28,marginBottom:8}}>🔍</div>
+          <div style={{fontSize:14,fontWeight:800,color:"#888",marginBottom:6}}>Keine Trainings passen zu den Filtern</div>
+          <button style={{...s.secBtn, padding:"7px 14px", fontSize:12, marginTop:4}} onClick={()=>setFilters({plan:"all", type:"all", range:"all", search:""})}>Filter zurücksetzen</button>
+        </div>
+      )}
       <div style={{display:"flex",flexDirection:"column",gap: isMobile ? 28 : 36}}>
         {Object.values(grouped).map((group, gi) => (
           <div key={gi} style={{background:"linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 60%), rgba(18,18,24,0.5)", backdropFilter:"blur(30px) saturate(200%)", WebkitBackdropFilter:"blur(30px) saturate(200%)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:22, padding: isMobile ? 16 : 20, boxShadow:"inset 0 1px 1px rgba(255,255,255,0.07), 0 12px 48px rgba(0,0,0,0.5)"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingLeft:4,marginBottom:18, borderBottom:"1px solid rgba(255,255,255,0.06)", paddingBottom:12}}>
-              <div style={{display:"flex",alignItems:"baseline",gap:10}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                 {compMode && (
                   <input 
                     type="checkbox" 
@@ -6355,6 +6598,21 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
                 <span style={{fontSize:24,fontWeight:900,fontFamily:"'DM Sans',sans-serif",color:"#F0EDE8"}}>KW {group.wn}</span>
                 <span style={{fontSize:14,fontWeight:700,color:"#666"}}>({group.dateRange})</span>
                 {!isMobile&&<span style={{fontSize:10,fontWeight:800,color:"#FF6B35",background:"rgba(255,107,53,0.12)",border:"1px solid rgba(255,107,53,0.25)",borderRadius:8,padding:"3px 9px",alignSelf:"center"}}>{group.workouts.length}x · {(()=>{const m=group.workouts.reduce((a,w)=>a+(parseInt(w.duration)||0),0);return m>=120?`${Math.round(m/60)}h`:`${m}min`;})()}</span>}
+                {(()=>{
+                  const prev = Object.values(grouped)[gi+1];
+                  if (!prev) return null;
+                  const volOf = g => g.workouts.reduce((a,w)=>a+woVol(w),0);
+                  const minOf = g => g.workouts.reduce((a,w)=>a+(parseInt(w.duration)||0),0);
+                  const mk = (c,p) => p>0 ? Math.round((c-p)/p*100) : null;
+                  const dv = mk(volOf(group), volOf(prev));
+                  const dm = mk(minOf(group), minOf(prev));
+                  const chip = (d,lbl) => (d===null||d===0) ? null : (
+                    <span key={lbl} title={`${lbl} im Vergleich zur vorherigen Woche in der Liste`} style={{fontSize:10,fontWeight:900,color:d>0?"#06D6A0":"#EF476F",background:d>0?"rgba(6,214,160,0.1)":"rgba(239,71,111,0.1)",border:`1px solid ${d>0?"rgba(6,214,160,0.25)":"rgba(239,71,111,0.25)"}`,borderRadius:8,padding:"3px 8px",alignSelf:"center",whiteSpace:"nowrap"}}>
+                      {d>0?"▲":"▼"} {Math.abs(d)}% {lbl}
+                    </span>
+                  );
+                  return <>{chip(dv,"Vol.")}{chip(dm,"Zeit")}</>;
+                })()}
               </div>
               {!compMode && (
                 <button 
