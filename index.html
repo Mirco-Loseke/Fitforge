@@ -2105,10 +2105,16 @@ function FitForge(){
                 if (key === "data") {
                   setData(prevLocal => {
                     const merged = mergeData(prevLocal, cloudVal);
-                    const mergedStr = JSON.stringify(merged);
-                    localStorage.setItem(`ff_${uid}_data`, mergedStr);
-                    lastSyncRef.current["data"] = mergedStr;
-                    return { ...merged, photos: prevLocal.photos || [], exercisePhotos: prevLocal.exercisePhotos || {} };
+                    const withPhotos = { ...merged, photos: prevLocal.photos || [], exercisePhotos: prevLocal.exercisePhotos || {} };
+                    localStorage.setItem(`ff_${uid}_data`, JSON.stringify(withPhotos));
+                    // KRITISCH: lastSyncRef EXAKT so serialisieren wie syncToCloud("data")
+                    // schreibt (ohne photos/exercisePhotos, base64-gestrippt). Sonst hält
+                    // syncToCloud die eben empfangenen Cloud-Daten für neu und lädt sie
+                    // sofort wieder hoch → Endlos-Schreibschleife, die die Firestore-
+                    // Warteschlange verstopft und ALLE weiteren Writes blockiert.
+                    const { photos: _p, exercisePhotos: _e, ...dataNoPhotos } = withPhotos;
+                    lastSyncRef.current["data"] = JSON.stringify(stripBase64(dataNoPhotos, "data"));
+                    return withPhotos;
                   });
                 } else if (key === "photos") {
                   setData(prevLocal => {
