@@ -1799,15 +1799,18 @@ function FitForge(){
         const localDay = merged[date] || { calories: 0, protein: 0, carbs: 0, fat: 0, meals: [], waterLog: [] };
         const remoteDay = remote[date] || { calories: 0, protein: 0, carbs: 0, fat: 0, meals: [], waterLog: [] };
         
+        const deletedMealIds = [...new Set([...(localDay.deletedMealIds||[]), ...(remoteDay.deletedMealIds||[])])];
+        const deletedWaterIds = [...new Set([...(localDay.deletedWaterIds||[]), ...(remoteDay.deletedWaterIds||[])])];
+
         const mealsMap = new Map();
         (localDay.meals || []).forEach(m => { if (m && m.id) mealsMap.set(m.id, m); });
         (remoteDay.meals || []).forEach(m => { if (m && m.id) mealsMap.set(m.id, m); });
-        const mergedMeals = [...mealsMap.values()];
+        const mergedMeals = [...mealsMap.values()].filter(m => !deletedMealIds.includes(m.id));
         
         const waterMap = new Map();
         (localDay.waterLog || []).forEach(w => { if (w && w.id) waterMap.set(w.id, w); });
         (remoteDay.waterLog || []).forEach(w => { if (w && w.id) waterMap.set(w.id, w); });
-        const mergedWater = [...waterMap.values()];
+        const mergedWater = [...waterMap.values()].filter(w => !deletedWaterIds.includes(w.id));
         
         let calories = 0, protein = 0, carbs = 0, fat = 0;
         mergedMeals.forEach(m => {
@@ -1818,12 +1821,16 @@ function FitForge(){
         });
         
         merged[date] = {
+          ...localDay,
+          ...remoteDay,
           calories,
           protein,
           carbs,
           fat,
           meals: mergedMeals,
-          waterLog: mergedWater
+          waterLog: mergedWater,
+          deletedMealIds,
+          deletedWaterIds
         };
       }
     }
@@ -1838,8 +1845,10 @@ function FitForge(){
       if (!merged[weekKey]) {
         merged[weekKey] = remote[weekKey];
       } else {
-        const localWeek = merged[weekKey] || { entries: {} };
-        const remoteWeek = remote[weekKey] || { entries: {} };
+        const localWeek = merged[weekKey] || { entries: {}, deletedEntryIds: [] };
+        const remoteWeek = remote[weekKey] || { entries: {}, deletedEntryIds: [] };
+        
+        const deletedEntryIds = [...new Set([...(localWeek.deletedEntryIds||[]), ...(remoteWeek.deletedEntryIds||[])])];
         const mergedEntries = { ...localWeek.entries };
         
         const allDays = new Set([
@@ -1855,13 +1864,14 @@ function FitForge(){
           localDayEntries.forEach(e => { if (e && e.id) entriesMap.set(e.id, e); });
           remoteDayEntries.forEach(e => { if (e && e.id) entriesMap.set(e.id, e); });
           
-          mergedEntries[dayIdx] = [...entriesMap.values()];
+          mergedEntries[dayIdx] = [...entriesMap.values()].filter(e => !deletedEntryIds.includes(e.id));
         });
         
         merged[weekKey] = {
           ...localWeek,
           ...remoteWeek,
-          entries: mergedEntries
+          entries: mergedEntries,
+          deletedEntryIds
         };
       }
     }
@@ -1991,7 +2001,7 @@ function FitForge(){
     setNutrition(n=>{
       const d = n[checklistToday];
       if(!d) return n;
-      return {...n, [checklistToday]: {...d, waterLog:(d.waterLog||[]).filter(w=>w.id!==id)}};
+      return {...n, [checklistToday]: {...d, waterLog:(d.waterLog||[]).filter(w=>w.id!==id), deletedWaterIds:[...(d.deletedWaterIds||[]), id]}};
     });
   };
 
@@ -2208,6 +2218,9 @@ function FitForge(){
               setLoaded(true);
             }
 
+            // Ignoriere lokale, noch nicht bestätigte Schreibvorgänge des eigenen Geräts
+            if (snap.metadata && snap.metadata.hasPendingWrites) return;
+
             if (snap.exists) {
               const cloudVal = snap.data().value;
               const cloudStr = JSON.stringify(cloudVal);
@@ -2328,26 +2341,39 @@ function FitForge(){
       const libRef = window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library");
       const libUnsub = window.firebaseOnSnapshot(libRef, (snap) => {
         if (cancelled) return;
+
+        // Ignoriere lokale, noch nicht bestätigte Schreibvorgänge des eigenen Geräts
+        if (snap.metadata && snap.metadata.hasPendingWrites) {
+          if (!loaded && fbUser) {
+            const allPrivateLoaded = Object.values(loadedKeysRef.current).every(v => v);
+            if (allPrivateLoaded) setLoaded(true);
+          }
+          return;
+        }
+
         if (snap.exists) {
-            const libVal = snap.data().value || [];
+            const snapData = snap.data();
+            const libVal = snapData.value || [];
+            const cloudDeletedIds = snapData.deletedIds || [];
+
+            // Union local and cloud deleted IDs
+            let localDeleted; try { localDeleted = JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]"); } catch(e){ localDeleted = []; }
+            const unionDeleted = [...new Set([...localDeleted, ...cloudDeletedIds])];
+            localStorage.setItem("ff_lib_deleted", JSON.stringify(unionDeleted.slice(-500)));
+
             const libStr = JSON.stringify(libVal);
             if (libStr !== lastSyncRef.current["library"]) {
               if (window.dbg) dbg('📚 Gemeinsame Bibliothek empfangen – wird zusammengeführt', '#0ff');
-              // NICHT blind überschreiben: lokale (noch nicht synchronisierte) Übungen
-              // bewahren, gelöschte per Tombstone ausschließen, bei Konflikt die
-              // neuere Version (per _m Zeitstempel) nehmen.
               setLibrary(prevLocal => {
-                let deleted; try { deleted = new Set(JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]")); } catch(e){ deleted = new Set(); }
+                const deletedSet = new Set(unionDeleted);
                 const pick = (a,b) => (((b&&b._m)||0) >= ((a&&a._m)||0) ? b : a);
                 const byId = new Map();
-                libVal.forEach(ex => { if(ex&&ex.id!=null&&!deleted.has(ex.id)) byId.set(ex.id, ex); });
-                (prevLocal||[]).forEach(ex => { if(!ex||ex.id==null||deleted.has(ex.id)) return; byId.set(ex.id, byId.has(ex.id)?pick(byId.get(ex.id),ex):ex); });
+                libVal.forEach(ex => { if(ex&&ex.id!=null&&!deletedSet.has(ex.id)) byId.set(ex.id, ex); });
+                (prevLocal||[]).forEach(ex => { if(!ex||ex.id==null||deletedSet.has(ex.id)) return; byId.set(ex.id, byId.has(ex.id)?pick(byId.get(ex.id),ex):ex); });
                 const merged = [...byId.values()];
                 localStorage.setItem("ff_library", JSON.stringify(merged));
                 return merged;
               });
-              // Cloud-Stand als Basis merken; falls das Merge lokale Zusätze enthält,
-              // erkennt der Sync-Effekt die Differenz und schiebt die Vereinigung hoch.
               lastSyncRef.current["library"] = libStr;
             }
         }
@@ -2519,7 +2545,8 @@ function FitForge(){
         showToast(`Achtung: Deine Übungsbibliothek ist sehr groß (${sizeKB.toFixed(0)} KB). Bitte weniger/kleinere Bilder verwenden, sonst kann nicht gespeichert werden.`, "error");
       }
       try {
-        await window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: cleanedLib });
+        let localDeleted; try { localDeleted = JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]"); } catch(e){ localDeleted = []; }
+        await window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: cleanedLib, deletedIds: localDeleted });
         // Auf echte Server-Bestätigung warten (Offline-Persistenz meldet sonst
         // schon "fertig", wenn nur lokal gespeichert wurde).
         try {
@@ -2646,7 +2673,10 @@ function FitForge(){
         fbSet("nutrition", nutrition),
         fbSet("weekPlans", weekPlans),
         fbSet("favFoods", favFoods),
-        window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: stripBase64(library, "library") })
+        (() => {
+          let localDeleted; try { localDeleted = JSON.parse(localStorage.getItem("ff_lib_deleted")||"[]"); } catch(e){ localDeleted = []; }
+          return window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: stripBase64(library, "library"), deletedIds: localDeleted });
+        })()
       ]);
       let confirmed=true;
       try{
@@ -3914,7 +3944,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
   const waterGoal=parseInt(user.waterGoal)||2500;
   const waterTotal=(dayData.waterLog||[]).reduce((a,w)=>a+w.ml,0);
   const addWater=ml=>{if(!ml||ml<=0)return;setNutrition(n=>{const d=n[selDate]||{calories:0,protein:0,carbs:0,fat:0,meals:[],waterLog:[]};return{...n,[selDate]:{...d,waterLog:[...(d.waterLog||[]),{id:Date.now(),ml,time:new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}]}};});notify(`${ml} ml hinzugefügt! 💧`);};
-  const delWater=id=>{setNutrition(n=>{const d=n[selDate];if(!d)return n;return{...n,[selDate]:{...d,waterLog:(d.waterLog||[]).filter(w=>w.id!==id)}};});};
+  const delWater=id=>{setNutrition(n=>{const d=n[selDate];if(!d)return n;return{...n,[selDate]:{...d,waterLog:(d.waterLog||[]).filter(w=>w.id!==id),deletedWaterIds:[...(d.deletedWaterIds||[]),id]}};});};
 
   const lookupBarcode = async (code) => {
     setApiLoading(true);
@@ -4029,7 +4059,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
   const calGoal=user.calorieGoal||2500,protGoal=user.proteinGoal||150,carbGoal=Math.round(calGoal*0.5/4),fatGoal=Math.round(calGoal*0.3/9);
   const addMeal=()=>{if(!meal.name||!meal.calories)return notify("Name und Kalorien ausfüllen","error");const entry={...meal,id:Date.now(),calories:parseInt(meal.calories)||0,protein:parseFloat(meal.protein)||0,carbs:parseFloat(meal.carbs)||0,fat:parseFloat(meal.fat)||0};setNutrition(n=>{const d=n[selDate]||{calories:0,protein:0,carbs:0,fat:0,meals:[]};return{...n,[selDate]:{calories:d.calories+entry.calories,protein:d.protein+entry.protein,carbs:d.carbs+entry.carbs,fat:d.fat+entry.fat,meals:[...d.meals,entry]}};});notify(`${meal.name} hinzugefügt! ✅`);setMeal({name:"",calories:"",protein:"",carbs:"",fat:"",mealType:"Frühstück",amount:100,baseCalories:0,baseProtein:0,baseCarbs:0,baseFat:0});setShowAdd(false);};
   const quickAdd=food=>{setNutrition(n=>{const d=n[selDate]||{calories:0,protein:0,carbs:0,fat:0,meals:[]};return{...n,[selDate]:{calories:d.calories+food.calories,protein:d.protein+food.protein,carbs:d.carbs+food.carbs,fat:d.fat+food.fat,meals:[...d.meals,{...food,id:Date.now(),mealType:"Sonstige"}]}};});notify(`${food.name} hinzugefügt!`);};
-  const delMeal=id=>{setNutrition(n=>{const d=n[selDate];if(!d)return n;const rm=d.meals.find(m=>m.id===id);if(!rm)return n;return{...n,[selDate]:{calories:Math.max(0,d.calories-rm.calories),protein:Math.max(0,d.protein-rm.protein),carbs:Math.max(0,d.carbs-rm.carbs),fat:Math.max(0,d.fat-rm.fat),meals:d.meals.filter(m=>m.id!==id)}};});notify("Eintrag gelöscht");};
+  const delMeal=id=>{setNutrition(n=>{const d=n[selDate];if(!d)return n;const rm=d.meals.find(m=>m.id===id);if(!rm)return n;return{...n,[selDate]:{...d,calories:Math.max(0,d.calories-rm.calories),protein:Math.max(0,d.protein-rm.protein),carbs:Math.max(0,d.carbs-rm.carbs),fat:Math.max(0,d.fat-rm.fat),meals:d.meals.filter(m=>m.id!==id),deletedMealIds:[...(d.deletedMealIds||[]),id]}};});notify("Eintrag gelöscht");};
   const mealGroups=["Frühstück","Mittagessen","Abendessen","Snack","Sonstige"];
   const filtered=COMMON_FOODS.filter(f=>f.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -8591,7 +8621,11 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
   };
 
   const deleteEntry=(dayIdx,entryId)=>{
-    setWeekData(w=>({...w,entries:{...w.entries,[dayIdx]:(w.entries[dayIdx]||[]).filter(e=>e.id!==entryId)}}));
+    setWeekData(w=>({
+      ...w,
+      deletedEntryIds:[...(w.deletedEntryIds||[]), entryId],
+      entries:{...w.entries,[dayIdx]:(w.entries[dayIdx]||[]).filter(e=>e.id!==entryId)}
+    }));
     notify("Eintrag gelöscht");
   };
 
