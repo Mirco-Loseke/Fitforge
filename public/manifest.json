@@ -13,5 +13,35 @@
       "type": "image/svg+xml",
       "purpose": "any"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Training starten",
+      "short_name": "Training",
+      "description": "Direkt ein neues Training starten",
+      "url": "/?shortcut=log",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Wochenplan",
+      "short_name": "Wochenplan",
+      "description": "Den Wochenplan öffnen",
+      "url": "/?shortcut=wochenplan",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Ernährung tracken",
+      "short_name": "Ernährung",
+      "description": "Mahlzeiten und Wasser eintragen",
+      "url": "/?shortcut=nutrition",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Challenges",
+      "short_name": "Challenges",
+      "description": "Aktive Challenges ansehen",
+      "url": "/?shortcut=challenges",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
   ]
 }

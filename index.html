@@ -1330,7 +1330,17 @@ const COMMON_FOODS=[
 const ls = (k, df) => { try { const r = localStorage.getItem("ff_" + k); const p = r ? JSON.parse(r) : null; return p !== null ? p : df; } catch { return df; } };
 
 function FitForge(){
-  const [view,setView]=useState("dashboard");
+  const [view,setView]=useState(()=>{
+    // PWA-App-Shortcut (?shortcut=log|wochenplan|nutrition|challenges) direkt öffnen
+    try{
+      const sc=new URLSearchParams(window.location.search).get("shortcut");
+      if(sc&&["log","wochenplan","nutrition","challenges","history","plans"].includes(sc)){
+        window.history.replaceState({},"",window.location.origin+window.location.pathname);
+        return sc;
+      }
+    }catch(e){}
+    return "dashboard";
+  });
   const [data,setData]=useState(defaultData);
   const [user,setUser]=useState(defaultUser);
   const [prs,setPrs]=useState(defaultPRs);
@@ -5441,6 +5451,44 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
           <div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2,overflow:"hidden",marginBottom:14}}>
             <div style={{height:"100%",width:`${((curEx+1)/Math.max(exercises.length,1))*100}%`,background:`linear-gradient(90deg,${plan?.color||"#FF6B35"},${plan?.color||"#FF6B35"}99)`,borderRadius:2,transition:"width 0.4s cubic-bezier(0.16,1,0.3,1)",boxShadow:`0 0 10px ${(plan?.color||"#FF6B35")}60`}}/>
           </div>
+          {/* Progressive-Overload-Vorschlag basierend auf dem letzten Training dieser Übung */}
+          {!hiitMode&&!curExData.trackGPS&&(()=>{
+            const libEx=library?.find(l=>l.name===curExData.name);
+            if(libEx&&libEx.trackWeight===false)return null;
+            let lastEx=null;
+            for(const w of [...(data.workouts||[])].sort((a,b)=>String(b.date).localeCompare(String(a.date)))){
+              if(date&&w.date>=date)continue; // nur frühere Trainings
+              const ex=(w.exercises||[]).find(e=>!e.isHiit&&e.name===curExData.name);
+              if(ex&&(ex.sets||[]).some(st=>parseFloat(st.weight)>0)){lastEx={ex,date:w.date};break;}
+            }
+            if(!lastEx)return null;
+            const doneSets=(lastEx.ex.sets||[]).filter(st=>st.done!==false&&(parseFloat(st.weight)>0||parseInt(st.reps)>0));
+            if(!doneSets.length)return null;
+            const maxW=Math.max(...doneSets.map(st=>parseFloat(st.weight)||0));
+            const repsAtMax=doneSets.filter(st=>(parseFloat(st.weight)||0)===maxW).map(st=>parseInt(st.reps)||0);
+            const minReps=Math.min(...repsAtMax),maxReps=Math.max(...repsAtMax);
+            const allDone=(lastEx.ex.sets||[]).every(st=>st.done!==false);
+            const readyToIncrease=allDone&&minReps>=8;
+            const suggestedW=readyToIncrease?maxW+2.5:maxW;
+            const repsLabel=minReps===maxReps?`${minReps}`:`${minReps}–${maxReps}`;
+            const lastLabel=`${doneSets.length}×${repsLabel} @ ${maxW} kg`;
+            const accCol=readyToIncrease?"#06D6A0":"#FFD166";
+            return (
+              <div className="fadeIn" style={{display:"flex",alignItems:"center",gap:12,background:`linear-gradient(135deg, ${accCol}12 0%, rgba(18,18,24,0.4) 100%)`,border:`1px solid ${accCol}35`,borderRadius:14,padding:"11px 14px",marginBottom:14}}>
+                <span style={{fontSize:20,flexShrink:0}}>{readyToIncrease?"📈":"💡"}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:10,fontWeight:900,color:accCol,textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>Overload-Assistent</div>
+                  <div style={{fontSize:12,color:"#aaa",lineHeight:1.45}}>
+                    Letztes Mal ({new Date(lastEx.date).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"})}): <b style={{color:"#F0EDE8"}}>{lastLabel}</b>
+                    {" — "}
+                    {readyToIncrease
+                      ? <>heute <b style={{color:accCol}}>{suggestedW} kg</b> versuchen!</>
+                      : <>Ziel: <b style={{color:accCol}}>8+ Wdh @ {maxW} kg</b> schaffen, dann steigern.</>}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {hiitMode && curEx < exercises.length - 1 && (
             <div style={{fontSize: 10, fontWeight: 900, color: "#666", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8, display: "flex", alignItems: "center", gap: 8}}>
               <span>Als nächstes:</span>
@@ -5462,6 +5510,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
               <div style={{...s.modal, maxWidth:400, borderRadius: 24}} onClick={e=>e.stopPropagation()}>
                 <h3 style={{...s.modalTitle, color: plan?.color || "#FF6B35"}}>{curExData.name}</h3>
                 <div style={{fontSize:14,color:"#aaa",lineHeight:1.6,margin:"20px 0"}}>{curExData.description || "Keine Anleitung verfügbar."}</div>
+                <MuscleBodyMap muscles={(library?.find(l=>l.name===curExData.name)?.muscles)||curExData.muscles||[]}/>
                 <button style={{...s.primaryBtn, width: "100%"}} onClick={()=>setShowInfo(false)}>Verstanden</button>
               </div>
             </div>
@@ -9947,6 +9996,74 @@ function ExerciseFormModal({exercise,onSave,onClose}){
   );
 }
 
+// Körper-Silhouette (vorne/hinten) mit hervorgehobenen Muskelgruppen
+function MuscleBodyMap({muscles=[]}){
+  if(!muscles.length)return null;
+  const on=m=>muscles.includes(m);
+  const fill=(m)=>on(m)?MUSCLE_COLORS[m]+"CC":"rgba(255,255,255,0.05)";
+  const glow=(m)=>on(m)?{filter:`drop-shadow(0 0 5px ${MUSCLE_COLORS[m]}90)`}:{};
+  const base="#1B1B21", baseStroke="rgba(255,255,255,0.09)";
+
+  const Silhouette=({back})=>(
+    <svg viewBox="0 0 100 205" style={{width:"100%",maxWidth:110,height:"auto",display:"block"}}>
+      {/* Grundkörper */}
+      <circle cx="50" cy="13" r="9.5" fill={base} stroke={baseStroke}/>
+      <rect x="45" y="21" width="10" height="8" rx="3" fill={base}/>
+      <path d="M28 34 Q50 24 72 34 L74 70 Q66 80 62 88 L62 100 L38 100 L38 88 Q34 80 26 70 Z" fill={base} stroke={baseStroke}/>
+      <path d="M27 36 Q22 40 20 52 L15 82 Q14 90 18 92 L23 93 Q26 90 26 84 L30 55 Z" fill={base} stroke={baseStroke}/>
+      <path d="M73 36 Q78 40 80 52 L85 82 Q86 90 82 92 L77 93 Q74 90 74 84 L70 55 Z" fill={base} stroke={baseStroke}/>
+      <path d="M38 100 L36 140 Q36 150 38 168 L40 195 L47 195 L48 150 L48 108 Z" fill={base} stroke={baseStroke}/>
+      <path d="M62 100 L64 140 Q64 150 62 168 L60 195 L53 195 L52 150 L52 108 Z" fill={base} stroke={baseStroke}/>
+      {/* Schultern */}
+      <ellipse cx="31" cy="37" rx="7" ry="5.5" fill={fill("Schultern")} style={glow("Schultern")}/>
+      <ellipse cx="69" cy="37" rx="7" ry="5.5" fill={fill("Schultern")} style={glow("Schultern")}/>
+      {/* Arme (Ober- + Unterarm) */}
+      <ellipse cx="23.5" cy="52" rx="5" ry="11" fill={fill("Arme")} style={glow("Arme")}/>
+      <ellipse cx="76.5" cy="52" rx="5" ry="11" fill={fill("Arme")} style={glow("Arme")}/>
+      <ellipse cx="19.5" cy="76" rx="4" ry="10" fill={fill("Arme")} style={glow("Arme")}/>
+      <ellipse cx="80.5" cy="76" rx="4" ry="10" fill={fill("Arme")} style={glow("Arme")}/>
+      {back?(
+        <>
+          {/* Rücken */}
+          <path d="M34 42 Q50 38 66 42 L64 68 Q50 74 36 68 Z" fill={fill("Rücken")} style={glow("Rücken")}/>
+          {/* Gesäß */}
+          <ellipse cx="43.5" cy="95" rx="8" ry="7" fill={fill("Gesäß")} style={glow("Gesäß")}/>
+          <ellipse cx="56.5" cy="95" rx="8" ry="7" fill={fill("Gesäß")} style={glow("Gesäß")}/>
+        </>
+      ):(
+        <>
+          {/* Brust */}
+          <ellipse cx="41.5" cy="47" rx="8.5" ry="6.5" fill={fill("Brust")} style={glow("Brust")}/>
+          <ellipse cx="58.5" cy="47" rx="8.5" ry="6.5" fill={fill("Brust")} style={glow("Brust")}/>
+          {/* Bauch */}
+          <rect x="42.5" y="57" width="15" height="24" rx="5" fill={fill("Bauch")} style={glow("Bauch")}/>
+        </>
+      )}
+      {/* Oberschenkel */}
+      <ellipse cx="42" cy="120" rx="6.5" ry="17" fill={fill("Oberschenkel")} style={glow("Oberschenkel")}/>
+      <ellipse cx="58" cy="120" rx="6.5" ry="17" fill={fill("Oberschenkel")} style={glow("Oberschenkel")}/>
+      {/* Unterschenkel */}
+      <ellipse cx="42.5" cy="163" rx="5" ry="14" fill={fill("Unterschenkel")} style={glow("Unterschenkel")}/>
+      <ellipse cx="57.5" cy="163" rx="5" ry="14" fill={fill("Unterschenkel")} style={glow("Unterschenkel")}/>
+    </svg>
+  );
+
+  return (
+    <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"12px 10px 6px",marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"center",gap:24}}>
+        <div style={{textAlign:"center"}}>
+          <Silhouette back={false}/>
+          <div style={{fontSize:9,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:0.5,marginTop:4}}>Vorne</div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <Silhouette back={true}/>
+          <div style={{fontSize:9,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:0.5,marginTop:4}}>Hinten</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ExerciseDetailModal({exercise,onClose,onEdit,onDelete}){
   return(
     <div style={s.overlay2} onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -9954,6 +10071,7 @@ function ExerciseDetailModal({exercise,onClose,onEdit,onDelete}){
         <h2 style={{...s.modalTitle,marginBottom:12}}>{exercise.name}</h2>
         {exercise.thumbnail && <div style={{width:"100%",height:200,borderRadius:12,overflow:"hidden",marginBottom:16,background:"#0D0D0F"}}><MediaDisplay src={exercise.thumbnail} style={{width:"100%",height:"100%",objectFit:"contain"}}/></div>}
         {exercise.description&&<p style={{color:"#aaa",fontSize:14,lineHeight:1.6,marginBottom:16}}>{exercise.description}</p>}
+        <MuscleBodyMap muscles={exercise.muscles||[]}/>
         <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:20}}>
           {(exercise.muscles||[]).map(m=><span key={m} style={{fontSize:11,background:MUSCLE_COLORS[m]+"20",color:MUSCLE_COLORS[m],borderRadius:10,padding:"3px 10px",fontWeight:700}}>{m}</span>)}
           {(exercise.types||[]).map(t=><span key={t} style={{fontSize:11,background:TYPE_COLORS[t]+"20",color:TYPE_COLORS[t],borderRadius:10,padding:"3px 10px",fontWeight:700}}>{t}</span>)}
@@ -10471,7 +10589,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
       )}
 
       {/* Week grid */}
-      <div className={viewMode === 7 ? "wp-grid-7-scroll" : ""} style={{display:"grid", gridTemplateColumns: viewMode === 1 ? "1fr" : viewMode === 3 ? "repeat(3, 1fr)" : "repeat(7, 1fr)", gap:14}}>
+      <div className={viewMode === 7 ? "wp-grid-7-scroll" : ""} style={{display:"grid", gridTemplateColumns: viewMode === 1 ? "1fr" : viewMode === 3 ? "repeat(3, 1fr)" : "repeat(7, 1fr)", gap:14, alignItems:"stretch", minHeight: timelineMode ? undefined : "max(420px, calc(100vh - 360px))"}}>
         {WP_DAY_NAMES.slice(dayOffset, dayOffset + viewMode).map((_, idx) => {
           const dayIdx = dayOffset + idx;
           const dayDate=addDays(currentMonday,dayIdx);
@@ -10618,7 +10736,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                     <div key={entry.id} className="wpEntry" draggable
                       onDragStart={e=>{e.dataTransfer.effectAllowed="move";setDragInfo({dayIdx,entryId:entry.id});}}
                       onDragEnd={()=>{setDragInfo(null);setDragOverDay(null);}}
-                      style={{background:done?"rgba(6,214,160,0.1)":meta.bg,border:`1px solid ${done?"rgba(6,214,160,0.45)":meta.color+"40"}`,borderLeft:`3px solid ${done?"#06D6A0":plan?.color||meta.color}`,borderRadius:9,padding:entryPad,cursor:"grab",transition:"all 0.15s", textDecoration: isPast&&!done ? "line-through" : "none", boxShadow:done?"0 0 12px rgba(6,214,160,0.12)":"none"}}
+                      style={{background:done?"rgba(6,214,160,0.1)":meta.bg,border:`1px solid ${done?"rgba(6,214,160,0.45)":meta.color+"40"}`,borderLeft:`3px solid ${done?"#06D6A0":plan?.color||meta.color}`,borderRadius:9,padding:entryPad,cursor:"grab",transition:"all 0.15s", textDecoration: isPast&&!done ? "line-through" : "none", boxShadow:done?"0 0 12px rgba(6,214,160,0.12)":"none", flex:"1 1 0", minHeight:density==="dense"?44:density==="compact"?58:74, display:"flex", flexDirection:"column", justifyContent:"center"}}
                       onClick={()=>{setEntryDay(dayIdx);setEditEntry(entry);setShowEntryForm(true);}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:4}}>
                         <div style={{flex:1,minWidth:0}}>
