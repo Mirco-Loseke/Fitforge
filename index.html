@@ -1761,7 +1761,113 @@ function FitForge(){
       deletedPlanIds, deletedWorkoutIds, deletedWeightDates
     });
   };
-  
+
+  const mergeUser = (local, remote) => {
+    if (!local) return remote;
+    if (!remote) return local;
+    const lpTime = local.updatedAt || 0;
+    const rpTime = remote.updatedAt || 0;
+    return rpTime > lpTime ? { ...local, ...remote } : { ...remote, ...local };
+  };
+
+  const mergePRs = (local, remote) => {
+    if (!local) return remote;
+    if (!remote) return local;
+    const merged = { ...local };
+    for (const key in remote) {
+      if (!merged[key]) {
+        merged[key] = remote[key];
+      } else {
+        const localDate = new Date(merged[key].date || 0);
+        const remoteDate = new Date(remote[key].date || 0);
+        if (remoteDate > localDate) {
+          merged[key] = remote[key];
+        }
+      }
+    }
+    return purgeDemoPRs(merged);
+  };
+
+  const mergeNutrition = (local, remote) => {
+    if (!local) return remote;
+    if (!remote) return local;
+    const merged = { ...local };
+    for (const date in remote) {
+      if (!merged[date]) {
+        merged[date] = remote[date];
+      } else {
+        const localDay = merged[date] || { calories: 0, protein: 0, carbs: 0, fat: 0, meals: [], waterLog: [] };
+        const remoteDay = remote[date] || { calories: 0, protein: 0, carbs: 0, fat: 0, meals: [], waterLog: [] };
+        
+        const mealsMap = new Map();
+        (localDay.meals || []).forEach(m => { if (m && m.id) mealsMap.set(m.id, m); });
+        (remoteDay.meals || []).forEach(m => { if (m && m.id) mealsMap.set(m.id, m); });
+        const mergedMeals = [...mealsMap.values()];
+        
+        const waterMap = new Map();
+        (localDay.waterLog || []).forEach(w => { if (w && w.id) waterMap.set(w.id, w); });
+        (remoteDay.waterLog || []).forEach(w => { if (w && w.id) waterMap.set(w.id, w); });
+        const mergedWater = [...waterMap.values()];
+        
+        let calories = 0, protein = 0, carbs = 0, fat = 0;
+        mergedMeals.forEach(m => {
+          calories += m.calories || 0;
+          protein += m.protein || 0;
+          carbs += m.carbs || 0;
+          fat += m.fat || 0;
+        });
+        
+        merged[date] = {
+          calories,
+          protein,
+          carbs,
+          fat,
+          meals: mergedMeals,
+          waterLog: mergedWater
+        };
+      }
+    }
+    return merged;
+  };
+
+  const mergeWeekPlans = (local, remote) => {
+    if (!local) return remote;
+    if (!remote) return local;
+    const merged = { ...local };
+    for (const weekKey in remote) {
+      if (!merged[weekKey]) {
+        merged[weekKey] = remote[weekKey];
+      } else {
+        const localWeek = merged[weekKey] || { entries: {} };
+        const remoteWeek = remote[weekKey] || { entries: {} };
+        const mergedEntries = { ...localWeek.entries };
+        
+        const allDays = new Set([
+          ...Object.keys(localWeek.entries || {}),
+          ...Object.keys(remoteWeek.entries || {})
+        ]);
+        
+        allDays.forEach(dayIdx => {
+          const localDayEntries = localWeek.entries?.[dayIdx] || [];
+          const remoteDayEntries = remoteWeek.entries?.[dayIdx] || [];
+          
+          const entriesMap = new Map();
+          localDayEntries.forEach(e => { if (e && e.id) entriesMap.set(e.id, e); });
+          remoteDayEntries.forEach(e => { if (e && e.id) entriesMap.set(e.id, e); });
+          
+          mergedEntries[dayIdx] = [...entriesMap.values()];
+        });
+        
+        merged[weekKey] = {
+          ...localWeek,
+          ...remoteWeek,
+          entries: mergedEntries
+        };
+      }
+    }
+    return merged;
+  };
+
   // ── Body Scroll Lock when any modal is open ─────────────────────────────
   useEffect(() => {
     const anyOpen = logModal || planModal || !!weeklyReport || rescueModalOpen;
@@ -2113,13 +2219,11 @@ function FitForge(){
                     const merged = mergeData(prevLocal, cloudVal);
                     const withPhotos = { ...merged, photos: prevLocal.photos || [], exercisePhotos: prevLocal.exercisePhotos || {} };
                     localStorage.setItem(`ff_${uid}_data`, JSON.stringify(withPhotos));
-                    // KRITISCH: lastSyncRef EXAKT so serialisieren wie syncToCloud("data")
-                    // schreibt (ohne photos/exercisePhotos, base64-gestrippt). Sonst hält
-                    // syncToCloud die eben empfangenen Cloud-Daten für neu und lädt sie
-                    // sofort wieder hoch → Endlos-Schreibschleife, die die Firestore-
-                    // Warteschlange verstopft und ALLE weiteren Writes blockiert.
-                    const { photos: _p, exercisePhotos: _e, ...dataNoPhotos } = withPhotos;
-                    lastSyncRef.current["data"] = JSON.stringify(stripBase64(dataNoPhotos, "data"));
+                    // KRITISCH: lastSyncRef auf den echten Cloud-Stand setzen.
+                    // Falls die lokalen Daten Änderungen enthalten, ist withPhotos anders als cloudVal
+                    // und syncToCloud wird gestartet, um die Änderungen hochzuladen.
+                    const cloudCleaned = stripBase64(cloudVal, "data");
+                    lastSyncRef.current["data"] = JSON.stringify(cloudCleaned);
                     return withPhotos;
                   });
                 } else if (key === "photos") {
@@ -2136,34 +2240,34 @@ function FitForge(){
                   });
                 } else if (key === "user") {
                   setUser(prevLocal => {
-                    const merged = { ...prevLocal, ...cloudVal };
+                    const merged = mergeUser(prevLocal, cloudVal);
                     const mergedStr = JSON.stringify(merged);
                     localStorage.setItem(`ff_${uid}_user`, mergedStr);
-                    lastSyncRef.current["user"] = mergedStr;
+                    lastSyncRef.current["user"] = cloudStr;
                     return merged;
                   });
                 } else if (key === "prs") {
                   setPrs(prevLocal => {
-                    const merged = purgeDemoPRs({ ...prevLocal, ...cloudVal });
+                    const merged = mergePRs(prevLocal, cloudVal);
                     const mergedStr = JSON.stringify(merged);
                     localStorage.setItem(`ff_${uid}_prs`, mergedStr);
-                    lastSyncRef.current["prs"] = mergedStr;
+                    lastSyncRef.current["prs"] = cloudStr;
                     return merged;
                   });
                 } else if (key === "nutrition") {
                   setNutrition(prevLocal => {
-                    const merged = { ...prevLocal, ...cloudVal };
+                    const merged = mergeNutrition(prevLocal, cloudVal);
                     const mergedStr = JSON.stringify(merged);
                     localStorage.setItem(`ff_${uid}_nutrition`, mergedStr);
-                    lastSyncRef.current["nutrition"] = mergedStr;
+                    lastSyncRef.current["nutrition"] = cloudStr;
                     return merged;
                   });
                 } else if (key === "weekPlans") {
                   setWeekPlans(prevLocal => {
-                    const merged = { ...prevLocal, ...cloudVal };
+                    const merged = mergeWeekPlans(prevLocal, cloudVal);
                     const mergedStr = JSON.stringify(merged);
                     localStorage.setItem(`ff_${uid}_weekPlans`, mergedStr);
-                    lastSyncRef.current["weekPlans"] = mergedStr;
+                    lastSyncRef.current["weekPlans"] = cloudStr;
                     return merged;
                   });
                 } else {
@@ -2645,7 +2749,7 @@ function FitForge(){
       if (migrated) {
         if (window.dbg) dbg("🔄 Migration: Rückwirkende Forge Points berechnet", "#FFD166");
         setData(d => ({ ...d, workouts: updatedWorkouts }));
-        setUser(u => ({ ...u, forgePoints: (u.forgePoints || 0) + totalEarned }));
+        setUser(u => ({ ...u, forgePoints: (u.forgePoints || 0) + totalEarned, updatedAt: Date.now() }));
         showToast(`Retroaktiv ${totalEarned} Forge Points für alte Trainings gutgeschrieben! 🪙`);
       }
     }
@@ -2682,7 +2786,7 @@ function FitForge(){
     if (ySupplements.length>0 && !yStretchDone) penalties.push({id:Date.now()+100,date:yesterday,points:pcfg.penaltyStretch,label:"Stretching nicht gemacht",type:"penalty",emoji:CHECKIN_ICONS.stretching});
     if (penalties.length>0) {
       const totalPenalty=penalties.reduce((s,p)=>s+p.points,0);
-      setUser(u=>({...u,forgePoints:Math.max(0,(u.forgePoints||0)+totalPenalty),pointsLog:[...(u.pointsLog||[]),...penalties]}));
+      setUser(u=>({...u,forgePoints:Math.max(0,(u.forgePoints||0)+totalPenalty),pointsLog:[...(u.pointsLog||[]),...penalties], updatedAt: Date.now()}));
     }
   }, [loaded]);
 
@@ -4716,7 +4820,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
     if(setUser) setUser(u => {
       const newLog=[...(u.pointsLog||[])];
       newLog.push({id:Date.now(),date,points:earnedPoints,label:`Training abgeschlossen: ${plan?.name||"Training"}`,type:"workout",emoji:CHECKIN_ICONS.training});
-      return {...u,forgePoints:(u.forgePoints||0)+earnedPoints,pointsLog:newLog};
+      return {...u,forgePoints:(u.forgePoints||0)+earnedPoints,pointsLog:newLog, updatedAt: Date.now()};
     });
 
     setData(d=>({...d,workouts:[{ id:Date.now(), planId:parseInt(planId), name:plan?.name||"Training", date, duration:workoutDuration, exercises:parsed, startTime, endTime, hiitMode, earnedPoints, ptsBreakdown },...d.workouts]}));
@@ -7057,8 +7161,10 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
       const taken=await isUsernameTaken(form.username,getUid()).catch(()=>false);
       if(taken)return notify("Dieser Benutzername ist schon vergeben","error");
     }
-    setUser(form);
-    upsertUserProfile(getUid(),form).catch(e=>console.warn("upsertUserProfile:",e.message));
+    const updatedForm = { ...form, updatedAt: Date.now() };
+    setForm(updatedForm);
+    setUser(updatedForm);
+    upsertUserProfile(getUid(),updatedForm).catch(e=>console.warn("upsertUserProfile:",e.message));
     notify("Profil gespeichert! ✅");
   };
 
@@ -7090,7 +7196,7 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
             <div style={{fontWeight:700,fontSize:13}}>{sp.name}{sp.amount?` · ${sp.amount}`:""}</div>
             <div style={{fontSize:10,color:"#666",marginTop:2}}>{(sp.days||[]).length===7?"Täglich":(sp.days||[]).join(", ")||"Keine Tage gewählt"}</div>
           </div>
-          <button style={{background:"transparent",border:"none",color:"#EF476F",cursor:"pointer",padding:4,display:"flex"}} onClick={()=>{const next=(form.supplements||[]).filter(x=>x.id!==sp.id);setForm(f=>({...f,supplements:next}));setUser(u=>({...u,supplements:next}));}}>{IC.trash}</button>
+          <button style={{background:"transparent",border:"none",color:"#EF476F",cursor:"pointer",padding:4,display:"flex"}} onClick={()=>{const next=(form.supplements||[]).filter(x=>x.id!==sp.id);setForm(f=>({...f,supplements:next}));setUser(u=>({...u,supplements:next,updatedAt:Date.now()}));}}>{IC.trash}</button>
         </div>
       ))}
       {!(form.supplements||[]).length && <div style={{color:"#666",fontSize:12,textAlign:"center",padding:"10px 0"}}>Noch keine Supplements eingetragen.</div>}
@@ -7114,7 +7220,7 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
         const newItem={id:Date.now(),name:newSupp.name.trim(),amount:newSupp.amount.trim(),days:newSupp.days||[]};
         const next=[...(form.supplements||[]),newItem];
         setForm(f=>({...f,supplements:next}));
-        setUser(u=>({...u,supplements:next}));
+        setUser(u=>({...u,supplements:next,updatedAt:Date.now()}));
         setNewSupp({name:"",amount:"",days:[]});
         notify("Supplement gespeichert! ✅");
       }}>{IC.plus} Supplement hinzufügen</button>
@@ -7530,7 +7636,7 @@ function ForgePointsPage({user, setUser, isMobile}){
           ))}
           <div style={{display:"flex",gap:10,marginTop:18}}>
             <button onClick={()=>setShowSettings(false)} style={{flex:1,padding:"11px 0",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#888",fontSize:13,fontWeight:700,cursor:"pointer"}}>Abbrechen</button>
-            <button onClick={()=>{setUser(u=>({...u,pointsConfig:editCfg}));setShowSettings(false);}} style={{flex:2,padding:"11px 0",borderRadius:12,border:"none",background:"linear-gradient(135deg,#FF6B35,#FF8C42)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Speichern</button>
+            <button onClick={()=>{setUser(u=>({...u,pointsConfig:editCfg,updatedAt:Date.now()}));setShowSettings(false);}} style={{flex:2,padding:"11px 0",borderRadius:12,border:"none",background:"linear-gradient(135deg,#FF6B35,#FF8C42)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Speichern</button>
           </div>
         </div>
       )}
@@ -7633,7 +7739,7 @@ function GoalsPage({user,setUser,data,notify,isMobile}){
 
   const redeemReward = (id, cost) => {
     if (fp < cost) return notify("Nicht genug Forge Points!", "error");
-    setUser(u => ({...u, forgePoints: (u.forgePoints||0) - cost}));
+    setUser(u => ({...u, forgePoints: (u.forgePoints||0) - cost, updatedAt: Date.now()}));
     setRewards(r => r.map(x => x.id === id ? {...x, redeemed: true} : x));
     notify("Belohnung erfolgreich eingelöst! 🎉");
   };
@@ -10137,7 +10243,26 @@ ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(
 // ── Service Worker: macht die App offline nutzbar & beschleunigt das Laden ──
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      // Beim Start einmalig prüfen, ob ein Update vorliegt
+      reg.update().catch(() => {});
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // Informiere den User diskret, lade aber NIEMALS automatisch neu, um den User nicht zu stören.
+              if (window.showToast) {
+                window.showToast("Ein Update wurde im Hintergrund installiert und wird beim nächsten Start aktiv! 🚀", "info");
+              }
+            }
+          });
+        }
+      });
+    }).catch(err => {
+      console.warn("Service Worker Registrierung fehlgeschlagen:", err);
+    });
   });
 }
 </script>
