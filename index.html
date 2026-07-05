@@ -3008,20 +3008,33 @@ function FitForge(){
           const newProgressVal = currentProgress + contribution;
           const progress = { ...(freshData.progress || {}), [uid]: newProgressVal };
           const currentValue = Object.values(progress).reduce((a, b) => a + b, 0);
-          
+          const progressLog = [...(freshData.progressLog || []), { date: todayStr(), uid, amount: contribution, ts: Date.now() }];
+
           let status = freshData.status || "active";
-          if (currentValue >= freshData.targetValue) {
+          let winner = freshData.winner || null;
+          if (freshData.mode === "race") {
+            if (status === "active" && newProgressVal >= freshData.targetValue) {
+              status = "completed";
+              winner = uid;
+            }
+          } else if (currentValue >= freshData.targetValue) {
             status = "completed";
           }
-          
+
           await challengeRef.update({
             progress,
             currentValue,
-            status
+            status,
+            progressLog,
+            ...(winner ? { winner } : {})
           });
-          
+
           if (status === "completed" && freshData.status !== "completed") {
-            showToast(`Challenge „${freshData.title}“ erfolgreich beendet! 🏆`);
+            if (freshData.mode === "race") {
+              showToast(`🥇 Du hast das Duell „${freshData.title}“ gewonnen!`);
+            } else {
+              showToast(`Challenge „${freshData.title}“ erfolgreich beendet! 🏆`);
+            }
           }
         }
       } catch(e) {
@@ -3235,7 +3248,7 @@ function FitForge(){
         {undoConfirmItem&&<UndoConfirmModal item={undoConfirmItem} onConfirm={()=>undoChecklistItem(undoConfirmItem)} onCancel={()=>setUndoConfirmItem(null)}/>}
         {shareModalItem&&<ShareWithFriendsModal item={shareModalItem} user={user} notify={showToast} onClose={()=>setShareModalItem(null)}/>}
         <div key={animK} className="pageEnter">
-          {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday}/>}
+          {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday} challenges={challenges}/>}
           {view==="plans"&&<Plans data={data} setData={setData} onNew={()=>setPlanModal(true)} onEdit={p=>{setEditPlan(p);setPlanModal(true);}} notify={showToast} library={library}/>}
           {view==="library"&&<LibraryPage library={library} setLibrary={setLibrary} notify={showToast}/>}
           {view==="wochenplan"&&<WochenplanPage weekPlans={weekPlans} setWeekPlans={setWeekPlans} data={data} user={user} library={library} notify={showToast} favFoods={favFoods} nutrition={nutrition}/>}
@@ -3303,7 +3316,7 @@ function FitForge(){
     </div>
   );
 }
-function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick,waterGoal,waterTotal,waterLog,onAddWater,onDelWater}){
+function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick,waterGoal,waterTotal,waterLog,onAddWater,onDelWater,challenges}){
   const cwDays = new Set(thisWeek.map(w => new Date(w.date).toDateString())).size;
   const cwSessions = thisWeek.length;
   const last3=[...data.workouts].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,3);
@@ -3354,6 +3367,42 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
           })()}
         </div>
       </div>
+      {(()=>{
+        // Rückstands-Warnung: aktive Challenges, die hinter dem nötigen Pace liegen
+        const uid = getUid();
+        const behind = (challenges||[]).filter(c=>c.status==="active"&&(c.participants||[]).includes(uid)).map(c=>{
+          const end = new Date(c.deadline+"T23:59:59").getTime();
+          const start = c.createdAt || end - 30*86400000;
+          const now = Date.now();
+          if (now >= end || end <= start) return null;
+          const frac = (now - start) / (end - start);
+          if (frac < 0.1) return null; // frisch gestartet: noch keine Warnung
+          const myVal = c.mode === "race" ? ((c.progress||{})[uid]||0) : (c.currentValue||0);
+          const required = c.targetValue * frac;
+          if (myVal >= required) return null;
+          const missing = c.targetValue - myVal;
+          const daysLeft = Math.max(1, Math.ceil((end - now) / 86400000));
+          const unitLabel = c.type === "km" ? "km" : c.type === "weight" ? "kg" : c.type === "hiit" ? "HIIT-Trainings" : c.type === "sets" ? "Sätze" : c.type === "stretch" ? "Dehn-Trainings" : "Trainings";
+          return { c, missing: Math.round(missing*10)/10, daysLeft, unitLabel };
+        }).filter(Boolean);
+        if (!behind.length) return null;
+        return (
+          <div className="chalCardIn" style={{marginTop:18, background:"linear-gradient(135deg, rgba(239,71,111,0.12) 0%, rgba(255,209,102,0.06) 100%)", border:"1px solid rgba(239,71,111,0.3)", borderRadius:16, padding:"14px 16px", cursor:"pointer"}} onClick={()=>onView("challenges")}>
+            <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:behind.length?8:0}}>
+              <span style={{fontSize:16, animation:"urgentPulse 1.5s ease-in-out infinite"}}>⏳</span>
+              <span style={{fontSize:13, fontWeight:900, color:"#EF476F", fontFamily:"'DM Sans',sans-serif"}}>Challenge-Rückstand!</span>
+            </div>
+            <div style={{display:"flex", flexDirection:"column", gap:5}}>
+              {behind.slice(0,3).map(b=>(
+                <div key={b.c.id} style={{fontSize:12, color:"#ccc", display:"flex", justifyContent:"space-between", gap:10, flexWrap:"wrap"}}>
+                  <span style={{fontWeight:700, color:"#F0EDE8"}}>{b.c.mode==="race"?"⚔️ ":""}{b.c.title}</span>
+                  <span style={{color:"#FFD166", fontWeight:800}}>noch {b.missing} {b.unitLabel} in {b.daysLeft} {b.daysLeft===1?"Tag":"Tagen"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
       <div className="glass-card" style={{marginBottom:18, marginTop:18}}>
         <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
           <h2 style={s.secTitle}>Daily Check-in</h2>
@@ -5964,17 +6013,26 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
       
       const currentValue = Object.values(progress).reduce((a, b) => a + b, 0);
       const processedWorkouts = [...processed, w.id];
-      
+      const progressLog = [...(freshData.progressLog || []), { date: w.date || todayStr(), uid, amount: contribution, ts: Date.now() }];
+
       let status = freshData.status || "active";
-      if (currentValue >= freshData.targetValue) {
+      let winner = freshData.winner || null;
+      if (freshData.mode === "race") {
+        if (status === "active" && progress[uid] >= freshData.targetValue) {
+          status = "completed";
+          winner = uid;
+        }
+      } else if (currentValue >= freshData.targetValue) {
         status = "completed";
       }
-      
+
       await challengeRef.update({
         progress,
         currentValue,
         status,
-        processedWorkouts
+        processedWorkouts,
+        progressLog,
+        ...(winner ? { winner } : {})
       });
       
       const unitLabel = freshData.type === "km" ? "km" : freshData.type === "weight" ? "kg" : freshData.type === "sets" ? "Sätze" : freshData.type === "hiit" ? "HIIT-Trainings" : freshData.type === "stretch" ? "Dehn-Trainings" : "Trainings";
@@ -7547,6 +7605,74 @@ function ChallengeTypeSelect({value, onChange, height=48}){
   );
 }
 
+// Wettrennen-Graph: kumulierte Fortschrittslinien pro Teilnehmer + Soll-Pace-Linie
+function ChallengeRaceChart({ c, myUid, userNames, user, unitLabel }) {
+  const log = [...(c.progressLog || [])].sort((a, b) => (a.ts || 0) - (b.ts || 0) || String(a.date).localeCompare(String(b.date)));
+  if (!log.length) return null;
+
+  const PALETTE = ["#FFD166", "#A78BFA", "#4CC9F0", "#06D6A0", "#EF476F", "#FF9F1C"];
+  const start = c.createdAt || new Date(log[0].date + "T00:00").getTime();
+  const end = new Date(c.deadline + "T23:59:59").getTime();
+  const now = Math.min(Date.now(), end);
+  const span = Math.max(1, end - start);
+  const target = c.targetValue || 1;
+
+  const parts = c.participants || [];
+  let paletteIdx = 0;
+  const series = parts.map(pUid => {
+    const color = pUid === myUid ? "#FF6B35" : PALETTE[(paletteIdx++) % PALETTE.length];
+    let cum = 0;
+    const pts = [[start, 0]];
+    log.forEach(e => {
+      if (e.uid !== pUid) return;
+      const t = Math.min(end, Math.max(start, e.ts || new Date(e.date + "T12:00").getTime()));
+      cum += e.amount || 0;
+      pts.push([t, cum]);
+    });
+    if (cum > 0 || pUid === myUid) pts.push([now, cum]);
+    const name = userNames[pUid] || (pUid === myUid ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Ich" : "Sportler");
+    return { uid: pUid, color, pts, cum, name };
+  }).filter(sr => sr.cum > 0 || sr.uid === myUid);
+  if (!series.length) return null;
+
+  const yMax = Math.max(target, ...series.map(sr => sr.cum)) * 1.05;
+  const W = 300, H = 110, L = 8, R = 294, T = 10, B = 96;
+  const X = t => L + ((t - start) / span) * (R - L);
+  const Y = v => B - (v / yMax) * (B - T);
+  const toPath = pts => pts.map((p, i) => `${i === 0 ? "M" : "L"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ");
+
+  return (
+    <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10, marginTop: 10 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: "#555", textTransform: "uppercase", marginBottom: 6 }}>📈 Wettrennen</div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+        {/* Ziellinie */}
+        <line x1={L} y1={Y(target)} x2={R} y2={Y(target)} stroke="rgba(255,209,102,0.35)" strokeWidth="1" strokeDasharray="2 3"/>
+        <text x={R} y={Y(target) - 3} textAnchor="end" fontSize="7" fill="#FFD166" fontWeight="800">Ziel: {c.targetValue} {unitLabel}</text>
+        {/* Soll-Pace */}
+        <line x1={X(start)} y1={Y(0)} x2={X(end)} y2={Y(target)} stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="4 4"/>
+        <text x={X(end) - 2} y={Y(target) + 10} textAnchor="end" fontSize="6.5" fill="#666">Soll-Pace</text>
+        {/* Heute-Markierung */}
+        {now < end && <line x1={X(now)} y1={T} x2={X(now)} y2={B} stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>}
+        {/* Grundlinie */}
+        <line x1={L} y1={B} x2={R} y2={B} stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
+        {series.map(sr => (
+          <g key={sr.uid}>
+            <path className="lineDraw" pathLength="1" d={toPath(sr.pts)} fill="none" stroke={sr.color} strokeWidth={sr.uid === myUid ? 2.2 : 1.6} strokeLinejoin="round" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 3px ${sr.color}70)` }}/>
+            <circle cx={X(sr.pts[sr.pts.length - 1][0])} cy={Y(sr.cum)} r="2.6" fill={sr.color}/>
+          </g>
+        ))}
+      </svg>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 4 }}>
+        {series.map(sr => (
+          <span key={sr.uid} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: sr.uid === myUid ? "#F0EDE8" : "#888", fontWeight: sr.uid === myUid ? 800 : 500 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: sr.color, display: "inline-block" }}/>{sr.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ChallengesPage({user,setUser,notify,isMobile}){
   const myUid=getUid();
   const [challenges,setChallenges]=useState([]);
@@ -7562,6 +7688,7 @@ function ChallengesPage({user,setUser,notify,isMobile}){
     title:"",
     description:"",
     type:"workouts",
+    mode:"coop",
     targetValue:10,
     deadline:"",
     penaltyPoints:100
@@ -7730,6 +7857,9 @@ function ChallengesPage({user,setUser,notify,isMobile}){
         creator: myUid,
         creatorName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || user.email || "Sportler",
         type: form.type,
+        mode: form.mode || "coop",
+        winner: null,
+        progressLog: [],
         targetValue: parseFloat(form.targetValue) || 10,
         currentValue: 0,
         deadline: form.deadline,
@@ -7743,7 +7873,7 @@ function ChallengesPage({user,setUser,notify,isMobile}){
       await window.firebaseDoc(window.firebaseDb, "challenges", id).set(newChal);
       notify("Challenge erstellt! 🏆");
       setCreateOpen(false);
-      setForm({ title:"", description:"", type:"workouts", targetValue:10, deadline:"", penaltyPoints:100 });
+      setForm({ title:"", description:"", type:"workouts", mode:"coop", targetValue:10, deadline:"", penaltyPoints:100 });
     } catch(e) {
       notify(`Erstellung fehlgeschlagen: ${e.message}`, "error");
     }
@@ -7799,7 +7929,10 @@ function ChallengesPage({user,setUser,notify,isMobile}){
       ) : (
         <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 16}}>
           {list.map((c, cardIdx) => {
-            const progressPercent = Math.min(100, Math.round((c.currentValue / c.targetValue) * 100)) || 0;
+            const isRace = c.mode === "race";
+            const bestProgress = Math.max(0, ...Object.values(c.progress || {}));
+            const progressPercent = Math.min(100, Math.round(((isRace ? bestProgress : c.currentValue) / c.targetValue) * 100)) || 0;
+            const winnerName = c.winner ? (userNames[c.winner] || (c.winner === myUid ? "Ich" : "Sportler")) : null;
             const unitLabel = c.type === "km" ? "km" : c.type === "weight" ? "kg" : c.type === "hiit" ? "HIIT-Trainings" : c.type === "sets" ? "Sätze" : c.type === "stretch" ? "Dehn-Trainings" : "Trainings";
             const deadlineFormatted = new Date(c.deadline).toLocaleDateString("de-DE");
             const daysLeft = Math.ceil((new Date(c.deadline + "T23:59:59") - new Date()) / 86400000);
@@ -7823,13 +7956,16 @@ function ChallengesPage({user,setUser,notify,isMobile}){
                   <div style={{flex:1, minWidth:0}}>
                     <div style={{display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:6}}>
                       <h3 style={{...s.cardTitle, margin: 0, fontSize: 16, color:"#F0EDE8"}}>{c.title}</h3>
+                      {isRace && (
+                        <span style={{fontSize:10, fontWeight:900, padding:"3px 8px", borderRadius:6, background:"rgba(167,139,250,0.12)", color:"#A78BFA", border:"1px solid rgba(167,139,250,0.25)"}}>⚔️ Duell</span>
+                      )}
                       <span style={{
                         fontSize: 10, fontWeight: 900, padding: "3px 8px", borderRadius: 6,
                         background: c.status === "active" ? "rgba(6,214,160,0.12)" : isDone ? "rgba(255,209,102,0.12)" : "rgba(239,71,111,0.12)",
                         color: c.status === "active" ? "#06D6A0" : isDone ? "#FFD166" : "#EF476F",
                         border: `1px solid ${c.status === "active" ? "rgba(6,214,160,0.2)" : isDone ? "rgba(255,209,102,0.2)" : "rgba(239,71,111,0.2)"}`
                       }}>
-                        {c.status === "active" ? "Aktiv" : isDone ? "🏅 Erfolgreich" : "Fehlgeschlagen"}
+                        {c.status === "active" ? "Aktiv" : isDone ? (isRace && winnerName ? `🥇 ${winnerName}` : "🏅 Erfolgreich") : "Fehlgeschlagen"}
                       </span>
                     </div>
                     <p style={{fontSize: 12, color: "#888", margin: 0, lineHeight: 1.4}}>{c.description || "Keine Beschreibung vorhanden."}</p>
@@ -7879,8 +8015,8 @@ function ChallengesPage({user,setUser,notify,isMobile}){
                 {/* Progress bar */}
                 <div style={{marginBottom:14}}>
                   <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5, fontSize:12}}>
-                    <span style={{color:"#888"}}>Gemeinsamer Fortschritt</span>
-                    <strong style={{color:"#FFD166"}}>{c.currentValue} / {c.targetValue} {unitLabel}</strong>
+                    <span style={{color:"#888"}}>{isRace ? "Führender" : "Gemeinsamer Fortschritt"}</span>
+                    <strong style={{color:"#FFD166"}}>{isRace ? bestProgress : c.currentValue} / {c.targetValue} {unitLabel}</strong>
                   </div>
                   <div style={{width:"100%", height:10, background:"rgba(255,255,255,0.05)", borderRadius:5, overflow:"hidden", position:"relative"}}>
                     <div className="chalBarIn" style={{width:`${progressPercent}%`, height:"100%", background:`linear-gradient(90deg, #A78BFA 0%, ${accent} 100%)`, borderRadius:5, position:"relative", overflow:"hidden", animationDelay:`${0.25 + cardIdx*0.08}s`, boxShadow:`0 0 10px ${accent}50`}}>
@@ -7891,14 +8027,17 @@ function ChallengesPage({user,setUser,notify,isMobile}){
                   </div>
                 </div>
 
+                {/* Race chart (nur wenn Fortschritts-Log vorhanden) */}
+                <ChallengeRaceChart c={c} myUid={myUid} userNames={userNames} user={user} unitLabel={unitLabel}/>
+
                 {/* Participant leaderboard */}
                 <div style={{borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:10, marginTop:10}}>
-                  <div style={{fontSize:11, fontWeight:800, color:"#555", textTransform:"uppercase", marginBottom:8}}>Rangliste ({ranked.length})</div>
+                  <div style={{fontSize:11, fontWeight:800, color:"#555", textTransform:"uppercase", marginBottom:8}}>{isRace ? "⚔️ Duell-Stand" : "Rangliste"} ({ranked.length})</div>
                   <div style={{display:"flex", flexDirection:"column", gap:8}}>
                     {ranked.map((pUid, rank) => {
                       const pProgress = (c.progress || {})[pUid] || 0;
                       const pPercent = Math.round((pProgress / c.targetValue) * 100) || 0;
-                      const relWidth = Math.min(100, Math.round((pProgress / topProgress) * 100)) || 0;
+                      const relWidth = Math.min(100, Math.round((pProgress / (isRace ? c.targetValue : topProgress)) * 100)) || 0;
                       const isMe = pUid === myUid;
                       const name = userNames[pUid] || (isMe ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Ich" : "Sportler");
                       const barColor = isMe ? "#FF6B35" : rank === 0 ? "#FFD166" : "#A78BFA";
@@ -7949,6 +8088,26 @@ function ChallengesPage({user,setUser,notify,isMobile}){
               <div>
                 <label style={s.lbl}>Beschreibung</label>
                 <textarea style={{...s.inp, height:60, resize:"none", fontFamily:"inherit"}} placeholder="Z.B. Wir laufen diesen Monat gemeinsam 100km für die Ausdauer!" value={form.description} onChange={e => setForm({...form, description:e.target.value})}/>
+              </div>
+
+              <div>
+                <label style={s.lbl}>Modus</label>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
+                  {[
+                    {key:"coop", icon:"🤝", label:"Gemeinsam", desc:"Alle zahlen aufs gleiche Ziel ein"},
+                    {key:"race", icon:"⚔️", label:"Duell", desc:"Wer zuerst das Ziel erreicht, gewinnt"}
+                  ].map(m => (
+                    <button key={m.key} onClick={() => setForm({...form, mode:m.key})} style={{
+                      textAlign:"left", cursor:"pointer", borderRadius:12, padding:"10px 12px",
+                      background: form.mode === m.key ? "rgba(255,107,53,0.12)" : "rgba(255,255,255,0.03)",
+                      border: `1px solid ${form.mode === m.key ? "#FF6B35" : "rgba(255,255,255,0.08)"}`,
+                      transition:"border-color 0.2s, background 0.2s"
+                    }}>
+                      <div style={{fontSize:13, fontWeight:800, color: form.mode === m.key ? "#FF6B35" : "#aaa", display:"flex", alignItems:"center", gap:6}}>{m.icon} {m.label}</div>
+                      <div style={{fontSize:10, color:"#666", marginTop:3, lineHeight:1.3}}>{m.desc}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
