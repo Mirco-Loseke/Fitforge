@@ -2435,6 +2435,38 @@ function FitForge(){
   useEffect(() => { syncToCloud("weekPlans", weekPlans); }, [weekPlans, loaded]);
   useEffect(() => { syncToCloud("favFoods", favFoods); }, [favFoods, loaded]);
 
+  // ── Einmalige Migration: alte base64-Übungsbilder nach Firebase Storage ────
+  // Vor dem Storage-Fix erstellte Übungen haben ihr Bild als base64 lokal. Das
+  // wird beim Sync weggestrippt (→ auf anderen Geräten kein Bild). Hier laden wir
+  // solche Bilder einmalig zu Storage hoch und ersetzen sie durch die URL, damit
+  // sie geräteübergreifend erscheinen und komplett aus dem Dokument raus sind.
+  const thumbMigratingRef = useRef(false);
+  useEffect(() => {
+    if (!loaded || !authUser || !window.firebaseStorage) return;
+    if (thumbMigratingRef.current) return;
+    const toMigrate = (library || []).filter(ex => ex && typeof ex.thumbnail === "string" && ex.thumbnail.startsWith("data:"));
+    if (!toMigrate.length) return;
+    thumbMigratingRef.current = true; // eine Migrations-Runde pro Session; Fehler werden beim nächsten Laden erneut versucht
+    (async () => {
+      if (window.dbg) dbg(`🖼️ Lade ${toMigrate.length} alte Übungsbilder zu Storage hoch…`, '#0ff');
+      let ok = 0;
+      for (const ex of toMigrate) {
+        try {
+          const blob = await (await fetch(ex.thumbnail)).blob();
+          const file = new File([blob], `ex_${ex.id}.jpg`, { type: blob.type || "image/jpeg" });
+          const url = await uploadToStorage(file, `exercises/migrated_${ex.id}_${Date.now()}.jpg`);
+          if (url && typeof url === "string" && !url.startsWith("data:")) {
+            setLibrary(cur => cur.map(e => e.id === ex.id ? { ...e, thumbnail: url, _m: Date.now() } : e));
+            ok++;
+          }
+        } catch (e) {
+          if (window.dbg) dbg(`⚠️ Bild-Migration für "${ex.name}" fehlgeschlagen: ${e.message}`, '#f80');
+        }
+      }
+      if (window.dbg) dbg(`✅ Bild-Migration fertig (${ok}/${toMigrate.length})`, '#0f0');
+    })();
+  }, [loaded, authUser, library]);
+
   useEffect(()=>{setAnimK(k=>k+1);},[view]);
   useEffect(()=>{localStorage.setItem("ff_notifs",JSON.stringify(notifs));},[notifs]);
   useEffect(()=>{
