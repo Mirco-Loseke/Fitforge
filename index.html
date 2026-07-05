@@ -8669,6 +8669,53 @@ function ForgePointsPage({user, setUser, isMobile}){
     ["penaltySupplement",CHECKIN_ICONS.supplement,"Supplement nicht genommen"],
     ["penaltyStretch",CHECKIN_ICONS.stretching,"Stretching nicht gemacht"],
   ];
+
+  // ── Level-System (rein aus Punktestand abgeleitet) ──────────────────────
+  const LEVELS=[
+    {name:"Rookie",icon:"🔩",min:0,color:"#8D99AE"},
+    {name:"Bronze",icon:"🥉",min:250,color:"#CD7F32"},
+    {name:"Silber",icon:"🥈",min:750,color:"#C0C0C8"},
+    {name:"Gold",icon:"🥇",min:1500,color:"#FFD166"},
+    {name:"Platin",icon:"💠",min:3000,color:"#4CC9F0"},
+    {name:"Diamant",icon:"💎",min:6000,color:"#A78BFA"},
+    {name:"Meister",icon:"🔥",min:10000,color:"#FF6B35"},
+    {name:"Legende",icon:"⚡",min:20000,color:"#EF476F"},
+  ];
+  const lvlIdx=LEVELS.reduce((acc,l,i)=>pts>=l.min?i:acc,0);
+  const lvl=LEVELS[lvlIdx];
+  const nextLvl=LEVELS[lvlIdx+1]||null;
+  const lvlProgress=nextLvl?Math.min(100,Math.round((pts-lvl.min)/(nextLvl.min-lvl.min)*100)):100;
+
+  // ── Statistiken aus dem Log ─────────────────────────────────────────────
+  const stats=React.useMemo(()=>{
+    let earned=0,lost=0;
+    const daily={};
+    log.forEach(e=>{
+      if(e.points>0)earned+=e.points;else lost+=Math.abs(e.points);
+      const d=e.date||"";
+      daily[d]=(daily[d]||0)+e.points;
+    });
+    const now=new Date();
+    const dayMs=86400000;
+    let weekNet=0,todayNet=daily[today2]||0,bestDay=null;
+    for(let i=0;i<7;i++){
+      const d=new Date(now.getTime()-i*dayMs);
+      const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      weekNet+=daily[ds]||0;
+    }
+    Object.entries(daily).forEach(([d,v])=>{if(v>0&&(!bestDay||v>bestDay.v))bestDay={d,v};});
+    // Letzte 30 Tage für den Graphen
+    const last30=[];
+    for(let i=29;i>=0;i--){
+      const d=new Date(now.getTime()-i*dayMs);
+      const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      last30.push({ds,day:d.getDate(),v:daily[ds]||0});
+    }
+    return {earned,lost,weekNet,todayNet,bestDay,last30};
+  },[log,today2]);
+  const maxAbs30=Math.max(1,...stats.last30.map(d=>Math.abs(d.v)));
+  const recent=[...log].sort((a,b)=>(b.id||0)-(a.id||0)).slice(0,8);
+
   return (
     <div style={{maxWidth:560,margin:"0 auto",padding:isMobile?"16px 12px":"24px 16px"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
@@ -8703,9 +8750,91 @@ function ForgePointsPage({user, setUser, isMobile}){
           </div>
         </div>
       )}
-      <div style={{background:"linear-gradient(135deg,rgba(255,107,53,0.15),rgba(255,209,102,0.08))",border:"1px solid rgba(255,107,53,0.25)",borderRadius:20,padding:"28px 24px",marginBottom:24,textAlign:"center"}}>
-        <div style={{fontSize:52,fontWeight:900,background:"linear-gradient(135deg,#FF6B35,#FFD166)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1,letterSpacing:"-1px"}}>{pts.toLocaleString("de-DE")}</div>
-        <div style={{fontSize:14,fontWeight:700,color:"#888",marginTop:6,letterSpacing:1,textTransform:"uppercase"}}>Forge Points</div>
+      {/* Hero mit Level */}
+      <div className="chalCardIn" style={{background:`linear-gradient(150deg,${lvl.color}1E 0%,rgba(255,107,53,0.08) 50%,rgba(18,18,24,0.4) 100%)`,border:`1px solid ${lvl.color}40`,borderRadius:20,padding:"22px 20px",marginBottom:16,position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:-70,right:-70,width:190,height:190,borderRadius:"50%",background:`radial-gradient(circle,${lvl.color}26 0%,transparent 70%)`,pointerEvents:"none"}}/>
+        <div style={{display:"flex",alignItems:"center",gap:18,flexWrap:"wrap"}}>
+          {/* Level-Ring */}
+          <div style={{position:"relative",width:92,height:92,flexShrink:0}}>
+            <svg width="92" height="92" viewBox="0 0 76 76">
+              <defs>
+                <linearGradient id="fpLvlGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#FF6B35"/>
+                  <stop offset="100%" stopColor={lvl.color}/>
+                </linearGradient>
+              </defs>
+              <circle cx="38" cy="38" r="34" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6"/>
+              <circle className="ringIn" cx="38" cy="38" r="34" fill="none" stroke="url(#fpLvlGrad)" strokeWidth="6" strokeLinecap="round"
+                strokeDasharray={2*Math.PI*34} strokeDashoffset={2*Math.PI*34*(1-lvlProgress/100)}
+                transform="rotate(-90 38 38)" style={{filter:`drop-shadow(0 0 6px ${lvl.color}70)`,animationDelay:"0.2s"}}/>
+            </svg>
+            <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+              <span style={{fontSize:26,display:"inline-block",animation:"trophyFloat 3s ease-in-out infinite"}}>{lvl.icon}</span>
+            </div>
+          </div>
+          <div style={{flex:1,minWidth:150}}>
+            <div style={{fontSize:44,fontWeight:900,background:`linear-gradient(135deg,#FF6B35,${lvl.color})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1,letterSpacing:"-1px",fontFamily:"'DM Sans',sans-serif"}}>{pts.toLocaleString("de-DE")}</div>
+            <div style={{fontSize:12,fontWeight:700,color:"#888",marginTop:4,letterSpacing:1,textTransform:"uppercase"}}>Forge Points</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:900,padding:"3px 10px",borderRadius:8,background:`${lvl.color}1F`,color:lvl.color,border:`1px solid ${lvl.color}45`,textShadow:`0 0 12px ${lvl.color}60`}}>{lvl.icon} {lvl.name}</span>
+              {nextLvl&&<span style={{fontSize:10,color:"#666",fontWeight:600}}>{(nextLvl.min-pts).toLocaleString("de-DE")} Pkt. bis {nextLvl.icon} {nextLvl.name}</span>}
+              {!nextLvl&&<span style={{fontSize:10,color:"#FFD166",fontWeight:700}}>Maximales Level erreicht! ⚡</span>}
+            </div>
+            {nextLvl&&(
+              <div style={{width:"100%",height:6,background:"rgba(255,255,255,0.05)",borderRadius:3,overflow:"hidden",marginTop:8,position:"relative"}}>
+                <div className="chalBarIn" style={{width:`${lvlProgress}%`,height:"100%",background:`linear-gradient(90deg,#FF6B35,${lvl.color})`,borderRadius:3,animationDelay:"0.3s",boxShadow:`0 0 8px ${lvl.color}60`,position:"relative",overflow:"hidden"}}>
+                  <div style={{position:"absolute",top:0,left:0,height:"100%",width:"35%",background:"linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.35) 50%,transparent 100%)",animation:"chalShimmer 2.4s ease-in-out infinite"}}/>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Stats-Kacheln */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:16}}>
+        {[
+          {label:"Heute",value:`${stats.todayNet>0?"+":""}${stats.todayNet}`,color:stats.todayNet>=0?"#06D6A0":"#EF476F",icon:"📅"},
+          {label:"Diese Woche",value:`${stats.weekNet>0?"+":""}${stats.weekNet}`,color:stats.weekNet>=0?"#06D6A0":"#EF476F",icon:"🗓️"},
+          {label:"Gesamt verdient",value:`+${stats.earned.toLocaleString("de-DE")}`,color:"#06D6A0",icon:"⬆️"},
+          {label:"Gesamt verloren",value:`-${stats.lost.toLocaleString("de-DE")}`,color:"#EF476F",icon:"⬇️"}
+        ].map((st,i)=>(
+          <div key={st.label} className="statCard chalCardIn" style={{animationDelay:`${0.1+i*0.06}s`,background:`linear-gradient(160deg,${st.color}12 0%,rgba(255,255,255,0.02) 60%)`,border:`1px solid ${st.color}28`,borderRadius:14,padding:"11px 14px"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+              <span style={{fontSize:9,fontWeight:800,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px"}}>{st.label}</span>
+              <span style={{fontSize:12}}>{st.icon}</span>
+            </div>
+            <div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:900,fontSize:19,color:st.color,textShadow:`0 0 15px ${st.color}45`}}>{st.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 30-Tage-Graph */}
+      <div className="chalCardIn" style={{animationDelay:"0.25s",background:"#141416",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"16px",marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
+          <span style={{fontSize:12,fontWeight:800,color:"#F0EDE8"}}>📊 Letzte 30 Tage</span>
+          {stats.bestDay&&<span style={{fontSize:10,color:"#666"}}>Bester Tag: <b style={{color:"#FFD166"}}>+{stats.bestDay.v}</b> ({new Date(stats.bestDay.d).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"})})</span>}
+        </div>
+        <svg viewBox="0 0 300 90" style={{width:"100%",height:"auto",display:"block"}}>
+          <line x1="0" y1="58" x2="300" y2="58" stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
+          {stats.last30.map((d,i)=>{
+            const bw=300/30;
+            const x=i*bw+1;
+            const h=Math.abs(d.v)/maxAbs30*(d.v>=0?52:26);
+            if(d.v===0)return null;
+            const isPos=d.v>0;
+            return (
+              <rect key={d.ds} className="barGrow" x={x} y={isPos?58-h:58} width={bw-2} height={Math.max(1.5,h)} rx="1.5"
+                fill={isPos?"#06D6A0":"#EF476F"} opacity="0.85"
+                style={{animationDelay:`${0.3+i*0.02}s`,transformOrigin:isPos?undefined:"top"}}>
+                <title>{`${new Date(d.ds).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"})}: ${d.v>0?"+":""}${d.v} Pkt.`}</title>
+              </rect>
+            );
+          })}
+          {stats.last30.map((d,i)=>i%5===0?(
+            <text key={"t"+d.ds} x={i*(300/30)+(300/60)} y="88" textAnchor="middle" fontSize="6.5" fill="#555">{d.day}.</text>
+          ):null)}
+        </svg>
       </div>
       <div style={{background:"#141416",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"16px",marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
@@ -8764,6 +8893,27 @@ function ForgePointsPage({user, setUser, isMobile}){
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* Letzte Aktivitäten */}
+      {recent.length>0&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:800,color:"#F0EDE8",marginBottom:10}}>🕘 Letzte Aktivitäten</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {recent.map((e,i)=>{
+              const pos=e.points>0;
+              return (
+                <div key={e.id||i} className="chalCardIn" style={{animationDelay:`${0.1+i*0.05}s`,display:"flex",alignItems:"center",gap:12,background:"rgba(255,255,255,0.03)",border:`1px solid ${pos?"rgba(6,214,160,0.15)":"rgba(239,71,111,0.15)"}`,borderLeft:`3px solid ${pos?"#06D6A0":"#EF476F"}`,borderRadius:12,padding:"10px 14px"}}>
+                  <span style={{fontSize:16,flexShrink:0}}>{entryEmoji(e)}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:600,color:"#C0B8B0",lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.label}</div>
+                    <div style={{fontSize:10,color:"#555",marginTop:1}}>{e.date?new Date(e.date).toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit"}):""}</div>
+                  </div>
+                  <span style={{fontSize:14,fontWeight:900,color:pos?"#06D6A0":"#EF476F",flexShrink:0,fontFamily:"'DM Sans',sans-serif"}}>{pos?"+":""}{e.points}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
