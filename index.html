@@ -114,6 +114,18 @@ input[type="date"] { text-align: center; justify-content: center; align-items: c
 .barCol:hover rect{opacity:1;}
 .barCol:hover text{fill:#F0EDE8;}
 @keyframes lineDraw{from{stroke-dashoffset:1;}to{stroke-dashoffset:0;}}
+@keyframes chalCardIn{from{opacity:0;transform:translateY(18px) scale(0.97);}to{opacity:1;transform:translateY(0) scale(1);}}
+.chalCardIn{animation:chalCardIn 0.5s cubic-bezier(0.16,1,0.3,1) both;}
+@keyframes ringIn{from{stroke-dashoffset:214;}}
+.ringIn{animation:ringIn 1.1s cubic-bezier(0.4,0,0.2,1) both;}
+@keyframes barIn{from{width:0;}}
+.chalBarIn{animation:barIn 1s cubic-bezier(0.4,0,0.2,1) both;}
+@keyframes chalShimmer{from{transform:translateX(-100%);}to{transform:translateX(400%);}}
+@keyframes trophyFloat{0%,100%{transform:translateY(0) rotate(-3deg);}50%{transform:translateY(-5px) rotate(3deg);}}
+@keyframes urgentPulse{0%,100%{opacity:1;}50%{opacity:0.45;}}
+@keyframes winGlow{0%,100%{box-shadow:0 0 18px rgba(255,209,102,0.12), inset 0 1px 1px rgba(255,255,255,0.08);}50%{box-shadow:0 0 32px rgba(255,209,102,0.28), inset 0 1px 1px rgba(255,255,255,0.08);}}
+.chalCard{transition:transform 0.25s cubic-bezier(0.16,1,0.3,1), box-shadow 0.25s;}
+.chalCard:hover{transform:translateY(-4px);box-shadow:0 14px 36px rgba(0,0,0,0.45);}
 .lineDraw{stroke-dasharray:1;animation:lineDraw 0.9s cubic-bezier(0.4,0,0.2,1) both;}
 .pageEnter{animation:pageEnter 0.4s cubic-bezier(0.16,1,0.3,1) both;}body.modal-open{overflow:hidden!important;height:100%;}
 [data-modal-overlay]{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;overflow:hidden!important;-webkit-overflow-scrolling:touch;}
@@ -1318,7 +1330,17 @@ const COMMON_FOODS=[
 const ls = (k, df) => { try { const r = localStorage.getItem("ff_" + k); const p = r ? JSON.parse(r) : null; return p !== null ? p : df; } catch { return df; } };
 
 function FitForge(){
-  const [view,setView]=useState("dashboard");
+  const [view,setView]=useState(()=>{
+    // PWA-App-Shortcut (?shortcut=log|wochenplan|nutrition|challenges) direkt öffnen
+    try{
+      const sc=new URLSearchParams(window.location.search).get("shortcut");
+      if(sc&&["log","wochenplan","nutrition","challenges","history","plans"].includes(sc)){
+        window.history.replaceState({},"",window.location.origin+window.location.pathname);
+        return sc;
+      }
+    }catch(e){}
+    return "dashboard";
+  });
   const [data,setData]=useState(defaultData);
   const [user,setUser]=useState(defaultUser);
   const [prs,setPrs]=useState(defaultPRs);
@@ -2996,20 +3018,33 @@ function FitForge(){
           const newProgressVal = currentProgress + contribution;
           const progress = { ...(freshData.progress || {}), [uid]: newProgressVal };
           const currentValue = Object.values(progress).reduce((a, b) => a + b, 0);
-          
+          const progressLog = [...(freshData.progressLog || []), { date: todayStr(), uid, amount: contribution, ts: Date.now() }];
+
           let status = freshData.status || "active";
-          if (currentValue >= freshData.targetValue) {
+          let winner = freshData.winner || null;
+          if (freshData.mode === "race") {
+            if (status === "active" && newProgressVal >= freshData.targetValue) {
+              status = "completed";
+              winner = uid;
+            }
+          } else if (currentValue >= freshData.targetValue) {
             status = "completed";
           }
-          
+
           await challengeRef.update({
             progress,
             currentValue,
-            status
+            status,
+            progressLog,
+            ...(winner ? { winner } : {})
           });
-          
+
           if (status === "completed" && freshData.status !== "completed") {
-            showToast(`Challenge „${freshData.title}“ erfolgreich beendet! 🏆`);
+            if (freshData.mode === "race") {
+              showToast(`🥇 Du hast das Duell „${freshData.title}“ gewonnen!`);
+            } else {
+              showToast(`Challenge „${freshData.title}“ erfolgreich beendet! 🏆`);
+            }
           }
         }
       } catch(e) {
@@ -3223,7 +3258,7 @@ function FitForge(){
         {undoConfirmItem&&<UndoConfirmModal item={undoConfirmItem} onConfirm={()=>undoChecklistItem(undoConfirmItem)} onCancel={()=>setUndoConfirmItem(null)}/>}
         {shareModalItem&&<ShareWithFriendsModal item={shareModalItem} user={user} notify={showToast} onClose={()=>setShareModalItem(null)}/>}
         <div key={animK} className="pageEnter">
-          {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday}/>}
+          {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday} challenges={challenges}/>}
           {view==="plans"&&<Plans data={data} setData={setData} onNew={()=>setPlanModal(true)} onEdit={p=>{setEditPlan(p);setPlanModal(true);}} notify={showToast} library={library}/>}
           {view==="library"&&<LibraryPage library={library} setLibrary={setLibrary} notify={showToast}/>}
           {view==="wochenplan"&&<WochenplanPage weekPlans={weekPlans} setWeekPlans={setWeekPlans} data={data} user={user} library={library} notify={showToast} favFoods={favFoods} nutrition={nutrition}/>}
@@ -3291,7 +3326,7 @@ function FitForge(){
     </div>
   );
 }
-function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick,waterGoal,waterTotal,waterLog,onAddWater,onDelWater}){
+function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick,waterGoal,waterTotal,waterLog,onAddWater,onDelWater,challenges}){
   const cwDays = new Set(thisWeek.map(w => new Date(w.date).toDateString())).size;
   const cwSessions = thisWeek.length;
   const last3=[...data.workouts].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,3);
@@ -3342,6 +3377,42 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
           })()}
         </div>
       </div>
+      {(()=>{
+        // Rückstands-Warnung: aktive Challenges, die hinter dem nötigen Pace liegen
+        const uid = getUid();
+        const behind = (challenges||[]).filter(c=>c.status==="active"&&(c.participants||[]).includes(uid)).map(c=>{
+          const end = new Date(c.deadline+"T23:59:59").getTime();
+          const start = c.createdAt || end - 30*86400000;
+          const now = Date.now();
+          if (now >= end || end <= start) return null;
+          const frac = (now - start) / (end - start);
+          if (frac < 0.1) return null; // frisch gestartet: noch keine Warnung
+          const myVal = c.mode === "race" ? ((c.progress||{})[uid]||0) : (c.currentValue||0);
+          const required = c.targetValue * frac;
+          if (myVal >= required) return null;
+          const missing = c.targetValue - myVal;
+          const daysLeft = Math.max(1, Math.ceil((end - now) / 86400000));
+          const unitLabel = c.type === "km" ? "km" : c.type === "weight" ? "kg" : c.type === "hiit" ? "HIIT-Trainings" : c.type === "sets" ? "Sätze" : c.type === "stretch" ? "Dehn-Trainings" : "Trainings";
+          return { c, missing: Math.round(missing*10)/10, daysLeft, unitLabel };
+        }).filter(Boolean);
+        if (!behind.length) return null;
+        return (
+          <div className="chalCardIn" style={{marginTop:18, background:"linear-gradient(135deg, rgba(239,71,111,0.12) 0%, rgba(255,209,102,0.06) 100%)", border:"1px solid rgba(239,71,111,0.3)", borderRadius:16, padding:"14px 16px", cursor:"pointer"}} onClick={()=>onView("challenges")}>
+            <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:behind.length?8:0}}>
+              <span style={{fontSize:16, animation:"urgentPulse 1.5s ease-in-out infinite"}}>⏳</span>
+              <span style={{fontSize:13, fontWeight:900, color:"#EF476F", fontFamily:"'DM Sans',sans-serif"}}>Challenge-Rückstand!</span>
+            </div>
+            <div style={{display:"flex", flexDirection:"column", gap:5}}>
+              {behind.slice(0,3).map(b=>(
+                <div key={b.c.id} style={{fontSize:12, color:"#ccc", display:"flex", justifyContent:"space-between", gap:10, flexWrap:"wrap"}}>
+                  <span style={{fontWeight:700, color:"#F0EDE8"}}>{b.c.mode==="race"?"⚔️ ":""}{b.c.title}</span>
+                  <span style={{color:"#FFD166", fontWeight:800}}>noch {b.missing} {b.unitLabel} in {b.daysLeft} {b.daysLeft===1?"Tag":"Tagen"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
       <div className="glass-card" style={{marginBottom:18, marginTop:18}}>
         <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
           <h2 style={s.secTitle}>Daily Check-in</h2>
@@ -5380,6 +5451,44 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
           <div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2,overflow:"hidden",marginBottom:14}}>
             <div style={{height:"100%",width:`${((curEx+1)/Math.max(exercises.length,1))*100}%`,background:`linear-gradient(90deg,${plan?.color||"#FF6B35"},${plan?.color||"#FF6B35"}99)`,borderRadius:2,transition:"width 0.4s cubic-bezier(0.16,1,0.3,1)",boxShadow:`0 0 10px ${(plan?.color||"#FF6B35")}60`}}/>
           </div>
+          {/* Progressive-Overload-Vorschlag basierend auf dem letzten Training dieser Übung */}
+          {!hiitMode&&!curExData.trackGPS&&(()=>{
+            const libEx=library?.find(l=>l.name===curExData.name);
+            if(libEx&&libEx.trackWeight===false)return null;
+            let lastEx=null;
+            for(const w of [...(data.workouts||[])].sort((a,b)=>String(b.date).localeCompare(String(a.date)))){
+              if(date&&w.date>=date)continue; // nur frühere Trainings
+              const ex=(w.exercises||[]).find(e=>!e.isHiit&&e.name===curExData.name);
+              if(ex&&(ex.sets||[]).some(st=>parseFloat(st.weight)>0)){lastEx={ex,date:w.date};break;}
+            }
+            if(!lastEx)return null;
+            const doneSets=(lastEx.ex.sets||[]).filter(st=>st.done!==false&&(parseFloat(st.weight)>0||parseInt(st.reps)>0));
+            if(!doneSets.length)return null;
+            const maxW=Math.max(...doneSets.map(st=>parseFloat(st.weight)||0));
+            const repsAtMax=doneSets.filter(st=>(parseFloat(st.weight)||0)===maxW).map(st=>parseInt(st.reps)||0);
+            const minReps=Math.min(...repsAtMax),maxReps=Math.max(...repsAtMax);
+            const allDone=(lastEx.ex.sets||[]).every(st=>st.done!==false);
+            const readyToIncrease=allDone&&minReps>=8;
+            const suggestedW=readyToIncrease?maxW+2.5:maxW;
+            const repsLabel=minReps===maxReps?`${minReps}`:`${minReps}–${maxReps}`;
+            const lastLabel=`${doneSets.length}×${repsLabel} @ ${maxW} kg`;
+            const accCol=readyToIncrease?"#06D6A0":"#FFD166";
+            return (
+              <div className="fadeIn" style={{display:"flex",alignItems:"center",gap:12,background:`linear-gradient(135deg, ${accCol}12 0%, rgba(18,18,24,0.4) 100%)`,border:`1px solid ${accCol}35`,borderRadius:14,padding:"11px 14px",marginBottom:14}}>
+                <span style={{fontSize:20,flexShrink:0}}>{readyToIncrease?"📈":"💡"}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:10,fontWeight:900,color:accCol,textTransform:"uppercase",letterSpacing:0.5,marginBottom:2}}>Overload-Assistent</div>
+                  <div style={{fontSize:12,color:"#aaa",lineHeight:1.45}}>
+                    Letztes Mal ({new Date(lastEx.date).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"})}): <b style={{color:"#F0EDE8"}}>{lastLabel}</b>
+                    {" — "}
+                    {readyToIncrease
+                      ? <>heute <b style={{color:accCol}}>{suggestedW} kg</b> versuchen!</>
+                      : <>Ziel: <b style={{color:accCol}}>8+ Wdh @ {maxW} kg</b> schaffen, dann steigern.</>}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {hiitMode && curEx < exercises.length - 1 && (
             <div style={{fontSize: 10, fontWeight: 900, color: "#666", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8, display: "flex", alignItems: "center", gap: 8}}>
               <span>Als nächstes:</span>
@@ -5401,6 +5510,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
               <div style={{...s.modal, maxWidth:400, borderRadius: 24}} onClick={e=>e.stopPropagation()}>
                 <h3 style={{...s.modalTitle, color: plan?.color || "#FF6B35"}}>{curExData.name}</h3>
                 <div style={{fontSize:14,color:"#aaa",lineHeight:1.6,margin:"20px 0"}}>{curExData.description || "Keine Anleitung verfügbar."}</div>
+                <MuscleBodyMap muscles={(library?.find(l=>l.name===curExData.name)?.muscles)||curExData.muscles||[]}/>
                 <button style={{...s.primaryBtn, width: "100%"}} onClick={()=>setShowInfo(false)}>Verstanden</button>
               </div>
             </div>
@@ -5895,6 +6005,141 @@ function GpsAnalytics({ path, targetPace }) {
 }
 
 
+// Generisches, gestyltes Dropdown (statt nativem <select>) im App-Design
+function FFSelect({ value, onChange, options, width, accent = "#FF6B35" }) {
+  const [open, setOpen] = useState(false);
+  const sel = options.find(o => o.value === value) || options[0];
+  const active = sel.value !== "all";
+  const color = sel.color || accent;
+  return (
+    <div style={{ position: "relative", width: width || "auto", minWidth: 130 }}>
+      <button type="button" onClick={() => setOpen(o => !o)} style={{
+        display: "flex", alignItems: "center", gap: 8, width: "100%",
+        padding: "9px 32px 9px 12px", borderRadius: 12, cursor: "pointer",
+        fontFamily: "'DM Sans',sans-serif", fontWeight: 700, fontSize: 12, textAlign: "left",
+        background: active ? `linear-gradient(135deg, ${color}1A 0%, rgba(18,18,24,0.6) 100%)` : "rgba(255,255,255,0.04)",
+        border: `1px solid ${active ? color : "rgba(255,255,255,0.1)"}`,
+        color: active ? color : "#aaa",
+        appearance: "none", WebkitAppearance: "none",
+        boxShadow: open ? `inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 3px ${color}20` : "inset 0 1px 0 rgba(255,255,255,0.06)",
+        transition: "border-color 0.2s, background 0.2s, box-shadow 0.2s"
+      }}>
+        {sel.dot && <span style={{ width: 8, height: 8, borderRadius: "50%", background: sel.dot, flexShrink: 0 }}/>}
+        {sel.icon && <span style={{ flexShrink: 0 }}>{sel.icon}</span>}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sel.label}</span>
+        <span style={{ position: "absolute", right: 10, top: "50%", transform: open ? "translateY(-50%) rotate(180deg)" : "translateY(-50%)", transition: "transform 0.2s", display: "flex", pointerEvents: "none" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={active ? color : "#666"} strokeWidth="2.2"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </button>
+      {open && <>
+        <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setOpen(false)}/>
+        <div className="dropIn" style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: "100%", width: "max-content", maxWidth: 280, zIndex: 41, background: "#16161A", border: "1px solid #1E1E24", borderRadius: 12, overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", maxHeight: 280, overflowY: "auto" }}>
+          {options.map((o, i) => (
+            <div key={o.value} className="dropdownOptRow" style={{
+              display: "flex", alignItems: "center", gap: 9, padding: "10px 13px", cursor: "pointer",
+              fontSize: 12, fontWeight: 600,
+              color: value === o.value ? (o.color || accent) : "#aaa",
+              background: value === o.value ? `${o.color || accent}10` : "transparent",
+              borderTop: i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none"
+            }} onClick={() => { onChange(o.value); setOpen(false); }}>
+              {o.dot && <span style={{ width: 8, height: 8, borderRadius: "50%", background: o.dot, flexShrink: 0 }}/>}
+              {o.icon && <span style={{ fontSize: 14, flexShrink: 0 }}>{o.icon}</span>}
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.label}</span>
+              {value === o.value && <span style={{ color: o.color || accent, display: "flex", flexShrink: 0 }}>{IC.check}</span>}
+            </div>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+// Fortschrittskurve einer Übung über alle Trainings (Max-Gewicht, Volumen, e1RM)
+function ExerciseProgressModal({ name, workouts, onClose, isMobile }) {
+  const [metric, setMetric] = useState("max");
+  const points = React.useMemo(() => {
+    const res = [];
+    [...workouts].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(w => {
+      (w.exercises || []).forEach(ex => {
+        if (ex.isHiit || ex.name !== name) return;
+        let maxW = 0, vol = 0, e1rm = 0;
+        (ex.sets || []).forEach(st => {
+          if (st.done === false) return;
+          const wt = parseFloat(st.weight) || 0, reps = parseInt(st.reps) || 0;
+          if (wt > maxW) maxW = wt;
+          vol += wt * reps;
+          const est = reps > 0 ? wt * (1 + reps / 30) : wt;
+          if (est > e1rm) e1rm = est;
+        });
+        if (maxW > 0 || vol > 0) res.push({ date: w.date, max: maxW, vol, e1rm: Math.round(e1rm * 10) / 10 });
+      });
+    });
+    return res.slice(-20);
+  }, [name, workouts]);
+
+  const METRICS = [["max", "Max-Gewicht", "kg", "#FF6B35"], ["vol", "Volumen", "kg", "#A78BFA"], ["e1rm", "e1RM", "kg", "#FFD166"]];
+  const [, mLabel, mUnit, mColor] = METRICS.find(m => m[0] === metric);
+  const vals = points.map(p => p[metric]);
+  const vMax = Math.max(1, ...vals), vMin = Math.min(...vals, vMax);
+  const W = 320, H = 150, L = 10, R = 310, T = 14, B = 122;
+  const X = i => points.length > 1 ? L + (i / (points.length - 1)) * (R - L) : (L + R) / 2;
+  const Y = v => B - ((v - vMin * 0.9) / Math.max(1, vMax - vMin * 0.9)) * (B - T);
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${X(i).toFixed(1)},${Y(p[metric]).toFixed(1)}`).join(" ");
+  const first = vals[0] || 0, last = vals[vals.length - 1] || 0;
+  const delta = first > 0 ? Math.round((last - first) / first * 100) : null;
+
+  return (
+    <Overlay onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="dropIn" style={{ ...s.modal, maxWidth: 480, maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <h3 style={{ ...s.modalTitle, margin: 0, fontSize: 17 }}>📈 {name}</h3>
+          <button style={{ background: "transparent", border: "none", color: "#666", cursor: "pointer" }} onClick={onClose}>{IC.x}</button>
+        </div>
+        <div style={{ fontSize: 11, color: "#666", marginBottom: 14 }}>{points.length} Trainings mit dieser Übung{delta !== null && delta !== 0 && <> · <b style={{ color: delta > 0 ? "#06D6A0" : "#EF476F" }}>{delta > 0 ? "▲ +" : "▼ "}{delta}%</b> seit dem ersten Eintrag</>}</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {METRICS.map(([key, label, , color]) => (
+            <button key={key} onClick={() => setMetric(key)} style={{ flex: 1, padding: "7px 0", borderRadius: 10, cursor: "pointer", fontSize: 11, fontWeight: 800, background: metric === key ? `${color}1F` : "rgba(255,255,255,0.03)", border: `1px solid ${metric === key ? color : "rgba(255,255,255,0.08)"}`, color: metric === key ? color : "#888", transition: "all 0.2s" }}>{label}</button>
+          ))}
+        </div>
+        {points.length < 2 ? (
+          <div style={{ textAlign: "center", padding: "30px 0", color: "#666", fontSize: 13, fontStyle: "italic" }}>Noch nicht genug Daten – mindestens 2 Trainings mit dieser Übung nötig.</div>
+        ) : (
+          <>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+              <defs>
+                <linearGradient id="exProgFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={mColor} stopOpacity="0.25" />
+                  <stop offset="100%" stopColor={mColor} stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {[0.25, 0.5, 0.75].map(f => <line key={f} x1={L} y1={T + (B - T) * f} x2={R} y2={T + (B - T) * f} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />)}
+              <path d={`${path} L${X(points.length - 1).toFixed(1)},${B} L${X(0).toFixed(1)},${B} Z`} fill="url(#exProgFill)" className="fadeIn" />
+              <path className="lineDraw" pathLength="1" d={path} fill="none" stroke={mColor} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 4px ${mColor}70)` }} />
+              {points.map((p, i) => (
+                <g key={i}>
+                  <circle cx={X(i)} cy={Y(p[metric])} r="3" fill={mColor} className="fadeIn">
+                    <title>{`${new Date(p.date).toLocaleDateString("de-DE")}: ${p[metric]} ${mUnit}`}</title>
+                  </circle>
+                  {(i === 0 || i === points.length - 1 || p[metric] === vMax) && (
+                    <text x={X(i)} y={Y(p[metric]) - 7} textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"} fontSize="8" fontWeight="800" fill={p[metric] === vMax ? "#FFD166" : "#888"}>{p[metric]}</text>
+                  )}
+                </g>
+              ))}
+              {points.map((p, i) => (points.length <= 8 || i % Math.ceil(points.length / 6) === 0 || i === points.length - 1) ? (
+                <text key={"d" + i} x={X(i)} y={H - 8} textAnchor="middle" fontSize="7" fill="#555">{new Date(p.date).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}</text>
+              ) : null)}
+            </svg>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, fontSize: 11 }}>
+              <span style={{ color: "#666" }}>Best: <b style={{ color: "#FFD166" }}>{vMax} {mUnit}</b></span>
+              <span style={{ color: "#666" }}>Zuletzt: <b style={{ color: mColor }}>{last} {mUnit}</b></span>
+            </div>
+          </>
+        )}
+      </div>
+    </Overlay>
+  );
+}
+
 function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isMobile,challenges}){
 
   const [addToChallengeWO, setAddToChallengeWO] = useState(null);
@@ -5952,17 +6197,26 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
       
       const currentValue = Object.values(progress).reduce((a, b) => a + b, 0);
       const processedWorkouts = [...processed, w.id];
-      
+      const progressLog = [...(freshData.progressLog || []), { date: w.date || todayStr(), uid, amount: contribution, ts: Date.now() }];
+
       let status = freshData.status || "active";
-      if (currentValue >= freshData.targetValue) {
+      let winner = freshData.winner || null;
+      if (freshData.mode === "race") {
+        if (status === "active" && progress[uid] >= freshData.targetValue) {
+          status = "completed";
+          winner = uid;
+        }
+      } else if (currentValue >= freshData.targetValue) {
         status = "completed";
       }
-      
+
       await challengeRef.update({
         progress,
         currentValue,
         status,
-        processedWorkouts
+        processedWorkouts,
+        progressLog,
+        ...(winner ? { winner } : {})
       });
       
       const unitLabel = freshData.type === "km" ? "km" : freshData.type === "weight" ? "kg" : freshData.type === "sets" ? "Sätze" : freshData.type === "hiit" ? "HIIT-Trainings" : freshData.type === "stretch" ? "Dehn-Trainings" : "Trainings";
@@ -5978,6 +6232,42 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
   const [compMode, setCompMode] = useState(false);
   const [compSel, setCompSel] = useState([]);
   const [showComp, setShowComp] = useState(false);
+  const [filters, setFilters] = useState({plan:"all", type:"all", range:"all", search:""});
+  const [exGraph, setExGraph] = useState(null);
+
+  const woVol = w => (w.exercises||[]).reduce((a,e) => {
+    if (e.isHiit) return a;
+    return a + (e.sets||[]).reduce((b,st) => b + (st.done !== false ? (parseFloat(st.weight)||0) * (parseInt(st.reps)||0) : 0), 0);
+  }, 0);
+
+  const typeOptions = React.useMemo(() => {
+    const set = new Set(data.plans.flatMap(p => p.types || []));
+    return [...set].sort();
+  }, [data.plans]);
+
+  const activeFilterCount = (filters.plan!=="all"?1:0)+(filters.type!=="all"?1:0)+(filters.range!=="all"?1:0)+(filters.search.trim()?1:0);
+
+  const filtered = sorted.filter(w => {
+    if (filters.plan !== "all" && w.planId !== filters.plan) return false;
+    if (filters.type !== "all") {
+      if (filters.type === "__hiit") { if (!w.hiitMode) return false; }
+      else {
+        const plan = data.plans.find(p => p.id === w.planId);
+        if (!((plan?.types) || []).includes(filters.type)) return false;
+      }
+    }
+    if (filters.range !== "all") {
+      const days = parseInt(filters.range);
+      if (new Date(w.date) < new Date(Date.now() - days * 86400000)) return false;
+    }
+    if (filters.search.trim()) {
+      const q = filters.search.trim().toLowerCase();
+      const inName = (w.name || "").toLowerCase().includes(q);
+      const inEx = (w.exercises || []).some(e => (e.name || "").toLowerCase().includes(q));
+      if (!inName && !inEx) return false;
+    }
+    return true;
+  });
   
   const getWeekNumber = (d) => {
     const t = new Date(d.getTime());
@@ -5997,7 +6287,7 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
     return `${mon.toLocaleDateString("de-DE", {day:"2-digit", month:"2-digit"})} - ${sun.toLocaleDateString("de-DE", {day:"2-digit", month:"2-digit"})}`;
   };
 
-  const grouped = sorted.reduce((acc, w) => {
+  const grouped = filtered.reduce((acc, w) => {
     const d = new Date(w.date);
     const wn = getWeekNumber(d);
     const yr = d.getFullYear();
@@ -6151,7 +6441,10 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
               return(
                 <div key={i} style={{...s.exBlock,background:"rgba(255,255,255,0.03)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",border:"1px solid rgba(255,255,255,0.07)",padding:18}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                    <div style={{fontWeight:800,fontSize:16}}>{ex.name}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                      <div style={{fontWeight:800,fontSize:16}}>{ex.name}</div>
+                      <button title="Fortschritt anzeigen" style={{background:"rgba(255,107,53,0.1)",border:"1px solid rgba(255,107,53,0.25)",borderRadius:8,padding:"3px 8px",fontSize:12,cursor:"pointer",color:"#FF6B35",flexShrink:0,lineHeight:1.2}} onClick={e=>{e.stopPropagation();setExGraph(ex.name);}}>📈</button>
+                    </div>
                     <div style={{display:"flex",gap:6}}>
                       {eVol > 0 && <div style={{fontSize:10,fontWeight:700,color:"#A78BFA",background:"#A78BFA15",padding:"3px 8px",borderRadius:6}}>{eVol}kg</div>}
                       {eKcal > 0 && <div style={{fontSize:10,fontWeight:700,color:"#FF6B6B",background:"#FF6B6B15",padding:"3px 8px",borderRadius:6}}>{eKcal} kcal</div>}
@@ -6229,6 +6522,7 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
             {IC.trash} Training aus Verlauf löschen
           </button>
         </div>
+        {exGraph && <ExerciseProgressModal name={exGraph} workouts={data.workouts} onClose={()=>setExGraph(null)} isMobile={isMobile}/>}
       </div>
     );
   }
@@ -6260,16 +6554,145 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
           >Vergleichen</button>
         </div>
       )}
+      {/* Filterleiste */}
+      {sorted.length > 0 && !compMode && (
+        <div className="chalCardIn" style={{display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center"}}>
+          <input
+            style={{...s.inp, flex:"1 1 160px", minWidth:140, padding:"9px 12px", fontSize:13, borderRadius:12}}
+            placeholder="🔍 Übung oder Training suchen…"
+            value={filters.search}
+            onChange={e=>setFilters(f=>({...f, search:e.target.value}))}
+          />
+          <FFSelect
+            value={filters.plan}
+            onChange={v=>setFilters(f=>({...f, plan:v}))}
+            options={[
+              {value:"all", label:"Alle Pläne", icon:"📋"},
+              ...data.plans.map(p=>({value:p.id, label:p.name, dot:p.color, color:p.color}))
+            ]}
+          />
+          <FFSelect
+            value={filters.type}
+            onChange={v=>setFilters(f=>({...f, type:v}))}
+            options={[
+              {value:"all", label:"Alle Arten", icon:"🎯"},
+              {value:"__hiit", label:"HIIT", icon:"⚡", color:"#FFD166"},
+              ...typeOptions.map(t=>({value:t, label:t, dot:TYPE_COLORS[t]||"#888", color:TYPE_COLORS[t]}))
+            ]}
+          />
+          <FFSelect
+            value={filters.range}
+            onChange={v=>setFilters(f=>({...f, range:v}))}
+            options={[
+              {value:"all", label:"Gesamter Zeitraum", icon:"🗓️"},
+              {value:"30", label:"Letzte 30 Tage", icon:"🗓️"},
+              {value:"90", label:"Letzte 3 Monate", icon:"🗓️"},
+              {value:"365", label:"Letztes Jahr", icon:"🗓️"}
+            ]}
+          />
+          {activeFilterCount > 0 && (
+            <button style={{...s.secBtn, padding:"8px 12px", fontSize:11, borderColor:"#EF476F", color:"#EF476F", display:"flex", alignItems:"center", gap:5}} onClick={()=>setFilters({plan:"all", type:"all", range:"all", search:""})}>
+              {IC.x} Zurücksetzen ({activeFilterCount})
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Heatmap + Trainingsarten-Verteilung */}
+      {sorted.length > 0 && !compMode && (()=>{
+        // Aktivitäts-Heatmap: letzte 12 Wochen, Score = Volumen + Dauer
+        const dayScore = {};
+        data.workouts.forEach(w => { dayScore[w.date] = (dayScore[w.date]||0) + woVol(w) + (parseInt(w.duration)||0)*10; });
+        const nowD = new Date(); nowD.setHours(12,0,0,0);
+        const dow = (nowD.getDay()+6)%7; // Mo=0
+        const monday = new Date(nowD.getTime() - dow*86400000);
+        const weeks = [];
+        for (let wi=11; wi>=0; wi--) {
+          const col = [];
+          for (let di=0; di<7; di++) {
+            const d = new Date(monday.getTime() - wi*7*86400000 + di*86400000);
+            const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+            col.push({ds, future: d > nowD, score: dayScore[ds]||0, label: d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"})});
+          }
+          weeks.push(col);
+        }
+        const maxScore = Math.max(1, ...weeks.flat().map(c=>c.score));
+        // Trainingsarten-Verteilung: letzte 4 Wochen
+        const cutoff = Date.now() - 28*86400000;
+        const typeCount = {}; let typeTotal = 0;
+        data.workouts.forEach(w => {
+          if (new Date(w.date) < cutoff) return;
+          if (w.hiitMode) { typeCount["⚡ HIIT"]=(typeCount["⚡ HIIT"]||0)+1; typeTotal++; }
+          const plan = data.plans.find(p=>p.id===w.planId);
+          ((plan?.types)||[]).forEach(t => { typeCount[t]=(typeCount[t]||0)+1; typeTotal++; });
+        });
+        const distEntries = Object.entries(typeCount).sort((a,b)=>b[1]-a[1]).slice(0,6);
+        return (
+          <div style={{display:"grid", gridTemplateColumns:isMobile?"1fr":"3fr 2fr", gap:12, marginBottom:20}}>
+            <div className="chalCardIn" style={{animationDelay:"0.05s", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:16, padding:"14px 16px"}}>
+              <div style={{fontSize:11, fontWeight:800, color:"#888", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:10}}>🔥 Aktivität · letzte 12 Wochen</div>
+              <div style={{display:"flex", gap:3, justifyContent:"space-between"}}>
+                {weeks.map((col,wi)=>(
+                  <div key={wi} style={{display:"flex", flexDirection:"column", gap:3, flex:1}}>
+                    {col.map(cell=>(
+                      <div key={cell.ds} title={cell.future?"":`${cell.label}${cell.score>0?` · aktiv`:" · kein Training"}`} style={{
+                        width:"100%", aspectRatio:"1", borderRadius:3,
+                        background: cell.future ? "transparent" : cell.score>0 ? `rgba(255,107,53,${Math.max(0.2, Math.min(1, cell.score/maxScore)).toFixed(2)})` : "rgba(255,255,255,0.045)",
+                        boxShadow: cell.score/maxScore > 0.7 ? "0 0 5px rgba(255,107,53,0.5)" : "none"
+                      }}/>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div style={{display:"flex", justifyContent:"space-between", marginTop:6, fontSize:9, color:"#555"}}>
+                <span>{weeks[0][0].label}</span><span>heute</span>
+              </div>
+            </div>
+            <div className="chalCardIn" style={{animationDelay:"0.1s", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:16, padding:"14px 16px"}}>
+              <div style={{fontSize:11, fontWeight:800, color:"#888", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:10}}>🎯 Trainingsarten · 4 Wochen</div>
+              {distEntries.length === 0 ? (
+                <div style={{fontSize:11, color:"#555", fontStyle:"italic", padding:"14px 0", textAlign:"center"}}>Keine Trainings in den letzten 4 Wochen.</div>
+              ) : (
+                <div style={{display:"flex", flexDirection:"column", gap:7}}>
+                  {distEntries.map(([t, cnt], i)=>{
+                    const pct = Math.round(cnt/typeTotal*100);
+                    const color = TYPE_COLORS[t] || "#FFD166";
+                    return (
+                      <div key={t}>
+                        <div style={{display:"flex", justifyContent:"space-between", fontSize:10, marginBottom:2}}>
+                          <span style={{color:"#aaa", fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{t}</span>
+                          <span style={{color, fontWeight:900, flexShrink:0}}>{pct}%</span>
+                        </div>
+                        <div style={{width:"100%", height:5, background:"rgba(255,255,255,0.04)", borderRadius:3, overflow:"hidden"}}>
+                          <div className="chalBarIn" style={{width:`${pct}%`, height:"100%", background:color, borderRadius:3, opacity:0.85, animationDelay:`${0.2+i*0.08}s`, boxShadow:`0 0 6px ${color}60`}}/>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {!sorted.length&&<div style={{textAlign:"center",padding:"70px 20px",border:"2px dashed rgba(255,255,255,0.08)",borderRadius:18,background:"rgba(255,255,255,0.02)"}}>
         <div style={{width:64,height:64,margin:"0 auto 16px",borderRadius:"50%",background:"rgba(255,107,53,0.08)",border:"1px dashed rgba(255,107,53,0.3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28}}>🏋️</div>
         <div style={{fontSize:15,fontWeight:800,color:"#888",marginBottom:6}}>Noch keine Trainings aufgezeichnet</div>
         <div style={{fontSize:12,color:"#555"}}>Starte dein erstes Training – dein Verlauf erscheint dann hier.</div>
       </div>}
+      {sorted.length > 0 && !filtered.length && (
+        <div className="fadeIn" style={{textAlign:"center",padding:"40px 20px",border:"2px dashed rgba(255,255,255,0.08)",borderRadius:18,background:"rgba(255,255,255,0.02)"}}>
+          <div style={{fontSize:28,marginBottom:8}}>🔍</div>
+          <div style={{fontSize:14,fontWeight:800,color:"#888",marginBottom:6}}>Keine Trainings passen zu den Filtern</div>
+          <button style={{...s.secBtn, padding:"7px 14px", fontSize:12, marginTop:4}} onClick={()=>setFilters({plan:"all", type:"all", range:"all", search:""})}>Filter zurücksetzen</button>
+        </div>
+      )}
       <div style={{display:"flex",flexDirection:"column",gap: isMobile ? 28 : 36}}>
         {Object.values(grouped).map((group, gi) => (
           <div key={gi} style={{background:"linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 60%), rgba(18,18,24,0.5)", backdropFilter:"blur(30px) saturate(200%)", WebkitBackdropFilter:"blur(30px) saturate(200%)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:22, padding: isMobile ? 16 : 20, boxShadow:"inset 0 1px 1px rgba(255,255,255,0.07), 0 12px 48px rgba(0,0,0,0.5)"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingLeft:4,marginBottom:18, borderBottom:"1px solid rgba(255,255,255,0.06)", paddingBottom:12}}>
-              <div style={{display:"flex",alignItems:"baseline",gap:10}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                 {compMode && (
                   <input 
                     type="checkbox" 
@@ -6285,6 +6708,21 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
                 <span style={{fontSize:24,fontWeight:900,fontFamily:"'DM Sans',sans-serif",color:"#F0EDE8"}}>KW {group.wn}</span>
                 <span style={{fontSize:14,fontWeight:700,color:"#666"}}>({group.dateRange})</span>
                 {!isMobile&&<span style={{fontSize:10,fontWeight:800,color:"#FF6B35",background:"rgba(255,107,53,0.12)",border:"1px solid rgba(255,107,53,0.25)",borderRadius:8,padding:"3px 9px",alignSelf:"center"}}>{group.workouts.length}x · {(()=>{const m=group.workouts.reduce((a,w)=>a+(parseInt(w.duration)||0),0);return m>=120?`${Math.round(m/60)}h`:`${m}min`;})()}</span>}
+                {(()=>{
+                  const prev = Object.values(grouped)[gi+1];
+                  if (!prev) return null;
+                  const volOf = g => g.workouts.reduce((a,w)=>a+woVol(w),0);
+                  const minOf = g => g.workouts.reduce((a,w)=>a+(parseInt(w.duration)||0),0);
+                  const mk = (c,p) => p>0 ? Math.round((c-p)/p*100) : null;
+                  const dv = mk(volOf(group), volOf(prev));
+                  const dm = mk(minOf(group), minOf(prev));
+                  const chip = (d,lbl) => (d===null||d===0) ? null : (
+                    <span key={lbl} title={`${lbl} im Vergleich zur vorherigen Woche in der Liste`} style={{fontSize:10,fontWeight:900,color:d>0?"#06D6A0":"#EF476F",background:d>0?"rgba(6,214,160,0.1)":"rgba(239,71,111,0.1)",border:`1px solid ${d>0?"rgba(6,214,160,0.25)":"rgba(239,71,111,0.25)"}`,borderRadius:8,padding:"3px 8px",alignSelf:"center",whiteSpace:"nowrap"}}>
+                      {d>0?"▲":"▼"} {Math.abs(d)}% {lbl}
+                    </span>
+                  );
+                  return <>{chip(dv,"Vol.")}{chip(dm,"Zeit")}</>;
+                })()}
               </div>
               {!compMode && (
                 <button 
@@ -6433,9 +6871,8 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
                       </div>
                     </div>}
                   </div>
-                    );
-                  })()}
-                );\n              })}
+                );
+              })}
             </div>
           </div>
         ))}
@@ -7536,6 +7973,74 @@ function ChallengeTypeSelect({value, onChange, height=48}){
   );
 }
 
+// Wettrennen-Graph: kumulierte Fortschrittslinien pro Teilnehmer + Soll-Pace-Linie
+function ChallengeRaceChart({ c, myUid, userNames, user, unitLabel }) {
+  const log = [...(c.progressLog || [])].sort((a, b) => (a.ts || 0) - (b.ts || 0) || String(a.date).localeCompare(String(b.date)));
+  if (!log.length) return null;
+
+  const PALETTE = ["#FFD166", "#A78BFA", "#4CC9F0", "#06D6A0", "#EF476F", "#FF9F1C"];
+  const start = c.createdAt || new Date(log[0].date + "T00:00").getTime();
+  const end = new Date(c.deadline + "T23:59:59").getTime();
+  const now = Math.min(Date.now(), end);
+  const span = Math.max(1, end - start);
+  const target = c.targetValue || 1;
+
+  const parts = c.participants || [];
+  let paletteIdx = 0;
+  const series = parts.map(pUid => {
+    const color = pUid === myUid ? "#FF6B35" : PALETTE[(paletteIdx++) % PALETTE.length];
+    let cum = 0;
+    const pts = [[start, 0]];
+    log.forEach(e => {
+      if (e.uid !== pUid) return;
+      const t = Math.min(end, Math.max(start, e.ts || new Date(e.date + "T12:00").getTime()));
+      cum += e.amount || 0;
+      pts.push([t, cum]);
+    });
+    if (cum > 0 || pUid === myUid) pts.push([now, cum]);
+    const name = userNames[pUid] || (pUid === myUid ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Ich" : "Sportler");
+    return { uid: pUid, color, pts, cum, name };
+  }).filter(sr => sr.cum > 0 || sr.uid === myUid);
+  if (!series.length) return null;
+
+  const yMax = Math.max(target, ...series.map(sr => sr.cum)) * 1.05;
+  const W = 300, H = 110, L = 8, R = 294, T = 10, B = 96;
+  const X = t => L + ((t - start) / span) * (R - L);
+  const Y = v => B - (v / yMax) * (B - T);
+  const toPath = pts => pts.map((p, i) => `${i === 0 ? "M" : "L"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ");
+
+  return (
+    <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10, marginTop: 10 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: "#555", textTransform: "uppercase", marginBottom: 6 }}>📈 Wettrennen</div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+        {/* Ziellinie */}
+        <line x1={L} y1={Y(target)} x2={R} y2={Y(target)} stroke="rgba(255,209,102,0.35)" strokeWidth="1" strokeDasharray="2 3"/>
+        <text x={R} y={Y(target) - 3} textAnchor="end" fontSize="7" fill="#FFD166" fontWeight="800">Ziel: {c.targetValue} {unitLabel}</text>
+        {/* Soll-Pace */}
+        <line x1={X(start)} y1={Y(0)} x2={X(end)} y2={Y(target)} stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="4 4"/>
+        <text x={X(end) - 2} y={Y(target) + 10} textAnchor="end" fontSize="6.5" fill="#666">Soll-Pace</text>
+        {/* Heute-Markierung */}
+        {now < end && <line x1={X(now)} y1={T} x2={X(now)} y2={B} stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>}
+        {/* Grundlinie */}
+        <line x1={L} y1={B} x2={R} y2={B} stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
+        {series.map(sr => (
+          <g key={sr.uid}>
+            <path className="lineDraw" pathLength="1" d={toPath(sr.pts)} fill="none" stroke={sr.color} strokeWidth={sr.uid === myUid ? 2.2 : 1.6} strokeLinejoin="round" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 3px ${sr.color}70)` }}/>
+            <circle cx={X(sr.pts[sr.pts.length - 1][0])} cy={Y(sr.cum)} r="2.6" fill={sr.color}/>
+          </g>
+        ))}
+      </svg>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 4 }}>
+        {series.map(sr => (
+          <span key={sr.uid} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: sr.uid === myUid ? "#F0EDE8" : "#888", fontWeight: sr.uid === myUid ? 800 : 500 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: sr.color, display: "inline-block" }}/>{sr.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ChallengesPage({user,setUser,notify,isMobile}){
   const myUid=getUid();
   const [challenges,setChallenges]=useState([]);
@@ -7551,6 +8056,7 @@ function ChallengesPage({user,setUser,notify,isMobile}){
     title:"",
     description:"",
     type:"workouts",
+    mode:"coop",
     targetValue:10,
     deadline:"",
     penaltyPoints:100
@@ -7719,6 +8225,9 @@ function ChallengesPage({user,setUser,notify,isMobile}){
         creator: myUid,
         creatorName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || user.email || "Sportler",
         type: form.type,
+        mode: form.mode || "coop",
+        winner: null,
+        progressLog: [],
         targetValue: parseFloat(form.targetValue) || 10,
         currentValue: 0,
         deadline: form.deadline,
@@ -7732,7 +8241,7 @@ function ChallengesPage({user,setUser,notify,isMobile}){
       await window.firebaseDoc(window.firebaseDb, "challenges", id).set(newChal);
       notify("Challenge erstellt! 🏆");
       setCreateOpen(false);
-      setForm({ title:"", description:"", type:"workouts", targetValue:10, deadline:"", penaltyPoints:100 });
+      setForm({ title:"", description:"", type:"workouts", mode:"coop", targetValue:10, deadline:"", penaltyPoints:100 });
     } catch(e) {
       notify(`Erstellung fehlgeschlagen: ${e.message}`, "error");
     }
@@ -7742,86 +8251,176 @@ function ChallengesPage({user,setUser,notify,isMobile}){
   const activeChallenges = challenges.filter(c => c.status === "active");
   const pastChallenges = challenges.filter(c => c.status !== "active");
   const list = tab === "active" ? activeChallenges : pastChallenges;
+  const wonCount = challenges.filter(c => c.status === "completed").length;
+  const lostCount = challenges.filter(c => c.status === "failed").length;
+  const winRate = (wonCount + lostCount) > 0 ? Math.round(wonCount / (wonCount + lostCount) * 100) : null;
 
   return (
     <div style={{...s.page, padding: isMobile ? "10px 10px 80px" : s.page.padding, position: "relative"}}>
       <div style={{...s.pageHead, display: "flex", justifyContent: "space-between", alignItems: "center"}}>
         <div>
-          <h1 style={{...s.pageTitle, fontSize: isMobile ? 26 : 32}}>Challenges</h1>
+          <h1 style={{...s.pageTitle, fontSize: isMobile ? 26 : 32}}><span style={{display:"inline-block", animation:"trophyFloat 3s ease-in-out infinite", marginRight:8}}>🏆</span>Challenges</h1>
           <p style={s.pageSub}>{activeChallenges.length} aktive Challenges mit deinen Freunden</p>
         </div>
         <button style={s.primaryBtn} onClick={() => setCreateOpen(true)}>{IC.plus} Neue Challenge</button>
       </div>
 
+      {/* Stats overview */}
+      <div style={{display:"grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap:12, marginBottom:22}}>
+        {[
+          {label:"Aktiv", value:activeChallenges.length, color:"#06D6A0", icon:"🔥"},
+          {label:"Gewonnen", value:wonCount, color:"#FFD166", icon:"🏅"},
+          {label:"Verloren", value:lostCount, color:"#EF476F", icon:"💀"},
+          {label:"Erfolgsquote", value:winRate === null ? "–" : `${winRate}%`, color:"#A78BFA", icon:"📈"}
+        ].map((st,i)=>(
+          <div key={st.label} className="statCard chalCardIn" style={{animationDelay:`${i*0.07}s`, background:`linear-gradient(160deg, ${st.color}14 0%, rgba(255,255,255,0.02) 60%)`, border:`1px solid ${st.color}30`, borderRadius:16, padding:"14px 16px", display:"flex", flexDirection:"column", gap:4}}>
+            <div style={{display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+              <span style={{fontSize:10, fontWeight:800, color:"#888", textTransform:"uppercase", letterSpacing:"0.5px"}}>{st.label}</span>
+              <span style={{fontSize:14}}>{st.icon}</span>
+            </div>
+            <div style={{fontFamily:"'DM Sans',sans-serif", fontWeight:900, fontSize:24, color:st.color, textShadow:`0 0 18px ${st.color}50`}}>{st.value}</div>
+          </div>
+        ))}
+      </div>
+
       <div style={{display:"flex", gap:10, marginBottom:20, borderBottom:"1px solid rgba(255,255,255,0.06)", paddingBottom:10}}>
-        <button onClick={() => setTab("active")} style={{background:"transparent", border:"none", color:tab==="active"?"#FF6B35":"#666", fontWeight:800, fontSize:14, padding:"6px 12px", cursor:"pointer", borderBottom:tab==="active"?"2px solid #FF6B35":"none"}}>Aktiv ({activeChallenges.length})</button>
-        <button onClick={() => setTab("history")} style={{background:"transparent", border:"none", color:tab==="history"?"#FF6B35":"#666", fontWeight:800, fontSize:14, padding:"6px 12px", cursor:"pointer", borderBottom:tab==="history"?"2px solid #FF6B35":"none"}}>Verlauf ({pastChallenges.length})</button>
+        <button onClick={() => setTab("active")} style={{background:"transparent", border:"none", color:tab==="active"?"#FF6B35":"#666", fontWeight:800, fontSize:14, padding:"6px 12px", cursor:"pointer", borderBottom:tab==="active"?"2px solid #FF6B35":"none", transition:"color 0.2s"}}>Aktiv ({activeChallenges.length})</button>
+        <button onClick={() => setTab("history")} style={{background:"transparent", border:"none", color:tab==="history"?"#FF6B35":"#666", fontWeight:800, fontSize:14, padding:"6px 12px", cursor:"pointer", borderBottom:tab==="history"?"2px solid #FF6B35":"none", transition:"color 0.2s"}}>Verlauf ({pastChallenges.length})</button>
       </div>
 
       {list.length === 0 ? (
-        <div style={{textAlign:"center",padding:"50px 20px",border:"2px dashed rgba(255,255,255,0.08)",borderRadius:18,background:"rgba(255,255,255,0.02)"}}>
-          <div style={{fontSize:32,marginBottom:10}}>🏆</div>
+        <div className="chalCardIn" style={{textAlign:"center",padding:"50px 20px",border:"2px dashed rgba(255,255,255,0.08)",borderRadius:18,background:"rgba(255,255,255,0.02)"}}>
+          <div style={{fontSize:38,marginBottom:10, display:"inline-block", animation:"trophyFloat 3s ease-in-out infinite"}}>🏆</div>
           <div style={{fontSize:15,fontWeight:800,color:"#888",marginBottom:6}}>Keine Challenges gefunden</div>
           <div style={{fontSize:12,color:"#555"}}>Erstelle eine neue Challenge und lade deine Freunde ein!</div>
         </div>
       ) : (
         <div style={{display:"grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 16}}>
-          {list.map(c => {
-            const progressPercent = Math.min(100, Math.round((c.currentValue / c.targetValue) * 100)) || 0;
+          {list.map((c, cardIdx) => {
+            const isRace = c.mode === "race";
+            const bestProgress = Math.max(0, ...Object.values(c.progress || {}));
+            const progressPercent = Math.min(100, Math.round(((isRace ? bestProgress : c.currentValue) / c.targetValue) * 100)) || 0;
+            const winnerName = c.winner ? (userNames[c.winner] || (c.winner === myUid ? "Ich" : "Sportler")) : null;
             const unitLabel = c.type === "km" ? "km" : c.type === "weight" ? "kg" : c.type === "hiit" ? "HIIT-Trainings" : c.type === "sets" ? "Sätze" : c.type === "stretch" ? "Dehn-Trainings" : "Trainings";
             const deadlineFormatted = new Date(c.deadline).toLocaleDateString("de-DE");
-            
+            const daysLeft = Math.ceil((new Date(c.deadline + "T23:59:59") - new Date()) / 86400000);
+            const isDone = c.status === "completed";
+            const isFailed = c.status === "failed";
+            const accent = isDone ? "#FFD166" : isFailed ? "#EF476F" : "#FF6B35";
+            const RING_R = 34, RING_C = 2 * Math.PI * RING_R;
+            const ringOffset = RING_C * (1 - progressPercent / 100);
+            const gradId = `chalGrad_${c.id}`;
+            const ranked = [...(c.participants || [])].sort((a, b) => ((c.progress || {})[b] || 0) - ((c.progress || {})[a] || 0));
+            const topProgress = Math.max(1, ...ranked.map(p => (c.progress || {})[p] || 0));
+            const medals = ["🥇", "🥈", "🥉"];
+            const urgency = daysLeft <= 2 ? "#EF476F" : daysLeft <= 7 ? "#FFD166" : "#06D6A0";
+
             return (
-              <div key={c.id} style={{...s.card, background:"linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)", borderColor:"rgba(255,255,255,0.08)", padding: 18, position:"relative"}}>
-                <div style={{display:"flex", justifyTemplate:"space-between", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8}}>
-                  <h3 style={{...s.cardTitle, margin: 0, fontSize: 16, color:"#F0EDE8"}}>{c.title}</h3>
-                  <span style={{
-                    fontSize: 10,
-                    fontWeight: 900,
-                    padding: "3px 8px",
-                    borderRadius: 6,
-                    background: c.status === "active" ? "rgba(6,214,160,0.12)" : c.status === "completed" ? "rgba(255,209,102,0.12)" : "rgba(239,71,111,0.12)",
-                    color: c.status === "active" ? "#06D6A0" : c.status === "completed" ? "#FFD166" : "#EF476F",
-                    border: `1px solid ${c.status === "active" ? "rgba(6,214,160,0.2)" : c.status === "completed" ? "rgba(255,209,102,0.2)" : "rgba(239,71,111,0.2)"}`
-                  }}>
-                    {c.status === "active" ? "Aktiv" : c.status === "completed" ? "Erfolgreich" : "Fehlgeschlagen"}
-                  </span>
+              <div key={c.id} className="chalCard chalCardIn" style={{...s.card, animationDelay:`${cardIdx*0.08}s`, background:`linear-gradient(150deg, ${accent}12 0%, rgba(255,255,255,0.02) 45%, rgba(18,18,24,0.5) 100%)`, border:`1px solid ${accent}30`, borderRadius:18, padding: 18, position:"relative", overflow:"hidden", ...(isDone ? {animation:`chalCardIn 0.5s cubic-bezier(0.16,1,0.3,1) ${cardIdx*0.08}s both, winGlow 2.5s ease-in-out infinite`} : {}), ...(isFailed ? {filter:"saturate(0.75)"} : {})}}>
+                {/* decorative glow blob */}
+                <div style={{position:"absolute", top:-60, right:-60, width:160, height:160, borderRadius:"50%", background:`radial-gradient(circle, ${accent}22 0%, transparent 70%)`, pointerEvents:"none"}}/>
+
+                <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, marginBottom:10}}>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:6}}>
+                      <h3 style={{...s.cardTitle, margin: 0, fontSize: 16, color:"#F0EDE8"}}>{c.title}</h3>
+                      {isRace && (
+                        <span style={{fontSize:10, fontWeight:900, padding:"3px 8px", borderRadius:6, background:"rgba(167,139,250,0.12)", color:"#A78BFA", border:"1px solid rgba(167,139,250,0.25)"}}>⚔️ Duell</span>
+                      )}
+                      <span style={{
+                        fontSize: 10, fontWeight: 900, padding: "3px 8px", borderRadius: 6,
+                        background: c.status === "active" ? "rgba(6,214,160,0.12)" : isDone ? "rgba(255,209,102,0.12)" : "rgba(239,71,111,0.12)",
+                        color: c.status === "active" ? "#06D6A0" : isDone ? "#FFD166" : "#EF476F",
+                        border: `1px solid ${c.status === "active" ? "rgba(6,214,160,0.2)" : isDone ? "rgba(255,209,102,0.2)" : "rgba(239,71,111,0.2)"}`
+                      }}>
+                        {c.status === "active" ? "Aktiv" : isDone ? (isRace && winnerName ? `🥇 ${winnerName}` : "🏅 Erfolgreich") : "Fehlgeschlagen"}
+                      </span>
+                    </div>
+                    <p style={{fontSize: 12, color: "#888", margin: 0, lineHeight: 1.4}}>{c.description || "Keine Beschreibung vorhanden."}</p>
+                  </div>
+
+                  {/* Progress ring */}
+                  <div style={{position:"relative", width:76, height:76, flexShrink:0}}>
+                    <svg width="76" height="76" viewBox="0 0 76 76">
+                      <defs>
+                        <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#A78BFA"/>
+                          <stop offset="100%" stopColor={accent}/>
+                        </linearGradient>
+                      </defs>
+                      <circle cx="38" cy="38" r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6"/>
+                      <circle className="ringIn" cx="38" cy="38" r={RING_R} fill="none" stroke={`url(#${gradId})`} strokeWidth="6" strokeLinecap="round"
+                        strokeDasharray={RING_C} strokeDashoffset={ringOffset}
+                        transform="rotate(-90 38 38)" style={{filter:`drop-shadow(0 0 6px ${accent}60)`, animationDelay:`${0.2 + cardIdx*0.08}s`}}/>
+                    </svg>
+                    <div style={{position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center"}}>
+                      <span style={{fontFamily:"'DM Sans',sans-serif", fontWeight:900, fontSize:16, color:accent}}>{progressPercent}%</span>
+                    </div>
+                  </div>
                 </div>
 
-                <p style={{fontSize: 12, color: "#888", margin: "0 0 14px", lineHeight: 1.4}}>{c.description || "Keine Beschreibung vorhanden."}</p>
-                
-                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16, fontSize:11}}>
-                  <div style={{background:"rgba(255,255,255,0.02)", padding:8, borderRadius:8}}>
-                    <span style={{color:"#666"}}>Frist:</span> <strong style={{color:"#F0EDE8"}}>{deadlineFormatted}</strong>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:14, fontSize:11}}>
+                  <div style={{background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 6px", borderRadius:10, textAlign:"center"}}>
+                    <div style={{fontSize:9, color:"#666", textTransform:"uppercase", fontWeight:800, marginBottom:2}}>Frist</div>
+                    <strong style={{color:"#F0EDE8", fontSize:11}}>{deadlineFormatted}</strong>
                   </div>
-                  <div style={{background:"rgba(255,255,255,0.02)", padding:8, borderRadius:8}}>
-                    <span style={{color:"#666"}}>Strafe:</span> <strong style={{color:"#EF476F"}}>-{c.penaltyPoints} FP</strong>
+                  <div style={{background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 6px", borderRadius:10, textAlign:"center"}}>
+                    <div style={{fontSize:9, color:"#666", textTransform:"uppercase", fontWeight:800, marginBottom:2}}>Verbleibend</div>
+                    {c.status === "active" ? (
+                      <strong style={{color:urgency, fontSize:11, ...(daysLeft <= 2 ? {animation:"urgentPulse 1.2s ease-in-out infinite"} : {})}}>
+                        {daysLeft <= 0 ? "Heute!" : daysLeft === 1 ? "1 Tag" : `${daysLeft} Tage`} ⏳
+                      </strong>
+                    ) : (
+                      <strong style={{color:"#666", fontSize:11}}>Beendet</strong>
+                    )}
+                  </div>
+                  <div style={{background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 6px", borderRadius:10, textAlign:"center"}}>
+                    <div style={{fontSize:9, color:"#666", textTransform:"uppercase", fontWeight:800, marginBottom:2}}>Strafe</div>
+                    <strong style={{color:"#EF476F", fontSize:11}}>-{c.penaltyPoints} FP</strong>
                   </div>
                 </div>
 
                 {/* Progress bar */}
                 <div style={{marginBottom:14}}>
                   <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:5, fontSize:12}}>
-                    <span style={{color:"#888"}}>Gemeinsamer Fortschritt</span>
-                    <strong style={{color:"#FFD166"}}>{c.currentValue} / {c.targetValue} {unitLabel} ({progressPercent}%)</strong>
+                    <span style={{color:"#888"}}>{isRace ? "Führender" : "Gemeinsamer Fortschritt"}</span>
+                    <strong style={{color:"#FFD166"}}>{isRace ? bestProgress : c.currentValue} / {c.targetValue} {unitLabel}</strong>
                   </div>
-                  <div style={{width:"100%", height:8, background:"rgba(255,255,255,0.05)", borderRadius:4, overflow:"hidden"}}>
-                    <div style={{width:`${progressPercent}%`, height:"100%", background:"linear-gradient(90deg, #A78BFA 0%, #FF6B35 100%)", borderRadius:4, transition:"width 0.5s ease"}}/>
+                  <div style={{width:"100%", height:10, background:"rgba(255,255,255,0.05)", borderRadius:5, overflow:"hidden", position:"relative"}}>
+                    <div className="chalBarIn" style={{width:`${progressPercent}%`, height:"100%", background:`linear-gradient(90deg, #A78BFA 0%, ${accent} 100%)`, borderRadius:5, position:"relative", overflow:"hidden", animationDelay:`${0.25 + cardIdx*0.08}s`, boxShadow:`0 0 10px ${accent}50`}}>
+                      {c.status === "active" && progressPercent > 5 && (
+                        <div style={{position:"absolute", top:0, left:0, height:"100%", width:"35%", background:"linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%)", animation:"chalShimmer 2.4s ease-in-out infinite"}}/>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {/* Participants */}
+                {/* Race chart (nur wenn Fortschritts-Log vorhanden) */}
+                <ChallengeRaceChart c={c} myUid={myUid} userNames={userNames} user={user} unitLabel={unitLabel}/>
+
+                {/* Participant leaderboard */}
                 <div style={{borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:10, marginTop:10}}>
-                  <div style={{fontSize:11, fontWeight:800, color:"#555", textTransform:"uppercase", marginBottom:6}}>Teilnehmer ({c.participants.length})</div>
-                  <div style={{display:"flex", flexDirection:"column", gap:6}}>
-                    {c.participants.map(pUid => {
+                  <div style={{fontSize:11, fontWeight:800, color:"#555", textTransform:"uppercase", marginBottom:8}}>{isRace ? "⚔️ Duell-Stand" : "Rangliste"} ({ranked.length})</div>
+                  <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                    {ranked.map((pUid, rank) => {
                       const pProgress = (c.progress || {})[pUid] || 0;
                       const pPercent = Math.round((pProgress / c.targetValue) * 100) || 0;
-                      const name = userNames[pUid] || (pUid === myUid ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Ich" : "Sportler");
+                      const relWidth = Math.min(100, Math.round((pProgress / (isRace ? c.targetValue : topProgress)) * 100)) || 0;
+                      const isMe = pUid === myUid;
+                      const name = userNames[pUid] || (isMe ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username || "Ich" : "Sportler");
+                      const barColor = isMe ? "#FF6B35" : rank === 0 ? "#FFD166" : "#A78BFA";
                       return (
-                        <div key={pUid} style={{display:"flex", justifyContent:"space-between", fontSize:12, alignItems:"center"}}>
-                          <span style={{color: pUid === myUid ? "#FF6B35" : "#888", fontWeight: pUid === myUid ? 700 : 400}}>{name} {pUid === myUid && "(Ich)"}</span>
-                          <span style={{color:"#ccc"}}>{pProgress} {unitLabel} ({pPercent}%)</span>
+                        <div key={pUid}>
+                          <div style={{display:"flex", justifyContent:"space-between", fontSize:12, alignItems:"center", marginBottom:3}}>
+                            <span style={{color: isMe ? "#FF6B35" : "#aaa", fontWeight: isMe ? 800 : 500, display:"flex", alignItems:"center", gap:5}}>
+                              <span style={{fontSize:12, width:16, display:"inline-block"}}>{medals[rank] || `${rank+1}.`}</span>
+                              {name} {isMe && <span style={{fontSize:10, color:"#FF6B35", background:"rgba(255,107,53,0.12)", border:"1px solid rgba(255,107,53,0.25)", padding:"1px 6px", borderRadius:5}}>Ich</span>}
+                            </span>
+                            <span style={{color:"#ccc", fontWeight:700, fontSize:11}}>{pProgress} {unitLabel} · {pPercent}%</span>
+                          </div>
+                          <div style={{width:"100%", height:5, background:"rgba(255,255,255,0.04)", borderRadius:3, overflow:"hidden"}}>
+                            <div className="chalBarIn" style={{width:`${relWidth}%`, height:"100%", background:barColor, borderRadius:3, opacity:0.85, animationDelay:`${0.35 + rank*0.1 + cardIdx*0.08}s`, boxShadow:`0 0 6px ${barColor}60`}}/>
+                          </div>
                         </div>
                       );
                     })}
@@ -7857,6 +8456,26 @@ function ChallengesPage({user,setUser,notify,isMobile}){
               <div>
                 <label style={s.lbl}>Beschreibung</label>
                 <textarea style={{...s.inp, height:60, resize:"none", fontFamily:"inherit"}} placeholder="Z.B. Wir laufen diesen Monat gemeinsam 100km für die Ausdauer!" value={form.description} onChange={e => setForm({...form, description:e.target.value})}/>
+              </div>
+
+              <div>
+                <label style={s.lbl}>Modus</label>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
+                  {[
+                    {key:"coop", icon:"🤝", label:"Gemeinsam", desc:"Alle zahlen aufs gleiche Ziel ein"},
+                    {key:"race", icon:"⚔️", label:"Duell", desc:"Wer zuerst das Ziel erreicht, gewinnt"}
+                  ].map(m => (
+                    <button key={m.key} onClick={() => setForm({...form, mode:m.key})} style={{
+                      textAlign:"left", cursor:"pointer", borderRadius:12, padding:"10px 12px",
+                      background: form.mode === m.key ? "rgba(255,107,53,0.12)" : "rgba(255,255,255,0.03)",
+                      border: `1px solid ${form.mode === m.key ? "#FF6B35" : "rgba(255,255,255,0.08)"}`,
+                      transition:"border-color 0.2s, background 0.2s"
+                    }}>
+                      <div style={{fontSize:13, fontWeight:800, color: form.mode === m.key ? "#FF6B35" : "#aaa", display:"flex", alignItems:"center", gap:6}}>{m.icon} {m.label}</div>
+                      <div style={{fontSize:10, color:"#666", marginTop:3, lineHeight:1.3}}>{m.desc}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
@@ -8418,6 +9037,53 @@ function ForgePointsPage({user, setUser, isMobile}){
     ["penaltySupplement",CHECKIN_ICONS.supplement,"Supplement nicht genommen"],
     ["penaltyStretch",CHECKIN_ICONS.stretching,"Stretching nicht gemacht"],
   ];
+
+  // ── Level-System (rein aus Punktestand abgeleitet) ──────────────────────
+  const LEVELS=[
+    {name:"Rookie",icon:"🔩",min:0,color:"#8D99AE"},
+    {name:"Bronze",icon:"🥉",min:250,color:"#CD7F32"},
+    {name:"Silber",icon:"🥈",min:750,color:"#C0C0C8"},
+    {name:"Gold",icon:"🥇",min:1500,color:"#FFD166"},
+    {name:"Platin",icon:"💠",min:3000,color:"#4CC9F0"},
+    {name:"Diamant",icon:"💎",min:6000,color:"#A78BFA"},
+    {name:"Meister",icon:"🔥",min:10000,color:"#FF6B35"},
+    {name:"Legende",icon:"⚡",min:20000,color:"#EF476F"},
+  ];
+  const lvlIdx=LEVELS.reduce((acc,l,i)=>pts>=l.min?i:acc,0);
+  const lvl=LEVELS[lvlIdx];
+  const nextLvl=LEVELS[lvlIdx+1]||null;
+  const lvlProgress=nextLvl?Math.min(100,Math.round((pts-lvl.min)/(nextLvl.min-lvl.min)*100)):100;
+
+  // ── Statistiken aus dem Log ─────────────────────────────────────────────
+  const stats=React.useMemo(()=>{
+    let earned=0,lost=0;
+    const daily={};
+    log.forEach(e=>{
+      if(e.points>0)earned+=e.points;else lost+=Math.abs(e.points);
+      const d=e.date||"";
+      daily[d]=(daily[d]||0)+e.points;
+    });
+    const now=new Date();
+    const dayMs=86400000;
+    let weekNet=0,todayNet=daily[today2]||0,bestDay=null;
+    for(let i=0;i<7;i++){
+      const d=new Date(now.getTime()-i*dayMs);
+      const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      weekNet+=daily[ds]||0;
+    }
+    Object.entries(daily).forEach(([d,v])=>{if(v>0&&(!bestDay||v>bestDay.v))bestDay={d,v};});
+    // Letzte 30 Tage für den Graphen
+    const last30=[];
+    for(let i=29;i>=0;i--){
+      const d=new Date(now.getTime()-i*dayMs);
+      const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      last30.push({ds,day:d.getDate(),v:daily[ds]||0});
+    }
+    return {earned,lost,weekNet,todayNet,bestDay,last30};
+  },[log,today2]);
+  const maxAbs30=Math.max(1,...stats.last30.map(d=>Math.abs(d.v)));
+  const recent=[...log].sort((a,b)=>(b.id||0)-(a.id||0)).slice(0,8);
+
   return (
     <div style={{maxWidth:560,margin:"0 auto",padding:isMobile?"16px 12px":"24px 16px"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
@@ -8452,9 +9118,91 @@ function ForgePointsPage({user, setUser, isMobile}){
           </div>
         </div>
       )}
-      <div style={{background:"linear-gradient(135deg,rgba(255,107,53,0.15),rgba(255,209,102,0.08))",border:"1px solid rgba(255,107,53,0.25)",borderRadius:20,padding:"28px 24px",marginBottom:24,textAlign:"center"}}>
-        <div style={{fontSize:52,fontWeight:900,background:"linear-gradient(135deg,#FF6B35,#FFD166)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1,letterSpacing:"-1px"}}>{pts.toLocaleString("de-DE")}</div>
-        <div style={{fontSize:14,fontWeight:700,color:"#888",marginTop:6,letterSpacing:1,textTransform:"uppercase"}}>Forge Points</div>
+      {/* Hero mit Level */}
+      <div className="chalCardIn" style={{background:`linear-gradient(150deg,${lvl.color}1E 0%,rgba(255,107,53,0.08) 50%,rgba(18,18,24,0.4) 100%)`,border:`1px solid ${lvl.color}40`,borderRadius:20,padding:"22px 20px",marginBottom:16,position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:-70,right:-70,width:190,height:190,borderRadius:"50%",background:`radial-gradient(circle,${lvl.color}26 0%,transparent 70%)`,pointerEvents:"none"}}/>
+        <div style={{display:"flex",alignItems:"center",gap:18,flexWrap:"wrap"}}>
+          {/* Level-Ring */}
+          <div style={{position:"relative",width:92,height:92,flexShrink:0}}>
+            <svg width="92" height="92" viewBox="0 0 76 76">
+              <defs>
+                <linearGradient id="fpLvlGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#FF6B35"/>
+                  <stop offset="100%" stopColor={lvl.color}/>
+                </linearGradient>
+              </defs>
+              <circle cx="38" cy="38" r="34" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6"/>
+              <circle className="ringIn" cx="38" cy="38" r="34" fill="none" stroke="url(#fpLvlGrad)" strokeWidth="6" strokeLinecap="round"
+                strokeDasharray={2*Math.PI*34} strokeDashoffset={2*Math.PI*34*(1-lvlProgress/100)}
+                transform="rotate(-90 38 38)" style={{filter:`drop-shadow(0 0 6px ${lvl.color}70)`,animationDelay:"0.2s"}}/>
+            </svg>
+            <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+              <span style={{fontSize:26,display:"inline-block",animation:"trophyFloat 3s ease-in-out infinite"}}>{lvl.icon}</span>
+            </div>
+          </div>
+          <div style={{flex:1,minWidth:150}}>
+            <div style={{fontSize:44,fontWeight:900,background:`linear-gradient(135deg,#FF6B35,${lvl.color})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1,letterSpacing:"-1px",fontFamily:"'DM Sans',sans-serif"}}>{pts.toLocaleString("de-DE")}</div>
+            <div style={{fontSize:12,fontWeight:700,color:"#888",marginTop:4,letterSpacing:1,textTransform:"uppercase"}}>Forge Points</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:900,padding:"3px 10px",borderRadius:8,background:`${lvl.color}1F`,color:lvl.color,border:`1px solid ${lvl.color}45`,textShadow:`0 0 12px ${lvl.color}60`}}>{lvl.icon} {lvl.name}</span>
+              {nextLvl&&<span style={{fontSize:10,color:"#666",fontWeight:600}}>{(nextLvl.min-pts).toLocaleString("de-DE")} Pkt. bis {nextLvl.icon} {nextLvl.name}</span>}
+              {!nextLvl&&<span style={{fontSize:10,color:"#FFD166",fontWeight:700}}>Maximales Level erreicht! ⚡</span>}
+            </div>
+            {nextLvl&&(
+              <div style={{width:"100%",height:6,background:"rgba(255,255,255,0.05)",borderRadius:3,overflow:"hidden",marginTop:8,position:"relative"}}>
+                <div className="chalBarIn" style={{width:`${lvlProgress}%`,height:"100%",background:`linear-gradient(90deg,#FF6B35,${lvl.color})`,borderRadius:3,animationDelay:"0.3s",boxShadow:`0 0 8px ${lvl.color}60`,position:"relative",overflow:"hidden"}}>
+                  <div style={{position:"absolute",top:0,left:0,height:"100%",width:"35%",background:"linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.35) 50%,transparent 100%)",animation:"chalShimmer 2.4s ease-in-out infinite"}}/>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Stats-Kacheln */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:16}}>
+        {[
+          {label:"Heute",value:`${stats.todayNet>0?"+":""}${stats.todayNet}`,color:stats.todayNet>=0?"#06D6A0":"#EF476F",icon:"📅"},
+          {label:"Diese Woche",value:`${stats.weekNet>0?"+":""}${stats.weekNet}`,color:stats.weekNet>=0?"#06D6A0":"#EF476F",icon:"🗓️"},
+          {label:"Gesamt verdient",value:`+${stats.earned.toLocaleString("de-DE")}`,color:"#06D6A0",icon:"⬆️"},
+          {label:"Gesamt verloren",value:`-${stats.lost.toLocaleString("de-DE")}`,color:"#EF476F",icon:"⬇️"}
+        ].map((st,i)=>(
+          <div key={st.label} className="statCard chalCardIn" style={{animationDelay:`${0.1+i*0.06}s`,background:`linear-gradient(160deg,${st.color}12 0%,rgba(255,255,255,0.02) 60%)`,border:`1px solid ${st.color}28`,borderRadius:14,padding:"11px 14px"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+              <span style={{fontSize:9,fontWeight:800,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px"}}>{st.label}</span>
+              <span style={{fontSize:12}}>{st.icon}</span>
+            </div>
+            <div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:900,fontSize:19,color:st.color,textShadow:`0 0 15px ${st.color}45`}}>{st.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 30-Tage-Graph */}
+      <div className="chalCardIn" style={{animationDelay:"0.25s",background:"#141416",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"16px",marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
+          <span style={{fontSize:12,fontWeight:800,color:"#F0EDE8"}}>📊 Letzte 30 Tage</span>
+          {stats.bestDay&&<span style={{fontSize:10,color:"#666"}}>Bester Tag: <b style={{color:"#FFD166"}}>+{stats.bestDay.v}</b> ({new Date(stats.bestDay.d).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"})})</span>}
+        </div>
+        <svg viewBox="0 0 300 90" style={{width:"100%",height:"auto",display:"block"}}>
+          <line x1="0" y1="58" x2="300" y2="58" stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
+          {stats.last30.map((d,i)=>{
+            const bw=300/30;
+            const x=i*bw+1;
+            const h=Math.abs(d.v)/maxAbs30*(d.v>=0?52:26);
+            if(d.v===0)return null;
+            const isPos=d.v>0;
+            return (
+              <rect key={d.ds} className="barGrow" x={x} y={isPos?58-h:58} width={bw-2} height={Math.max(1.5,h)} rx="1.5"
+                fill={isPos?"#06D6A0":"#EF476F"} opacity="0.85"
+                style={{animationDelay:`${0.3+i*0.02}s`,transformOrigin:isPos?undefined:"top"}}>
+                <title>{`${new Date(d.ds).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"})}: ${d.v>0?"+":""}${d.v} Pkt.`}</title>
+              </rect>
+            );
+          })}
+          {stats.last30.map((d,i)=>i%5===0?(
+            <text key={"t"+d.ds} x={i*(300/30)+(300/60)} y="88" textAnchor="middle" fontSize="6.5" fill="#555">{d.day}.</text>
+          ):null)}
+        </svg>
       </div>
       <div style={{background:"#141416",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"16px",marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
@@ -8513,6 +9261,27 @@ function ForgePointsPage({user, setUser, isMobile}){
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* Letzte Aktivitäten */}
+      {recent.length>0&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:800,color:"#F0EDE8",marginBottom:10}}>🕘 Letzte Aktivitäten</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {recent.map((e,i)=>{
+              const pos=e.points>0;
+              return (
+                <div key={e.id||i} className="chalCardIn" style={{animationDelay:`${0.1+i*0.05}s`,display:"flex",alignItems:"center",gap:12,background:"rgba(255,255,255,0.03)",border:`1px solid ${pos?"rgba(6,214,160,0.15)":"rgba(239,71,111,0.15)"}`,borderLeft:`3px solid ${pos?"#06D6A0":"#EF476F"}`,borderRadius:12,padding:"10px 14px"}}>
+                  <span style={{fontSize:16,flexShrink:0}}>{entryEmoji(e)}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:600,color:"#C0B8B0",lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.label}</div>
+                    <div style={{fontSize:10,color:"#555",marginTop:1}}>{e.date?new Date(e.date).toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit"}):""}</div>
+                  </div>
+                  <span style={{fontSize:14,fontWeight:900,color:pos?"#06D6A0":"#EF476F",flexShrink:0,fontFamily:"'DM Sans',sans-serif"}}>{pos?"+":""}{e.points}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -9227,6 +9996,74 @@ function ExerciseFormModal({exercise,onSave,onClose}){
   );
 }
 
+// Körper-Silhouette (vorne/hinten) mit hervorgehobenen Muskelgruppen
+function MuscleBodyMap({muscles=[]}){
+  if(!muscles.length)return null;
+  const on=m=>muscles.includes(m);
+  const fill=(m)=>on(m)?MUSCLE_COLORS[m]+"CC":"rgba(255,255,255,0.05)";
+  const glow=(m)=>on(m)?{filter:`drop-shadow(0 0 5px ${MUSCLE_COLORS[m]}90)`}:{};
+  const base="#1B1B21", baseStroke="rgba(255,255,255,0.09)";
+
+  const Silhouette=({back})=>(
+    <svg viewBox="0 0 100 205" style={{width:"100%",maxWidth:110,height:"auto",display:"block"}}>
+      {/* Grundkörper */}
+      <circle cx="50" cy="13" r="9.5" fill={base} stroke={baseStroke}/>
+      <rect x="45" y="21" width="10" height="8" rx="3" fill={base}/>
+      <path d="M28 34 Q50 24 72 34 L74 70 Q66 80 62 88 L62 100 L38 100 L38 88 Q34 80 26 70 Z" fill={base} stroke={baseStroke}/>
+      <path d="M27 36 Q22 40 20 52 L15 82 Q14 90 18 92 L23 93 Q26 90 26 84 L30 55 Z" fill={base} stroke={baseStroke}/>
+      <path d="M73 36 Q78 40 80 52 L85 82 Q86 90 82 92 L77 93 Q74 90 74 84 L70 55 Z" fill={base} stroke={baseStroke}/>
+      <path d="M38 100 L36 140 Q36 150 38 168 L40 195 L47 195 L48 150 L48 108 Z" fill={base} stroke={baseStroke}/>
+      <path d="M62 100 L64 140 Q64 150 62 168 L60 195 L53 195 L52 150 L52 108 Z" fill={base} stroke={baseStroke}/>
+      {/* Schultern */}
+      <ellipse cx="31" cy="37" rx="7" ry="5.5" fill={fill("Schultern")} style={glow("Schultern")}/>
+      <ellipse cx="69" cy="37" rx="7" ry="5.5" fill={fill("Schultern")} style={glow("Schultern")}/>
+      {/* Arme (Ober- + Unterarm) */}
+      <ellipse cx="23.5" cy="52" rx="5" ry="11" fill={fill("Arme")} style={glow("Arme")}/>
+      <ellipse cx="76.5" cy="52" rx="5" ry="11" fill={fill("Arme")} style={glow("Arme")}/>
+      <ellipse cx="19.5" cy="76" rx="4" ry="10" fill={fill("Arme")} style={glow("Arme")}/>
+      <ellipse cx="80.5" cy="76" rx="4" ry="10" fill={fill("Arme")} style={glow("Arme")}/>
+      {back?(
+        <>
+          {/* Rücken */}
+          <path d="M34 42 Q50 38 66 42 L64 68 Q50 74 36 68 Z" fill={fill("Rücken")} style={glow("Rücken")}/>
+          {/* Gesäß */}
+          <ellipse cx="43.5" cy="95" rx="8" ry="7" fill={fill("Gesäß")} style={glow("Gesäß")}/>
+          <ellipse cx="56.5" cy="95" rx="8" ry="7" fill={fill("Gesäß")} style={glow("Gesäß")}/>
+        </>
+      ):(
+        <>
+          {/* Brust */}
+          <ellipse cx="41.5" cy="47" rx="8.5" ry="6.5" fill={fill("Brust")} style={glow("Brust")}/>
+          <ellipse cx="58.5" cy="47" rx="8.5" ry="6.5" fill={fill("Brust")} style={glow("Brust")}/>
+          {/* Bauch */}
+          <rect x="42.5" y="57" width="15" height="24" rx="5" fill={fill("Bauch")} style={glow("Bauch")}/>
+        </>
+      )}
+      {/* Oberschenkel */}
+      <ellipse cx="42" cy="120" rx="6.5" ry="17" fill={fill("Oberschenkel")} style={glow("Oberschenkel")}/>
+      <ellipse cx="58" cy="120" rx="6.5" ry="17" fill={fill("Oberschenkel")} style={glow("Oberschenkel")}/>
+      {/* Unterschenkel */}
+      <ellipse cx="42.5" cy="163" rx="5" ry="14" fill={fill("Unterschenkel")} style={glow("Unterschenkel")}/>
+      <ellipse cx="57.5" cy="163" rx="5" ry="14" fill={fill("Unterschenkel")} style={glow("Unterschenkel")}/>
+    </svg>
+  );
+
+  return (
+    <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"12px 10px 6px",marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"center",gap:24}}>
+        <div style={{textAlign:"center"}}>
+          <Silhouette back={false}/>
+          <div style={{fontSize:9,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:0.5,marginTop:4}}>Vorne</div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <Silhouette back={true}/>
+          <div style={{fontSize:9,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:0.5,marginTop:4}}>Hinten</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ExerciseDetailModal({exercise,onClose,onEdit,onDelete}){
   return(
     <div style={s.overlay2} onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -9234,6 +10071,7 @@ function ExerciseDetailModal({exercise,onClose,onEdit,onDelete}){
         <h2 style={{...s.modalTitle,marginBottom:12}}>{exercise.name}</h2>
         {exercise.thumbnail && <div style={{width:"100%",height:200,borderRadius:12,overflow:"hidden",marginBottom:16,background:"#0D0D0F"}}><MediaDisplay src={exercise.thumbnail} style={{width:"100%",height:"100%",objectFit:"contain"}}/></div>}
         {exercise.description&&<p style={{color:"#aaa",fontSize:14,lineHeight:1.6,marginBottom:16}}>{exercise.description}</p>}
+        <MuscleBodyMap muscles={exercise.muscles||[]}/>
         <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:20}}>
           {(exercise.muscles||[]).map(m=><span key={m} style={{fontSize:11,background:MUSCLE_COLORS[m]+"20",color:MUSCLE_COLORS[m],borderRadius:10,padding:"3px 10px",fontWeight:700}}>{m}</span>)}
           {(exercise.types||[]).map(t=><span key={t} style={{fontSize:11,background:TYPE_COLORS[t]+"20",color:TYPE_COLORS[t],borderRadius:10,padding:"3px 10px",fontWeight:700}}>{t}</span>)}
@@ -9350,6 +10188,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
   
   const [viewMode, setViewMode] = useState(() => window.innerWidth <= 768 ? 1 : 7);
   const [dayOffset, setDayOffset]=useState(0);
+  const [timelineMode, setTimelineMode]=useState(false);
 
   const switchToMode = (m) => {
     setViewMode(m);
@@ -9393,6 +10232,24 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
   const getDayEntries=dayIdx=>(weekData.entries[dayIdx]||[]).slice().sort((a,b)=>a.startTime.localeCompare(b.startTime));
 
   const addEntry=(dayIdx,entry)=>{
+    if(entry.recurring){
+      // Wiederkehrender Eintrag: in dieser + den nächsten 8 Wochen anlegen (gleicher Wochentag)
+      const seriesId=entry.seriesId||uid();
+      setWeekPlans(wp=>{
+        const next={...wp};
+        for(let i=0;i<9;i++){
+          const key=addDays(currentMonday,i*7).toISOString().split("T")[0];
+          const cur=next[key]||{entries:{}};
+          const dayArr=[...((cur.entries||{})[dayIdx]||[])];
+          if(dayArr.some(e=>e.seriesId===seriesId))continue;
+          dayArr.push({...entry,id:uid(),seriesId});
+          next[key]={...cur,entries:{...(cur.entries||{}),[dayIdx]:dayArr}};
+        }
+        return next;
+      });
+      notify("Eintrag angelegt & für 8 Folgewochen wiederholt! 🔁");
+      return;
+    }
     setWeekData(w=>({...w,entries:{...w.entries,[dayIdx]:[...(w.entries[dayIdx]||[]),{...entry,id:uid()}]}}));
     notify("Eintrag hinzugefügt! ✅");
   };
@@ -9452,6 +10309,50 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
 
   // Ist-Abgleich: wurde an diesem Tag ein Training mit diesem Plan absolviert?
   const isTrainingDone=(entry,dayISO)=>entry.type==="training"&&(data.workouts||[]).some(w=>w.date===dayISO&&String(w.planId)===String(entry.planId));
+
+  // Erweiterter Erledigt-Check für den Erfüllungsgrad (Training, Dehnen, Mahlzeit)
+  const isEntryDone=(entry,dayISO)=>{
+    if(entry.type==="training")return isTrainingDone(entry,dayISO);
+    if(entry.type==="stretching")return (data.workouts||[]).some(w=>{
+      if(w.date!==dayISO)return false;
+      const plan=data.plans.find(p=>p.id===w.planId);
+      return /dehn|stretch|mobility/i.test(w.name||"")||((plan?.types)||[]).some(t=>/dehn|stretch|mobility/i.test(t));
+    });
+    if(entry.type==="meal")return ((nutrition[dayISO]||{}).meals||[]).length>0;
+    return null; // rest/other zählen nicht
+  };
+
+  // Wochen-Erfüllungsgrad über alle zählbaren Einträge
+  const weekStats=(()=>{
+    let total=0,done=0;
+    for(let d=0;d<7;d++){
+      const dd=addDays(currentMonday,d);
+      const iso=`${dd.getFullYear()}-${String(dd.getMonth()+1).padStart(2,"0")}-${String(dd.getDate()).padStart(2,"0")}`;
+      getDayEntries(d).forEach(e=>{
+        const st=isEntryDone(e,iso);
+        if(st===null)return;
+        total++;
+        if(st)done++;
+      });
+    }
+    return {total,done,pct:total>0?Math.round(done/total*100):0};
+  })();
+
+  // Vorwoche mit einem Klick in die aktuelle Woche kopieren
+  const copyPrevWeek=()=>{
+    const prevKey=addDays(currentMonday,-7).toISOString().split("T")[0];
+    const prev=weekPlans[prevKey];
+    const count=prev?Object.values(prev.entries||{}).reduce((a,arr)=>a+(arr||[]).length,0):0;
+    if(!count){notify("Die Vorwoche hat keine Einträge.","error");return;}
+    setWeekData(w=>{
+      const ne={...w.entries};
+      Object.entries(prev.entries||{}).forEach(([d,arr])=>{
+        ne[d]=[...(ne[d]||[]),...(arr||[]).map(e=>({...e,id:uid()}))];
+      });
+      return{...w,entries:ne};
+    });
+    notify(`${count} Einträge aus der Vorwoche übernommen! 📋`);
+  };
 
   const prevWeek=()=>setCurrentMonday(d=>addDays(d,-7));
   const nextWeek=()=>setCurrentMonday(d=>addDays(d,7));
@@ -9558,6 +10459,12 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
   const entryTitleSize=density==="dense"?11:density==="compact"?12:13;
   const dayMinHeight=viewMode===1?420:viewMode===3?400:(visibleMax<=1?230:visibleMax<=2?290:visibleMax<=4?360:440);
 
+  // Timeline-Ansicht: Stundenraster 05–23 Uhr
+  const t2m=t=>{const p=(t||"08:00").split(":");return (parseInt(p[0])||0)*60+(parseInt(p[1])||0);};
+  const TL_START=5*60, TL_END=23*60, TL_PXH=38;
+  const tlY=mins=>(Math.max(TL_START,Math.min(TL_END,mins))-TL_START)/60*TL_PXH;
+  const tlHeight=(TL_END-TL_START)/60*TL_PXH;
+
   return(
     <div style={{padding:"28px 24px 56px",maxWidth:1100,margin:"0 auto"}}>
       {/* Header */}
@@ -9571,11 +10478,33 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
               {isCurrentWeek && <span style={{color:"#FF6B35"}}>●</span>}
             </div>
           </div>
-          
+
+          {/* Wochen-Erfüllungsgrad */}
+          {weekStats.total>0&&(()=>{
+            const rr=15,circ=2*Math.PI*rr;
+            const full=weekStats.done===weekStats.total;
+            const col=full?"#06D6A0":"#FF6B35";
+            return (
+              <div title={`${weekStats.done} von ${weekStats.total} geplanten Einträgen erledigt`} style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.03)",border:`1px solid ${full?"rgba(6,214,160,0.35)":"rgba(255,255,255,0.08)"}`,borderRadius:14,padding:"6px 12px 6px 8px",boxShadow:full?"0 0 18px rgba(6,214,160,0.15)":"none"}}>
+                <svg width="38" height="38" viewBox="0 0 38 38">
+                  <circle cx="19" cy="19" r={rr} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="4"/>
+                  <circle cx="19" cy="19" r={rr} fill="none" stroke={col} strokeWidth="4" strokeLinecap="round"
+                    strokeDasharray={`${weekStats.pct/100*circ} ${circ}`} transform="rotate(-90 19 19)"
+                    style={{transition:"stroke-dasharray 0.6s cubic-bezier(0.16,1,0.3,1)",filter:`drop-shadow(0 0 4px ${col}70)`}}/>
+                  <text x="19" y="23" textAnchor="middle" fontSize="10" fontWeight="900" fill={col} fontFamily="DM Sans,sans-serif">{full?"✓":`${weekStats.pct}%`}</text>
+                </svg>
+                <div>
+                  <div style={{fontSize:13,fontWeight:900,color:"#F0EDE8",fontFamily:"'DM Sans',sans-serif",lineHeight:1.1}}>{weekStats.done}/{weekStats.total}</div>
+                  <div style={{fontSize:9,fontWeight:700,color:"#666",textTransform:"uppercase",letterSpacing:0.5}}>erledigt</div>
+                </div>
+              </div>
+            );
+          })()}
+
           <div style={{display:"flex", background:"rgba(255, 255, 255, 0.04)", padding:4, borderRadius:12, border:"1px solid rgba(255, 255, 255, 0.08)", backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)"}}>
             {[1,3,7].map(m => (
-              <button 
-                key={m} 
+              <button
+                key={m}
                 onClick={()=>switchToMode(m)}
                 style={{
                   border:"none", padding:"6px 12px", borderRadius:9, cursor:"pointer", fontSize:11, fontWeight:800,
@@ -9587,6 +10516,18 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                 {m}T
               </button>
             ))}
+            <button
+              onClick={()=>setTimelineMode(t=>!t)}
+              title="Timeline-Ansicht (Stundenraster)"
+              style={{
+                border:"none", padding:"6px 12px", borderRadius:9, cursor:"pointer", fontSize:11, fontWeight:800,
+                background:timelineMode?"#4CC9F0":"transparent",
+                color:timelineMode?"#000":"#888",
+                transition:"all 0.2s"
+              }}
+            >
+              🕐
+            </button>
           </div>
         </div>
 
@@ -9606,6 +10547,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
           </div>
           <div style={{width:1, height:24, background:"rgba(255, 255, 255, 0.08)"}} />
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button style={{...s.secBtn,padding:"9px 13px",fontSize:13,display:"flex",alignItems:"center",gap:6,background:"rgba(76,201,240,0.1)",borderColor:"rgba(76,201,240,0.3)",color:"#4CC9F0"}} onClick={copyPrevWeek} title="Alle Einträge der Vorwoche in diese Woche kopieren">📋 Vorwoche</button>
             <button style={{...s.secBtn,padding:"9px 13px",fontSize:13,display:"flex",alignItems:"center",gap:6,background:"rgba(6,214,160,0.1)",borderColor:"rgba(6,214,160,0.3)",color:"#06D6A0"}} onClick={exportToICal}>📅 iCal</button>
             <button style={{...s.secBtn,padding:"9px 13px",fontSize:13,display:"flex",alignItems:"center",gap:6,position:"relative"}} onClick={()=>setShowTemplates(true)}>
               📋 Vorlagen
@@ -9647,7 +10589,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
       )}
 
       {/* Week grid */}
-      <div className={viewMode === 7 ? "wp-grid-7-scroll" : ""} style={{display:"grid", gridTemplateColumns: viewMode === 1 ? "1fr" : viewMode === 3 ? "repeat(3, 1fr)" : "repeat(7, 1fr)", gap:14}}>
+      <div className={viewMode === 7 ? "wp-grid-7-scroll" : ""} style={{display:"grid", gridTemplateColumns: viewMode === 1 ? "1fr" : viewMode === 3 ? "repeat(3, 1fr)" : "repeat(7, 1fr)", gap:14, alignItems:"stretch", minHeight: timelineMode ? undefined : "max(420px, calc(100vh - 360px))"}}>
         {WP_DAY_NAMES.slice(dayOffset, dayOffset + viewMode).map((_, idx) => {
           const dayIdx = dayOffset + idx;
           const dayDate=addDays(currentMonday,dayIdx);
@@ -9680,12 +10622,90 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                     </div>
                     <div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:800,fontSize:15,color:isToday?"#F0EDE8":"#aaa"}}>{fmtShort(dayDate)}</div>
                   </div>
-                  {isPast && <div style={{color:"#00D9C0", fontSize:14}}>{IC.check}</div>}
+                  {(()=>{
+                    const countable=entries.map(e=>isEntryDone(e,dayISO)).filter(st=>st!==null);
+                    if(!countable.length)return null;
+                    const doneCnt=countable.filter(Boolean).length;
+                    if(doneCnt===countable.length)return <div title="Alle Einträge erledigt" style={{color:"#06D6A0",fontSize:14,filter:"drop-shadow(0 0 4px rgba(6,214,160,0.5))"}}>{IC.check}</div>;
+                    if((isPast||isToday)&&doneCnt>0)return <span title={`${doneCnt}/${countable.length} erledigt`} style={{fontSize:9,fontWeight:900,color:"#FFD166",background:"rgba(255,209,102,0.12)",border:"1px solid rgba(255,209,102,0.3)",borderRadius:6,padding:"2px 5px"}}>{doneCnt}/{countable.length}</span>;
+                    if(isPast)return <span title="Geplante Einträge verpasst" style={{width:8,height:8,borderRadius:"50%",background:"#EF476F",display:"inline-block",boxShadow:"0 0 6px rgba(239,71,111,0.5)"}}/>;
+                    return null;
+                  })()}
                 </div>
                 <button className="wpAddBtn" onClick={()=>{setEntryDay(dayIdx);setEditEntry(null);setShowEntryForm(true);}} style={{width:26,height:26,borderRadius:"50%",background:"linear-gradient(135deg,#FF6B35,#FF8C5A)",border:"none",color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:16,lineHeight:1,boxShadow:"0 2px 10px rgba(255,107,53,0.3)",transition:"all 0.2s"}}>+</button>
               </div>
 
+              {/* Timeline-Ansicht */}
+              {timelineMode&&(()=>{
+                const dayName=WP_DAY_NAMES[dayIdx];
+                const isWorkDay=(user.workDays||[]).includes(dayName);
+                const workBlocks=[];
+                if(isWorkDay&&user.workStart&&user.workEnd){
+                  workBlocks.push({from:t2m(user.workStart),to:t2m(user.workEnd),label:"Arbeit"});
+                }
+                const nowMins=(()=>{const n=new Date();return n.getHours()*60+n.getMinutes();})();
+                return (
+                  <div style={{flex:1,position:"relative",margin:"8px 6px 10px",height:tlHeight,minHeight:tlHeight}}>
+                    {/* Stundenlinien */}
+                    {Array.from({length:(TL_END-TL_START)/60+1},(_,h)=>{
+                      const mins=TL_START+h*60;
+                      return (
+                        <div key={h} style={{position:"absolute",top:tlY(mins),left:0,right:0,borderTop:`1px solid rgba(255,255,255,${mins%120===0?0.06:0.03})`,pointerEvents:"none"}}>
+                          {mins%120===0&&<span style={{position:"absolute",top:-6,left:0,fontSize:7.5,color:"#444",fontWeight:700}}>{String(mins/60).padStart(2,"0")}</span>}
+                        </div>
+                      );
+                    })}
+                    {/* Arbeitszeit-Block */}
+                    {workBlocks.map((b,bi)=>(
+                      <div key={bi} style={{position:"absolute",top:tlY(b.from),height:Math.max(10,tlY(b.to)-tlY(b.from)),left:0,right:0,background:"repeating-linear-gradient(45deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 6px, transparent 6px, transparent 12px)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:6,pointerEvents:"none",display:"flex",alignItems:"flex-start",justifyContent:"flex-end",padding:3}}>
+                        <span style={{fontSize:7.5,fontWeight:800,color:"#555",textTransform:"uppercase",letterSpacing:0.5}}>💼 {b.label}</span>
+                      </div>
+                    ))}
+                    {/* Jetzt-Linie */}
+                    {isToday&&nowMins>=TL_START&&nowMins<=TL_END&&(
+                      <div style={{position:"absolute",top:tlY(nowMins),left:-2,right:-2,borderTop:"2px solid #EF476F",zIndex:5,pointerEvents:"none",boxShadow:"0 0 8px rgba(239,71,111,0.5)"}}>
+                        <span style={{position:"absolute",left:-3,top:-3.5,width:6,height:6,borderRadius:"50%",background:"#EF476F"}}/>
+                      </div>
+                    )}
+                    {/* Einträge als Blöcke */}
+                    {entries.map(entry=>{
+                      const meta=ENTRY_TYPES[entry.type]||ENTRY_TYPES.other;
+                      const plan=entry.type==="training"?data.plans.find(p=>p.id===parseInt(entry.planId)):null;
+                      const title=entry.type==="training"?(plan?.name||"Training")
+                        :entry.type==="meal"?(entry.mealPreset||entry.mealName||"Mahlzeit")
+                        :entry.type==="stretching"?(entry.stretchName||"Dehnen")
+                        :entry.type==="rest"?"Ruhetag"
+                        :(entry.title||"Eintrag");
+                      const from=t2m(entry.startTime);
+                      const to=entry.endTime?t2m(entry.endTime):from+60;
+                      const top=tlY(from);
+                      const h=Math.max(24,tlY(Math.max(to,from+30))-top);
+                      const done=isEntryDone(entry,dayISO)===true;
+                      const col=done?"#06D6A0":(plan?.color||meta.color);
+                      return (
+                        <div key={entry.id} draggable
+                          onDragStart={e=>{e.dataTransfer.effectAllowed="move";setDragInfo({dayIdx,entryId:entry.id});}}
+                          onDragEnd={()=>{setDragInfo(null);setDragOverDay(null);}}
+                          onClick={()=>{setEntryDay(dayIdx);setEditEntry(entry);setShowEntryForm(true);}}
+                          title={`${title} · ${entry.startTime}${entry.endTime?" – "+entry.endTime:""}`}
+                          style={{position:"absolute",top,height:h,left:2,right:2,zIndex:3,cursor:"grab",overflow:"hidden",
+                            background:done?"rgba(6,214,160,0.14)":meta.bg,border:`1px solid ${col}55`,borderLeft:`3px solid ${col}`,borderRadius:7,padding:"3px 6px",
+                            boxShadow:done?"0 0 10px rgba(6,214,160,0.15)":"0 2px 8px rgba(0,0,0,0.3)"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:3,minWidth:0}}>
+                            <span style={{fontSize:9,flexShrink:0}}>{done?"✅":meta.icon}</span>
+                            {entry.recurring&&<span style={{fontSize:8,flexShrink:0}}>🔁</span>}
+                            <span style={{fontSize:10,fontWeight:800,color:done?"#06D6A0":"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</span>
+                          </div>
+                          {h>=36&&<div style={{fontSize:8.5,color:"#888",marginTop:1}}>{entry.startTime}{entry.endTime?` – ${entry.endTime}`:""}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               {/* Entries */}
+              {!timelineMode&&(
               <div style={{flex:1,padding:"8px 8px 10px",display:"flex",flexDirection:"column",gap:5,overflowY:"auto"}}>
                 {!entries.length&&(
                   <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,padding:"16px 8px"}}>
@@ -9716,13 +10736,14 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                     <div key={entry.id} className="wpEntry" draggable
                       onDragStart={e=>{e.dataTransfer.effectAllowed="move";setDragInfo({dayIdx,entryId:entry.id});}}
                       onDragEnd={()=>{setDragInfo(null);setDragOverDay(null);}}
-                      style={{background:done?"rgba(6,214,160,0.1)":meta.bg,border:`1px solid ${done?"rgba(6,214,160,0.45)":meta.color+"40"}`,borderLeft:`3px solid ${done?"#06D6A0":plan?.color||meta.color}`,borderRadius:9,padding:entryPad,cursor:"grab",transition:"all 0.15s", textDecoration: isPast&&!done ? "line-through" : "none", boxShadow:done?"0 0 12px rgba(6,214,160,0.12)":"none"}}
+                      style={{background:done?"rgba(6,214,160,0.1)":meta.bg,border:`1px solid ${done?"rgba(6,214,160,0.45)":meta.color+"40"}`,borderLeft:`3px solid ${done?"#06D6A0":plan?.color||meta.color}`,borderRadius:9,padding:entryPad,cursor:"grab",transition:"all 0.15s", textDecoration: isPast&&!done ? "line-through" : "none", boxShadow:done?"0 0 12px rgba(6,214,160,0.12)":"none", flex:"1 1 0", minHeight:density==="dense"?44:density==="compact"?58:74, display:"flex", flexDirection:"column", justifyContent:"center"}}
                       onClick={()=>{setEntryDay(dayIdx);setEditEntry(entry);setShowEntryForm(true);}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:4}}>
                         <div style={{flex:1,minWidth:0}}>
                           {density==="dense"?(
                             <div style={{display:"flex",alignItems:"center",gap:4,minWidth:0}}>
                               <span style={{fontSize:11,flexShrink:0}}>{done?"✅":meta.icon}</span>
+                              {entry.recurring&&<span style={{fontSize:9,flexShrink:0}} title="Wiederkehrender Eintrag">🔁</span>}
                               <span style={{fontSize:entryTitleSize,fontWeight:700,color:done?"#06D6A0":"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</span>
                             </div>
                           ):(
@@ -9730,6 +10751,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                               <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}>
                                 <span style={{fontSize:12}}>{done?"✅":meta.icon}</span>
                                 <span style={{fontSize:10,fontWeight:700,color:done?"#06D6A0":meta.color,textTransform:"uppercase",letterSpacing:"0.3px"}}>{done?"Absolviert":meta.label}</span>
+                                {entry.recurring&&<span style={{fontSize:9}} title="Wiederkehrender Eintrag (8 Wochen)">🔁</span>}
                               </div>
                               <div style={{fontSize:entryTitleSize,fontWeight:700,color:done?"#06D6A0":"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
                             </>
@@ -9750,6 +10772,7 @@ function WochenplanPage({weekPlans,setWeekPlans,data,user,library,notify,favFood
                   );
                 })}
               </div>
+              )}
             </div>
           );
         })}
@@ -9953,6 +10976,7 @@ function WPEntryModal({dayName,editEntry,plans,library=[],dayEntries,onSave,onDe
   const [title,setTitle]=useState(editEntry?.title||"");
   const stretchOptions = library.filter(ex=>(ex.types||[]).includes("Stretching / Dehnen")).map(ex=>ex.name);
   const [stretchName,setStretchName]=useState(editEntry?.stretchName||stretchOptions[0]||"");
+  const [recurring,setRecurring]=useState(false);
 
   // Prevent duplicate training plans on same day
   const usedPlanIds=dayEntries.filter(e=>e.type==="training"&&e.id!==editEntry?.id).map(e=>String(e.planId));
@@ -9964,6 +10988,8 @@ function WPEntryModal({dayName,editEntry,plans,library=[],dayEntries,onSave,onDe
     if(type==="meal"){base.mealPreset=mealPreset;base.mealName=mealName;base.calories=calories;}
     if(type==="stretching"){base.stretchName=stretchName;}
     if(type==="other"){base.title=title;}
+    if(!editEntry&&recurring){base.recurring=true;}
+    if(editEntry?.recurring){base.recurring=true;base.seriesId=editEntry.seriesId;}
     onSave(base);
   };
 
@@ -10064,7 +11090,24 @@ function WPEntryModal({dayName,editEntry,plans,library=[],dayEntries,onSave,onDe
           <div><label style={lbl}>Startzeit *</label><input style={inp} type="time" value={startTime} onChange={e=>setStartTime(e.target.value)}/></div>
           <div><label style={lbl}>Endzeit (optional)</label><input style={inp} type="time" value={endTime} onChange={e=>setEndTime(e.target.value)}/></div>
         </div>
-        <div style={{...s.fg,marginBottom:20}}><label style={lbl}>Notizen (optional)</label><textarea style={{...inp,minHeight:56,resize:"vertical"}} placeholder="Hinweise, Ziele..." value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+        <div style={{...s.fg,marginBottom:14}}><label style={lbl}>Notizen (optional)</label><textarea style={{...inp,minHeight:56,resize:"vertical"}} placeholder="Hinweise, Ziele..." value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+
+        {/* Wiederkehrend */}
+        {!editEntry?(
+          <div onClick={()=>setRecurring(r=>!r)} style={{display:"flex",alignItems:"center",gap:12,background:recurring?"rgba(76,201,240,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${recurring?"rgba(76,201,240,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:12,padding:"11px 14px",marginBottom:20,cursor:"pointer",transition:"all 0.2s"}}>
+            <span style={{fontSize:18}}>🔁</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:800,color:recurring?"#4CC9F0":"#aaa"}}>Jede Woche wiederholen</div>
+              <div style={{fontSize:10,color:"#666",marginTop:2}}>Wird automatisch in die nächsten 8 Wochen eingetragen ({dayName})</div>
+            </div>
+            <div style={{...s.toggle,...(recurring?{...s.toggleOn,background:"#4CC9F0"}:{})}}><div style={{...s.thumb,...(recurring?s.thumbOn:{})}}/></div>
+          </div>
+        ):editEntry.recurring?(
+          <div style={{display:"flex",alignItems:"center",gap:10,background:"rgba(76,201,240,0.06)",border:"1px solid rgba(76,201,240,0.2)",borderRadius:12,padding:"9px 14px",marginBottom:20}}>
+            <span style={{fontSize:14}}>🔁</span>
+            <span style={{fontSize:11,color:"#4CC9F0",fontWeight:700}}>Teil einer wöchentlichen Serie – Änderungen gelten nur für diesen Termin.</span>
+          </div>
+        ):<div style={{marginBottom:6}}/>}
 
         <div style={{display:"flex",gap:8}}>
           {editEntry&&<button style={{...s.secBtn,padding:"11px 13px",color:"#EF476F",borderColor:"#EF476F44"}} onClick={onDelete}>{IC.trash}</button>}
