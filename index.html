@@ -124,6 +124,8 @@ input[type="date"] { text-align: center; justify-content: center; align-items: c
 @keyframes trophyFloat{0%,100%{transform:translateY(0) rotate(-3deg);}50%{transform:translateY(-5px) rotate(3deg);}}
 @keyframes urgentPulse{0%,100%{opacity:1;}50%{opacity:0.45;}}
 @keyframes winGlow{0%,100%{box-shadow:0 0 18px rgba(255,209,102,0.12), inset 0 1px 1px rgba(255,255,255,0.08);}50%{box-shadow:0 0 32px rgba(255,209,102,0.28), inset 0 1px 1px rgba(255,255,255,0.08);}}
+@keyframes bellGlow{0%,100%{box-shadow:0 0 0 1px rgba(255,59,48,0.35), 0 0 6px 0px rgba(255,59,48,0.25);}50%{box-shadow:0 0 0 1px rgba(255,59,48,0.55), 0 0 9px 1px rgba(255,59,48,0.4);}}
+.bellAlert{border-color:rgba(255,59,48,0.45)!important;animation:bellGlow 2.2s ease-in-out infinite;}
 .chalCard{transition:transform 0.25s cubic-bezier(0.16,1,0.3,1), box-shadow 0.25s;}
 .chalCard:hover{transform:translateY(-4px);box-shadow:0 14px 36px rgba(0,0,0,0.45);}
 .lineDraw{stroke-dasharray:1;animation:lineDraw 0.9s cubic-bezier(0.4,0,0.2,1) both;}
@@ -3170,7 +3172,7 @@ function FitForge(){
           <div style={{display:"flex",alignItems:"center",gap:12, flexShrink: 0}}>
             {!isMobile && <span style={{fontSize:13,fontWeight:600,color:"#F0EDE8",whiteSpace:"nowrap"}}>{clkStr}</span>}
             <div style={{position:"relative"}}>
-              <button className="iconBtn" style={{...s.iconCircle,...(notifOpen?s.iconOn:{})}} onClick={()=>{const willOpen=!notifOpen;setNotifOpen(o=>!o);setProfileOpen(false);if(willOpen)reloadSharedInbox();}}>
+              <button className={"iconBtn"+(unread>0?" bellAlert":"")} style={{...s.iconCircle,...(notifOpen?s.iconOn:{})}} onClick={()=>{const willOpen=!notifOpen;setNotifOpen(o=>!o);setProfileOpen(false);if(willOpen)reloadSharedInbox();}}>
                 {IC.bell}{unread>0&&<span style={s.badge}>{unread}</span>}
               </button>
               {notifOpen&&<div style={{...s.dropdown, background: "#16161A", backdropFilter: "none", WebkitBackdropFilter: "none", border: "1px solid #1E1E24", width: isMobile ? "280px" : 350, right: isMobile ? "-16px" : 0}} className="dropIn" onClick={e=>e.stopPropagation()}>
@@ -11577,6 +11579,12 @@ function AuthScreen(){
             <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:32,fontWeight:800,color:"#F0EDE8",letterSpacing:"-1px"}}>FitForge</span>
           </div>
           <p style={{color:"rgba(255,255,255,0.6)",fontSize:14,margin:0}}>{mode==="login"?"Willkommen zurück!":"Erstelle dein Konto"}</p>
+        </div>
+
+        {/* Creator credit */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:24}}>
+          <div style={{width:22,height:22,borderRadius:"50%",background:"linear-gradient(135deg,#FF6B35,#FF8C5A)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#fff",flexShrink:0}}>R</div>
+          <span style={{color:"rgba(255,255,255,0.45)",fontSize:12,fontWeight:600}}>Mirco Loseke</span>
         </div>
 
         {/* Card */}
