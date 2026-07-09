@@ -7,6 +7,11 @@
 <title>FitForge</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <link rel="manifest" href="/manifest.json"/>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="FitForge"/>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -12126,5 +12131,135 @@ if ('serviceWorker' in navigator) {
     });
   });
 }
+
+// ── "Zum Home-Bildschirm"-Widget: Install-Banner für iOS, Android & Desktop ──
+(function(){
+  // Läuft die App bereits als installierte PWA? Dann nie anzeigen.
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+  if (isStandalone) return;
+
+  // Nach Wegklicken 14 Tage nicht erneut nerven
+  const DISMISS_KEY = 'ff-a2hs-dismissed';
+  const dismissedAt = Number(localStorage.getItem(DISMISS_KEY) || 0);
+  if (Date.now() - dismissedAt < 14*24*60*60*1000) return;
+
+  const ua = navigator.userAgent;
+  const isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isSafari = /safari/i.test(ua) && !/crios|fxios|edgios|chrome|android/i.test(ua);
+  const isAndroid = /android/i.test(ua);
+
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    showBanner();
+  });
+
+  function dismiss(){
+    localStorage.setItem(DISMISS_KEY, String(Date.now()));
+    const el = document.getElementById('ff-a2hs');
+    if (el) { el.style.transform = 'translateY(120%)'; el.style.opacity = '0'; setTimeout(() => el.remove(), 350); }
+    const ov = document.getElementById('ff-a2hs-howto');
+    if (ov) ov.remove();
+  }
+
+  function showHowTo(){
+    // Schritt-für-Schritt-Anleitung als Overlay (für Browser ohne Install-Prompt)
+    if (document.getElementById('ff-a2hs-howto')) return;
+    let steps;
+    if (isIOS && isSafari) {
+      steps = [
+        ['⬆️','Tippe unten auf das <b>Teilen-Symbol</b> <span style="opacity:.7">(Quadrat mit Pfeil nach oben)</span>'],
+        ['➕','Scrolle nach unten und wähle <b>„Zum Home-Bildschirm"</b>'],
+        ['⚡','Tippe auf <b>„Hinzufügen"</b> – fertig! FitForge startet dann wie eine echte App']
+      ];
+    } else if (isIOS) {
+      steps = [
+        ['🧭','Öffne <b>fitforge</b> im <b>Safari-Browser</b> (Chrome & Co. können auf dem iPhone nicht installieren)'],
+        ['⬆️','Tippe dort auf das <b>Teilen-Symbol</b> und wähle <b>„Zum Home-Bildschirm"</b>'],
+        ['⚡','Mit <b>„Hinzufügen"</b> bestätigen – fertig!']
+      ];
+    } else if (isAndroid) {
+      steps = [
+        ['⋮','Tippe oben rechts auf das <b>Menü (⋮)</b>'],
+        ['➕','Wähle <b>„App installieren"</b> oder <b>„Zum Startbildschirm hinzufügen"</b>'],
+        ['⚡','Bestätigen – FitForge erscheint als App auf deinem Startbildschirm']
+      ];
+    } else {
+      steps = [
+        ['🌐','Öffne das <b>Browser-Menü</b> (oder das Install-Symbol in der Adressleiste)'],
+        ['➕','Wähle <b>„FitForge installieren"</b> bzw. <b>„Zum Startbildschirm hinzufügen"</b>'],
+        ['⚡','Bestätigen – die App startet dann im eigenen Fenster, auch offline']
+      ];
+    }
+    const ov = document.createElement('div');
+    ov.id = 'ff-a2hs-howto';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.65);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center;';
+    ov.innerHTML =
+      '<div style="width:100%;max-width:440px;background:linear-gradient(160deg,#17171E,#0D0D0F);border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius:24px 24px 0 0;padding:24px 22px calc(22px + env(safe-area-inset-bottom));font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;color:#F0EDE8;box-shadow:0 -12px 40px rgba(0,0,0,.5);">'
+      + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">'
+      +   '<img src="/apple-touch-icon.png" alt="" style="width:44px;height:44px;border-radius:11px;"/>'
+      +   '<div><div style="font-weight:800;font-size:17px;">FitForge installieren</div>'
+      +   '<div style="font-size:12.5px;color:#9a97a3;">Kostenlos, ohne App Store – funktioniert auch offline</div></div>'
+      + '</div>'
+      + steps.map(s =>
+          '<div style="display:flex;gap:12px;align-items:flex-start;margin-top:14px;">'
+          + '<div style="flex:0 0 34px;height:34px;border-radius:10px;background:rgba(255,107,53,.12);border:1px solid rgba(255,107,53,.25);display:flex;align-items:center;justify-content:center;font-size:16px;">'+s[0]+'</div>'
+          + '<div style="font-size:14px;line-height:1.45;padding-top:6px;">'+s[1]+'</div></div>'
+        ).join('')
+      + '<button id="ff-a2hs-howto-close" style="margin-top:20px;width:100%;padding:13px;border:none;border-radius:14px;background:linear-gradient(135deg,#FF6B35,#FF8C60);color:#fff;font-weight:800;font-size:15px;cursor:pointer;">Alles klar!</button>'
+      + '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+    document.getElementById('ff-a2hs-howto-close').onclick = dismiss;
+  }
+
+  function showBanner(){
+    if (document.getElementById('ff-a2hs')) return;
+    const b = document.createElement('div');
+    b.id = 'ff-a2hs';
+    b.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:99999;display:flex;align-items:center;gap:12px;padding:12px 14px;background:linear-gradient(160deg,rgba(23,23,30,.97),rgba(13,13,15,.97));border:1px solid rgba(255,255,255,.1);border-radius:18px;box-shadow:0 10px 32px rgba(0,0,0,.55),0 0 0 1px rgba(255,107,53,.08);font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;color:#F0EDE8;max-width:440px;margin:0 auto;transition:transform .35s ease,opacity .35s ease;transform:translateY(120%);opacity:0;';
+    b.innerHTML =
+      '<img src="/apple-touch-icon.png" alt="" style="width:42px;height:42px;border-radius:11px;flex-shrink:0;"/>'
+      + '<div style="flex:1;min-width:0;">'
+      +   '<div style="font-weight:800;font-size:14.5px;">FitForge als App installieren</div>'
+      +   '<div style="font-size:12px;color:#9a97a3;">Schneller Start vom Home-Bildschirm & offline nutzbar</div>'
+      + '</div>'
+      + '<button id="ff-a2hs-go" style="flex-shrink:0;padding:10px 16px;border:none;border-radius:12px;background:linear-gradient(135deg,#FF6B35,#FF8C60);color:#fff;font-weight:800;font-size:13.5px;cursor:pointer;">'
+      +   (deferredPrompt ? 'Installieren' : 'So geht\'s')
+      + '</button>'
+      + '<button id="ff-a2hs-x" aria-label="Schließen" style="flex-shrink:0;width:30px;height:30px;border:none;border-radius:50%;background:rgba(255,255,255,.07);color:#9a97a3;font-size:15px;cursor:pointer;line-height:1;">✕</button>';
+    document.body.appendChild(b);
+    requestAnimationFrame(() => requestAnimationFrame(() => { b.style.transform = 'translateY(0)'; b.style.opacity = '1'; }));
+
+    document.getElementById('ff-a2hs-x').onclick = dismiss;
+    document.getElementById('ff-a2hs-go').onclick = async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const choice = await deferredPrompt.userChoice.catch(() => null);
+        deferredPrompt = null;
+        if (choice && choice.outcome === 'accepted') {
+          localStorage.setItem(DISMISS_KEY, String(Date.now()));
+          const el = document.getElementById('ff-a2hs'); if (el) el.remove();
+        }
+      } else {
+        showHowTo();
+      }
+    };
+  }
+
+  window.addEventListener('appinstalled', () => {
+    localStorage.setItem(DISMISS_KEY, String(Date.now()));
+    const el = document.getElementById('ff-a2hs'); if (el) el.remove();
+    const ov = document.getElementById('ff-a2hs-howto'); if (ov) ov.remove();
+  });
+
+  // iOS & Browser ohne beforeinstallprompt: Banner nach kurzer Verzögerung zeigen.
+  // Chrome/Edge feuern das Event meist selbst – doppelte Anzeige verhindert showBanner().
+  window.addEventListener('load', () => {
+    setTimeout(() => { if (!document.getElementById('ff-a2hs')) showBanner(); }, 4000);
+  });
+})();
 </script>
 </body></html>
