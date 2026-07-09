@@ -2685,6 +2685,13 @@ function FitForge(){
   },[weekPlans,data.plans.length]);
 
   const unread=notifs.filter(n=>!n.read).length + sharedInbox.length;
+  // App-Icon-Badge (installierte PWA, iOS 16.4+/Android/Desktop): spiegelt den
+  // Glocken-Zähler als rote Zahl auf dem Home-Bildschirm-Icon.
+  useEffect(()=>{
+    if(!("setAppBadge" in navigator))return;
+    if(unread>0) navigator.setAppBadge(unread).catch(()=>{});
+    else navigator.clearAppBadge().catch(()=>{});
+  },[unread]);
   const markAll=()=>setNotifs(n=>n.map(x=>({...x,read:true})));
   const markRead=id=>setNotifs(n=>n.map(x=>x.id===id?{...x,read:true}:x));
   const delNotif=id=>{
