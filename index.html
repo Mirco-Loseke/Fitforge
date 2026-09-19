@@ -8757,7 +8757,13 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
   </div>
   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:22,gap:12}}>
     <button style={{...s.primaryBtn,flex:1}} onClick={save}>💾 Speichern</button>
-  </div></div>);}
+  </div>
+  {onRescue&&<div style={{marginTop:28,padding:"14px 16px",borderRadius:14,border:"1px solid rgba(255,209,102,0.25)",background:"rgba(255,209,102,0.05)"}}>
+    <div style={{fontSize:13,fontWeight:700,color:"#FFD166",marginBottom:4}}>🛟 Datenrettung</div>
+    <div style={{fontSize:12,color:"#999",lineHeight:1.5,marginBottom:10}}>Fehlen Workouts, Pläne oder Gewichtseinträge? Die Tiefensuche durchsucht den Speicher dieses Geräts (LocalStorage &amp; Offline-Cache) und stellt gefundene Daten wieder her.</div>
+    <button style={{...s.secBtn,width:"100%",justifyContent:"center",borderColor:"rgba(255,209,102,0.4)",color:"#FFD166"}} onClick={onRescue}>🔍 Daten retten (Tiefensuche)</button>
+  </div>}
+  </div>);}
 // ─── Docs Page ────────────────────────────────────────────────────────────────
 
 
