@@ -70,7 +70,9 @@ function __ffInitFirebase() {
       data:   () => snap.data() || {}
     }));
     window.firebaseSetDoc = (ref, data) => ref.set(data);
-    window.firebaseOnSnapshot = (ref, cb, err) => ref.onSnapshot(cb, err);
+    // includeMetadataChanges: Wir brauchen den Übergang fromCache → Server-bestätigt,
+    // sonst kommt bei unverändertem Dokument nie ein zweiter Callback.
+    window.firebaseOnSnapshot = (ref, cb, err) => ref.onSnapshot({ includeMetadataChanges: true }, cb, err);
 
     // Storage helpers
     window.firebaseStorage        = _stor;
@@ -1365,6 +1367,7 @@ function FitForge(){
 
   const [authLoading,setAuthLoading]=useState(true);
   const [loaded,setLoaded]=useState(false);
+  const [syncTick,setSyncTick]=useState(0); // wird erhöht, sobald ein Key vom Server bestätigt wurde
   const [animK,setAnimK]=useState(0);
   const [logModal,setLogModal]=useState(false);
   const [planModal,setPlanModal]=useState(false);
@@ -2167,6 +2170,17 @@ function FitForge(){
 
 
   const lastSyncRef = useRef({});
+  // Pro Key: true erst, wenn ein Snapshot VOM SERVER (fromCache=false) angekommen ist.
+  // Solange das nicht der Fall ist, darf NIE in die Cloud geschrieben werden – sonst
+  // kann ein leerer Cache-Snapshot (Offline / neues Gerät / PWA-Installation) die
+  // echten Cloud-Daten mit leeren Defaults überschreiben (= Datenverlust).
+  const cloudConfirmedRef = useRef({});
+  // String-Form von "data", wie sie in die Cloud geht (ohne photos/exercisePhotos, ohne base64).
+  const dataSyncStr = (val) => {
+    if (!val) return JSON.stringify(val);
+    const { photos, exercisePhotos, ...rest } = val;
+    return JSON.stringify(stripBase64(rest, "data"));
+  };
 
   // ── Auth state listener & Real-time Listeners ─────────────────────────────
   useEffect(() => {
@@ -2183,6 +2197,7 @@ function FitForge(){
         if (window.dbg) dbg('👤 Nutzer eingeloggt: ' + fbUser.email, '#0f0');
         
         lastSyncRef.current = {};
+        cloudConfirmedRef.current = {};
         // Reset loaded keys tracker for this user session
         Object.keys(loadedKeysRef.current).forEach(k => {
           loadedKeysRef.current[k] = false;
@@ -2209,12 +2224,12 @@ function FitForge(){
              if (key === "prs") parsed = purgeDemoPRs(parsed);
              const parsedStr = JSON.stringify(parsed);
              if (parsedStr !== local) localStorage.setItem(`ff_${uid}_${key}`, parsedStr);
-             lastSyncRef.current[key] = parsedStr;
+             lastSyncRef.current[key] = key === "data" ? dataSyncStr(parsed) : parsedStr;
              setter(parsed);
           } else {
              // CRITICAL: If no cache for THIS user, clear any previous user's data
              setter(df);
-             lastSyncRef.current[key] = JSON.stringify(df);
+             lastSyncRef.current[key] = key === "data" ? dataSyncStr(df) : JSON.stringify(df);
           }
         });
 
@@ -2251,7 +2266,7 @@ function FitForge(){
               localStorage.setItem(`ff_${uid}_data`, migratedDataStr);
               localStorage.setItem(`ff_${uid}_exercisePhotos`, migratedExPhotosStr);
               
-              lastSyncRef.current["data"] = migratedDataStr;
+              lastSyncRef.current["data"] = dataSyncStr(cacheData);
               lastSyncRef.current["exercisePhotos"] = migratedExPhotosStr;
               
               setData(cacheData);
@@ -2278,6 +2293,25 @@ function FitForge(){
 
             // Ignoriere lokale, noch nicht bestätigte Schreibvorgänge des eigenen Geräts
             if (snap.metadata && snap.metadata.hasPendingWrites) return;
+
+            const fromCache = !!(snap.metadata && snap.metadata.fromCache);
+            if (!fromCache) {
+              const wasConfirmed = cloudConfirmedRef.current[key];
+              cloudConfirmedRef.current[key] = true;
+              if (!wasConfirmed) {
+                if (window.dbg) dbg(`☁️ ${key}: Server-Stand bestätigt`, '#0f0');
+                // Sync-Effects erneut anstoßen: lokal zurückgehaltene Änderungen dürfen jetzt hoch
+                setSyncTick(t => t + 1);
+              }
+            }
+
+            if (!snap.exists && fromCache) {
+              // Nur der lokale Firestore-Cache kennt das Dokument nicht (offline, neues Gerät,
+              // frisch installierte PWA). Das sagt NICHTS darüber aus, ob in der Cloud Daten liegen.
+              // Lokalen Stand behalten, nichts zurücksetzen, nichts hochladen – wir warten auf den Server.
+              if (window.dbg) dbg(`⏳ ${key}: noch kein Server-Kontakt (Cache leer) – warte auf Cloud`, '#fa0');
+              return;
+            }
 
             if (snap.exists) {
               const cloudVal = snap.data().value;
@@ -2354,12 +2388,13 @@ function FitForge(){
               // If we already have local cache loaded in step 1, DO NOT delete it.
               // Instead, we keep it and we will sync it up to the cloud.
               const localValStr = localStorage.getItem(`ff_${uid}_${key}`);
+              const dfStr = key === "data" ? dataSyncStr(df) : JSON.stringify(df);
               if (localValStr) {
                 // Set lastSyncRef to df so syncToCloud will detect a difference and push our local data to the cloud
-                lastSyncRef.current[key] = JSON.stringify(df);
+                lastSyncRef.current[key] = dfStr;
               } else {
                 setter(df);
-                lastSyncRef.current[key] = JSON.stringify(df);
+                lastSyncRef.current[key] = dfStr;
               }
             }
           }, (err) => {
@@ -2424,6 +2459,11 @@ function FitForge(){
             if (allPrivateLoaded) setLoaded(true);
           }
           return;
+        }
+
+        if (snap.metadata && !snap.metadata.fromCache && !cloudConfirmedRef.current["library"]) {
+          cloudConfirmedRef.current["library"] = true;
+          setSyncTick(t => t + 1);
         }
 
         if (snap.exists) {
@@ -2511,24 +2551,39 @@ function FitForge(){
     // Safety guard: only upload if this key has finished its initial load from Firestore
     if (!loadedKeysRef.current[key]) return;
 
+    // Cloud-Schreibsperre: Solange der Server-Stand für diesen Key nicht bestätigt ist,
+    // wird NUR lokal gespeichert (localStorage), nie in die Cloud. Sobald der Server-
+    // Snapshot kommt, wird gemerged und der Merge-Zustand löst den Upload aus.
+    const uid = authUser.uid;
+    const localOnly = (k, v) => {
+      try { localStorage.setItem(`ff_${uid}_${k}`, JSON.stringify(stripBase64(v, k))); } catch(e) {}
+      if (window.dbg) dbg(`💾 ${k}: nur lokal gespeichert (Cloud-Stand noch unbestätigt)`, '#fa0');
+    };
+
     if (key === "data") {
       const { photos, exercisePhotos, ...dataWithoutPhotosAndExPhotos } = val;
       const cleanedData = stripBase64(dataWithoutPhotosAndExPhotos, "data");
       const dataStr = JSON.stringify(cleanedData);
       const valStr = JSON.stringify(val);
-      
+
       // Safety check: Prevent overwriting richer cloud data with empty/smaller local data
       if (val && Array.isArray(val.workouts)) {
         try {
-          const lastStr = lastSyncRef.current["data"] || localStorage.getItem(`ff_${authUser.uid}_data`);
+          const lastStr = lastSyncRef.current["data"] || localStorage.getItem(`ff_${uid}_data`);
           if (lastStr) {
             const lastVal = JSON.parse(lastStr);
-            if (lastVal && Array.isArray(lastVal.workouts)) {
-              // Absichtlich gelöschte Workouts (Tombstones) zählen nicht als "verloren"
-              const tomb = new Set([...(val.deletedWorkoutIds||[]), ...(lastVal.deletedWorkoutIds||[])]);
-              const lastRelevant = lastVal.workouts.filter(w => !tomb.has(w.id));
-              if (lastRelevant.length > val.workouts.length) {
-                console.warn(`Local data has fewer workouts (${val.workouts.length}) than last sync (${lastRelevant.length}). Merging...`);
+            if (lastVal && typeof lastVal === "object") {
+              // Absichtlich gelöschte Einträge (Tombstones) zählen nicht als "verloren"
+              const tombW = new Set([...(val.deletedWorkoutIds||[]), ...(lastVal.deletedWorkoutIds||[])]);
+              const tombP = new Set([...(val.deletedPlanIds||[]), ...(lastVal.deletedPlanIds||[])]);
+              const tombD = new Set([...(val.deletedWeightDates||[]), ...(lastVal.deletedWeightDates||[])]);
+              const lastW = (lastVal.workouts||[]).filter(w => w && !tombW.has(w.id)).length;
+              const lastP = (lastVal.plans||[]).filter(p => p && !tombP.has(p.id)).length;
+              const lastD = (lastVal.weightHistory||[]).filter(h => h && !tombD.has(h.date)).length;
+              const curW = (val.workouts||[]).length, curP = (val.plans||[]).length, curD = (val.weightHistory||[]).length;
+              if (lastW > curW || lastP > curP || lastD > curD) {
+                console.warn(`Local data has fewer entries (W ${curW}/${lastW}, P ${curP}/${lastP}, G ${curD}/${lastD}) than last sync. Merging...`);
+                if (window.dbg) dbg(`🛡️ Schutz: lokale Daten kleiner als Cloud-Stand – merge statt überschreiben`, '#f80');
                 const merged = mergeData(val, lastVal);
                 if (JSON.stringify(merged) !== valStr) {
                   setData(merged);
@@ -2538,6 +2593,13 @@ function FitForge(){
             }
           }
         } catch(e) {}
+      }
+
+      // Cloud-Stand für data/photos/exercisePhotos noch nicht bestätigt → nur lokal sichern
+      if (!cloudConfirmedRef.current["data"]) {
+        try { localStorage.setItem(`ff_${uid}_data`, JSON.stringify({ ...cleanedData, photos: photos || [], exercisePhotos: exercisePhotos || {} })); } catch(e) {}
+        if (window.dbg) dbg(`💾 data: nur lokal gespeichert (Cloud-Stand noch unbestätigt)`, '#fa0');
+        return;
       }
 
       const cleanedPhotos = stripBase64(photos, "photos");
@@ -2560,7 +2622,7 @@ function FitForge(){
       }
       
       // Sync photos separately
-      if (photosStr !== lastSyncRef.current["photos"] && loadedKeysRef.current["photos"]) {
+      if (photosStr !== lastSyncRef.current["photos"] && loadedKeysRef.current["photos"] && cloudConfirmedRef.current["photos"]) {
         clearTimeout(debRef.current["photos"]);
         debRef.current["photos"] = setTimeout(() => {
           if (window.dbg) dbg(`📤 Synchronisiere photos (Größe: ${(photosStr.length/1024).toFixed(1)} KB)...`, '#ff0');
@@ -2571,7 +2633,7 @@ function FitForge(){
       }
 
       // Sync exercisePhotos separately
-      if (exPhotosStr !== lastSyncRef.current["exercisePhotos"] && loadedKeysRef.current["exercisePhotos"]) {
+      if (exPhotosStr !== lastSyncRef.current["exercisePhotos"] && loadedKeysRef.current["exercisePhotos"] && cloudConfirmedRef.current["exercisePhotos"]) {
         clearTimeout(debRef.current["exercisePhotos"]);
         debRef.current["exercisePhotos"] = setTimeout(() => {
           if (window.dbg) dbg(`📤 Synchronisiere exercisePhotos (Größe: ${(exPhotosStr.length/1024).toFixed(1)} KB)...`, '#ff0');
@@ -2588,6 +2650,21 @@ function FitForge(){
     // Skip if this change just came FROM the cloud
     if (valStr === lastSyncRef.current[key]) return;
 
+    // Cloud-Stand für diesen Key noch nicht bestätigt → nur lokal sichern
+    if (!cloudConfirmedRef.current[key]) { localOnly(key, val); return; }
+
+    // Schutz: ein leeres Objekt/Array darf einen bestätigten, nicht-leeren Cloud-Stand
+    // nie einfach überschreiben (das kann nur aus einem Reset-Fehler kommen).
+    try {
+      const isEmpty = v => v == null || (Array.isArray(v) ? v.length === 0 : (typeof v === "object" && Object.keys(v).length === 0));
+      const lastVal = lastSyncRef.current[key] ? JSON.parse(lastSyncRef.current[key]) : null;
+      if ((key === "prs" || key === "nutrition" || key === "weekPlans") && isEmpty(val) && !isEmpty(lastVal)) {
+        console.warn(`Refusing to overwrite non-empty cloud ${key} with empty value`);
+        if (window.dbg) dbg(`🛡️ Schutz: leeres ${key} überschreibt keinen gefüllten Cloud-Stand`, '#f80');
+        return;
+      }
+    } catch(e) {}
+
     clearTimeout(debRef.current[key]);
     debRef.current[key] = setTimeout(() => {
       if (window.dbg) dbg(`📤 Synchronisiere ${key}...`, '#ff0');
@@ -2597,15 +2674,17 @@ function FitForge(){
     }, 300);
   };
 
-  useEffect(() => { syncToCloud("data", data); }, [data, loaded]);
-  useEffect(() => { syncToCloud("user", user); }, [user, loaded]);
-  useEffect(() => { syncToCloud("prs", prs); }, [prs, loaded]);
-  useEffect(() => { syncToCloud("nutrition", nutrition); }, [nutrition, loaded]);
+  useEffect(() => { syncToCloud("data", data); }, [data, loaded, syncTick]);
+  useEffect(() => { syncToCloud("user", user); }, [user, loaded, syncTick]);
+  useEffect(() => { syncToCloud("prs", prs); }, [prs, loaded, syncTick]);
+  useEffect(() => { syncToCloud("nutrition", nutrition); }, [nutrition, loaded, syncTick]);
   useEffect(() => {
     // Library sync is shared
     if (!authUser || !loaded) return;
     const valStr = JSON.stringify(library);
     if (valStr === lastSyncRef.current["library"]) return;
+    // Nie die gemeinsame Bibliothek überschreiben, bevor ihr Server-Stand bestätigt wurde
+    if (!cloudConfirmedRef.current["library"]) { try { localStorage.setItem("ff_library", valStr); } catch(e) {} return; }
     clearTimeout(debRef.current["library"]);
     debRef.current["library"] = setTimeout(async () => {
       if (window.dbg) dbg(`📤 Synchronisiere shared library...`, '#0ff');
@@ -2639,9 +2718,9 @@ function FitForge(){
         showToast(`Übungen konnten nicht online gespeichert werden: ${e.message}`, "error");
       }
     }, 500);
-  }, [library, loaded]);
-  useEffect(() => { syncToCloud("weekPlans", weekPlans); }, [weekPlans, loaded]);
-  useEffect(() => { syncToCloud("favFoods", favFoods); }, [favFoods, loaded]);
+  }, [library, loaded, syncTick]);
+  useEffect(() => { syncToCloud("weekPlans", weekPlans); }, [weekPlans, loaded, syncTick]);
+  useEffect(() => { syncToCloud("favFoods", favFoods); }, [favFoods, loaded, syncTick]);
 
   // ── Einmalige Migration: alte base64-Übungsbilder nach Firebase Storage ────
   // Vor dem Storage-Fix erstellte Übungen haben ihr Bild als base64 lokal. Das
