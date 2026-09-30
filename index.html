@@ -9049,7 +9049,13 @@ function localIntent(text, plans){
 }
 function buildAIContext({ data, user, prs, nutrition, view }){
   const today = todayStr();
+  // Fertig berechnete Kennzahlen – kleine Modelle verzählen sich sonst in langen Listen
+  const ws = data.workouts || [];
+  const byMonth = {};
+  ws.forEach(w => { const m = (w.date || "").slice(0, 7); if (!m) return; const b = byMonth[m] = byMonth[m] || { trainings: 0, minuten: 0, laengstes: null }; b.trainings++; b.minuten += w.duration || 0; if (!b.laengstes || (w.duration || 0) > b.laengstes.min) b.laengstes = { name: w.name, datum: w.date, min: w.duration || 0 }; });
+  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   return {
+    stats: { trainingsGesamt: ws.length, letzte7Tage: ws.filter(w => w.date >= weekAgo).length, proMonat: byMonth, letztesTraining: [...ws].sort((a, b) => b.date.localeCompare(a.date))[0]?.date || null },
     view,
     user: { name: user.firstName, weight: user.weight, height: user.height, goal: user.goal, age: user.age },
     plans: (data.plans||[]).map(p => ({ id: p.id, name: p.name, types: p.types, exercises: (p.exercises||[]).map(e => typeof e === "string" ? e : e.name) })),

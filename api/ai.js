@@ -88,6 +88,8 @@ Mögliche actions (nur wenn passend, sonst leeres Array):
 - {"type":"create_plan","plan":{"name":"…","color":"#FF6B35","types":["…"],"exercises":[{"name":"…","sets":3,"reps":"8-10","note":"…"}]}}   – Nutzer bestätigt vor dem Speichern
 - {"type":"suggest_meal","meal":{"name":"…","kcal":0,"protein":0,"carbs":0,"fat":0,"ingredients":["…"],"steps":["…"]}}
 Regeln: Nutze nur planIds aus dem Kontext. Erfinde keine Trainingsdaten – analysiere nur, was im Kontext steht.
+Für Anzahlen, Summen und Rekorde nutze IMMER die fertigen Werte aus context.stats (nicht selbst zählen).
+navigate/start_workout NUR, wenn der Nutzer ausdrücklich darum bittet (z. B. "öffne…", "zeig mir…", "starte…") – bei Fragen keine Aktion.
 Halte "reply" knapp (Sprachsteuerung auf dem Handy), ausführliche Analysen dürfen länger sein.`;
 
 const TASK_HINTS = {
