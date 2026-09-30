@@ -349,7 +349,7 @@ const fbSet = async (key, value) => {
               console.error(`BLOCKIERT: ${key} würde von ${countEntries(serverVal)} auf ${countEntries(cleaned)} Einträge schrumpfen`);
               conflictVal = serverVal; return;
             }
-            if (JSON.stringify(serverVal) !== JSON.stringify(cleaned)) backupVal = serverVal;
+            if (stableStr(serverVal) !== stableStr(cleaned)) backupVal = serverVal;
           }
           t.set(ref, { value: cleaned });
         }),
@@ -662,6 +662,10 @@ const purgeDemoPRs=prs=>{
   demoKeys.forEach(k=>delete out[k]);
   return out;
 };
+// Reihenfolge-unabhängiges JSON: Firestore liefert Objektfelder in beliebiger Reihenfolge
+// zurück. Alle Sync-Vergleiche (lastSyncRef) MÜSSEN hierüber laufen, sonst hält die App
+// identische Daten für verschieden und lädt endlos neu hoch (Schreibschleife).
+const stableStr = v => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x)) ? Object.keys(x).sort().reduce((o, key) => (o[key] = x[key], o), {}) : x);
 const stripBase64 = (val, key) => {
   if (!val) return val;
   const limit = (key === "photos" || key === "exercisePhotos") ? 900000 : 1000;
@@ -2273,7 +2277,7 @@ function FitForge(){
   const dataSyncStr = (val) => {
     if (!val) return JSON.stringify(val);
     const { photos, exercisePhotos, ...rest } = val;
-    return JSON.stringify(stripBase64(rest, "data"));
+    return stableStr(stripBase64(rest, "data"));
   };
 
   // ── Auth state listener & Real-time Listeners ─────────────────────────────
@@ -2316,14 +2320,14 @@ function FitForge(){
              // Alte Demo-Einträge aus dem Geräte-Cache entfernen, bevor sie in den Merge laufen
              if (key === "data") parsed = purgeDemoData(parsed);
              if (key === "prs") parsed = purgeDemoPRs(parsed);
-             const parsedStr = JSON.stringify(parsed);
+             const parsedStr = stableStr(parsed);
              if (parsedStr !== local) localStorage.setItem(`ff_${uid}_${key}`, parsedStr);
              lastSyncRef.current[key] = key === "data" ? dataSyncStr(parsed) : parsedStr;
              setter(parsed);
           } else {
              // CRITICAL: If no cache for THIS user, clear any previous user's data
              setter(df);
-             lastSyncRef.current[key] = key === "data" ? dataSyncStr(df) : JSON.stringify(df);
+             lastSyncRef.current[key] = key === "data" ? dataSyncStr(df) : stableStr(df);
           }
         });
 
@@ -2355,7 +2359,7 @@ function FitForge(){
             if (changed) {
               cacheData.exercisePhotos = exPhotos;
               const migratedDataStr = JSON.stringify(cacheData);
-              const migratedExPhotosStr = JSON.stringify(exPhotos);
+              const migratedExPhotosStr = stableStr(exPhotos);
               
               localStorage.setItem(`ff_${uid}_data`, migratedDataStr);
               localStorage.setItem(`ff_${uid}_exercisePhotos`, migratedExPhotosStr);
@@ -2409,7 +2413,7 @@ function FitForge(){
 
             if (snap.exists) {
               const cloudVal = snap.data().value;
-              const cloudStr = JSON.stringify(cloudVal);
+              const cloudStr = stableStr(cloudVal);
               if (cloudStr !== lastSyncRef.current[key]) {
                 if (window.dbg) dbg(`📥 Snapshot empfangen für ${key}`, '#a8f');
                 // Perform safe merging for specific keys to prevent overwriting local offline progress
@@ -2422,7 +2426,7 @@ function FitForge(){
                     // Falls die lokalen Daten Änderungen enthalten, ist withPhotos anders als cloudVal
                     // und syncToCloud wird gestartet, um die Änderungen hochzuladen.
                     const cloudCleaned = stripBase64(cloudVal, "data");
-                    lastSyncRef.current["data"] = JSON.stringify(cloudCleaned);
+                    lastSyncRef.current["data"] = stableStr(cloudCleaned);
                     return withPhotos;
                   });
                 } else if (key === "photos") {
@@ -2482,7 +2486,7 @@ function FitForge(){
               // If we already have local cache loaded in step 1, DO NOT delete it.
               // Instead, we keep it and we will sync it up to the cloud.
               const localValStr = localStorage.getItem(`ff_${uid}_${key}`);
-              const dfStr = key === "data" ? dataSyncStr(df) : JSON.stringify(df);
+              const dfStr = key === "data" ? dataSyncStr(df) : stableStr(df);
               if (localValStr) {
                 // Set lastSyncRef to df so syncToCloud will detect a difference and push our local data to the cloud
                 lastSyncRef.current[key] = dfStr;
@@ -2584,7 +2588,7 @@ function FitForge(){
             const unionDeleted = [...new Set([...localDeleted, ...cloudDeletedIds])];
             localStorage.setItem("ff_lib_deleted", JSON.stringify(unionDeleted.slice(-500)));
 
-            const libStr = JSON.stringify(libVal);
+            const libStr = stableStr(libVal);
             if (libStr !== lastSyncRef.current["library"]) {
               if (window.dbg) dbg('📚 Gemeinsame Bibliothek empfangen – wird zusammengeführt', '#0ff');
               setLibrary(prevLocal => {
@@ -2685,8 +2689,8 @@ function FitForge(){
     if (key === "data") {
       const { photos, exercisePhotos, ...dataWithoutPhotosAndExPhotos } = val;
       const cleanedData = stripBase64(dataWithoutPhotosAndExPhotos, "data");
-      const dataStr = JSON.stringify(cleanedData);
-      const valStr = JSON.stringify(val);
+      const dataStr = stableStr(cleanedData);
+      const valStr = stableStr(val);
 
       // Safety check: Prevent overwriting richer cloud data with empty/smaller local data
       if (val && Array.isArray(val.workouts)) {
@@ -2725,10 +2729,10 @@ function FitForge(){
       }
 
       const cleanedPhotos = stripBase64(photos, "photos");
-      const photosStr = JSON.stringify(cleanedPhotos || []);
+      const photosStr = stableStr(cleanedPhotos || []);
       
       const cleanedExPhotos = stripBase64(exercisePhotos, "exercisePhotos");
-      const exPhotosStr = JSON.stringify(cleanedExPhotos || {});
+      const exPhotosStr = stableStr(cleanedExPhotos || {});
 
       // Sync data without photos/exPhotos
       if (dataStr !== lastSyncRef.current["data"]) {
@@ -2770,7 +2774,7 @@ function FitForge(){
       return;
     }
 
-    const valStr = JSON.stringify(val);
+    const valStr = stableStr(val);
     
     // Skip if this change just came FROM the cloud
     if (valStr === lastSyncRef.current[key]) return;
@@ -2860,6 +2864,51 @@ function FitForge(){
     });
   }, [health, loaded, syncTick, data.hkImported]);
 
+  // GPS-Strecken aus dem data-Dokument in eigene Dokumente auslagern (1-MB-Limit).
+  // Erst nach SERVER-Bestätigung des Strecken-Dokuments wird routePath durch routeRef ersetzt –
+  // offline bleibt die Strecke einfach lokal im Training, bis es wieder klappt.
+  const routeMoveRef = useRef(false);
+  const routeFailAtRef = useRef(0);
+  useEffect(() => {
+    if (!authUser || !loaded || !cloudConfirmedRef.current["data"] || routeMoveRef.current) return;
+    if (Date.now() - routeFailAtRef.current < 5*60000) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    const jobs = [];
+    (data.workouts||[]).forEach(w => (w.exercises||[]).forEach((ex, ei) => {
+      const st = ex.sets && ex.sets[0];
+      if (st && Array.isArray(st.routePath) && st.routePath.length) jobs.push({ wid: w.id, ei, path: st.routePath });
+    }));
+    if (!jobs.length) return;
+    routeMoveRef.current = true;
+    const uid = authUser.uid;
+    (async () => {
+      const done = {};
+      for (const j of jobs) {
+        const docId = `${uid}_route_${j.wid}_${j.ei}`;
+        try {
+          await Promise.race([
+            window.firebaseDoc(window.firebaseDb, "fitforge", docId).set({ value: compactRoute(j.path), workoutId: j.wid, createdAt: Date.now() }),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 20000))
+          ]);
+          done[`${j.wid}_${j.ei}`] = { docId, n: j.path.length };
+        } catch(e) { routeFailAtRef.current = Date.now(); console.warn("Strecke nicht ausgelagert (später erneut):", e.message); if (window.dbg) dbg(`⚠️ Strecke nicht ausgelagert: ${e.message}`, "#fa0"); }
+      }
+      if (Object.keys(done).length) {
+        setData(d => ({ ...d, workouts: (d.workouts||[]).map(w => {
+          if (!Object.keys(done).some(k => k.startsWith(w.id + "_"))) return w;
+          return { ...w, exercises: (w.exercises||[]).map((ex, ei) => {
+            const hit = done[`${w.id}_${ei}`];
+            if (!hit || !ex.sets || !ex.sets[0]) return ex;
+            const { routePath, ...rest } = ex.sets[0];
+            return { ...ex, sets: [{ ...rest, routeRef: hit.docId, routePoints: hit.n }, ...ex.sets.slice(1)] };
+          }) };
+        }) }));
+        if (window.dbg) dbg(`🗺️ ${Object.keys(done).length} GPS-Strecke(n) ausgelagert`, '#0f0');
+      }
+      routeMoveRef.current = false;
+    })();
+  }, [data.workouts, loaded, syncTick, authUser]);
+
   useEffect(() => { syncToCloud("data", data); }, [data, loaded, syncTick]);
   useEffect(() => { syncToCloud("user", user); }, [user, loaded, syncTick]);
   useEffect(() => { syncToCloud("prs", prs); }, [prs, loaded, syncTick]);
@@ -2867,7 +2916,7 @@ function FitForge(){
   useEffect(() => {
     // Library sync is shared
     if (!authUser || !loaded) return;
-    const valStr = JSON.stringify(library);
+    const valStr = stableStr(library);
     if (valStr === lastSyncRef.current["library"]) return;
     // Nie die gemeinsame Bibliothek überschreiben, bevor ihr Server-Stand bestätigt wurde
     if (!cloudConfirmedRef.current["library"]) { try { localStorage.setItem("ff_library", valStr); } catch(e) {} return; }
@@ -6060,6 +6109,27 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
   </div>);
 }
 
+// ── GPS-Strecken ausgelagert ─────────────────────────────────────────────────
+// Strecken liegen NICHT im data-Dokument (1-MB-Limit!), sondern je Lauf in
+// fitforge/<uid>_route_<workoutId>_<exIdx>, kompakt als FLACHE Liste t,lat,lng,alt,speed,t,lat,…
+// (Firestore erlaubt keine verschachtelten Arrays).
+const compactRoute = path => (path||[]).flatMap(p => [p.t||0, +(+p.lat).toFixed(6), +(+p.lng).toFixed(6), p.alt!=null ? Math.round(p.alt*10)/10 : null, p.speed!=null ? Math.round(p.speed*100)/100 : null]);
+const expandRoute = arr => { const out = []; for (let i = 0; i + 4 < (arr||[]).length; i += 5) out.push({ t: arr[i], lat: arr[i+1], lng: arr[i+2], alt: arr[i+3], speed: arr[i+4] }); return out; };
+function RouteView({ set, targetPace }) {
+  const [path, setPath] = useState(() => (set.routePath && set.routePath.length) ? set.routePath : null);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    if (path || !set.routeRef || !window.firebaseDb) return;
+    let off = false;
+    window.firebaseDoc(window.firebaseDb, "fitforge", set.routeRef).get()
+      .then(s => { if (!off) { if (s.exists) setPath(expandRoute(s.data().value)); else setErr(true); } })
+      .catch(() => { if (!off) setErr(true); });
+    return () => { off = true; };
+  }, [set.routeRef]);
+  if (!path) return <div style={{fontSize:12,color:"#666",padding:"12px 0",textAlign:"center"}}>{err ? "🗺️ Strecke offline nicht verfügbar – mit Internet erneut öffnen" : "🗺️ Strecke wird geladen…"}</div>;
+  return (<><RouteMap path={path} /><GpsAnalytics path={path} targetPace={targetPace} /></>);
+}
+
 function RouteMap({ path }) {
   const mRef = useRef(null);
   useEffect(() => {
@@ -6778,13 +6848,10 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
                       {tt && <span style={{background:"rgba(239,71,111,0.08)",border:"1px solid rgba(239,71,111,0.15)",borderRadius:9,padding:"8px",fontSize:12,textAlign:"center",color:"#EF476F",fontWeight:700}}>{set.tempo || "-"}</span>}
                     </div>
                   ))}
-                  {ex.sets && ex.sets[0] && ex.sets[0].routePath && ex.sets[0].routePath.length > 0 && (
-                    <>
-                      <RouteMap path={ex.sets[0].routePath} />
-                      <GpsAnalytics path={ex.sets[0].routePath} targetPace={ex.targetPace} />
-                    </>
+                  {ex.sets && ex.sets[0] && ((ex.sets[0].routePath && ex.sets[0].routePath.length > 0) || ex.sets[0].routeRef) && (
+                    <RouteView set={ex.sets[0]} targetPace={ex.targetPace} />
                   )}
-                  {ex.sets && ex.sets[0] && ex.targetPace && (!ex.sets[0].routePath || ex.sets[0].routePath.length === 0) && (() => {
+                  {ex.sets && ex.sets[0] && ex.targetPace && (!ex.sets[0].routePath || ex.sets[0].routePath.length === 0) && !ex.sets[0].routeRef && (() => {
                     const actualPaceStr = formatPace(parseFloat(ex.sets[0].tempo || 0));
                     if (actualPaceStr === "-:--") return null;
                     
