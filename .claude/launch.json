@@ -4,14 +4,38 @@
     {
       "name": "fitforge-static",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "4599", "--bind", "127.0.0.1"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4599",
+        "--bind",
+        "127.0.0.1"
+      ],
       "port": 4599
     },
     {
       "name": "fitforge-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--host", "0.0.0.0"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--host",
+        "0.0.0.0"
+      ],
       "port": 5173
+    },
+    {
+      "name": "fitforge-build",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "preview",
+        "--port",
+        "4173",
+        "--strictPort"
+      ],
+      "port": 4173
     }
   ]
 }
