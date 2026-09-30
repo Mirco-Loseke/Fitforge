@@ -4,7 +4,7 @@
 // - CDN-Skripte/Styles/Fonts/Bilder werden cache-first ausgeliefert
 // Firestore-/Auth-Aufrufe werden NICHT angefasst (das SDK regelt offline selbst).
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const PRECACHE = 'ff-precache-' + VERSION;
 const RUNTIME = 'ff-runtime-' + VERSION;
 // 'ff-compiled' gehört dem App-Loader (kompilierter App-Code) – nie löschen!
@@ -25,7 +25,7 @@ const PRECACHE_URLS = [
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
-  'https://unpkg.com/html5-qrcode',
+  'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
   'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap',
 ];
 

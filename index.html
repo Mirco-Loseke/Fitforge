@@ -182,7 +182,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: center; }
 .action-btn-primary { transition: all 0.2s; }
 .action-btn-primary:hover { transform: scale(1.05); filter: drop-shadow(0 0 8px rgba(255,209,102,0.5)); }
 </style>
-<script defer src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<script defer src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" type="text/javascript"></script>
 </head>
 <body>
 <style>
@@ -202,7 +202,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: center; }
     box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
   }
 </style>
-<div id="fb-debug-container" class="collapsed">
+<div id="fb-debug-container" class="collapsed" style="display:none">
   <button id="fb-debug-toggle" onclick="toggleDebug()">
     <span id="debug-arrow">▲</span> DEBUG CONSOLE
   </button>
@@ -224,6 +224,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: center; }
       line.style.paddingBottom = '2px';
       line.textContent = new Date().toLocaleTimeString() + ' » ' + msg; 
       d.appendChild(line); 
+      while (d.childNodes.length > 300) d.removeChild(d.firstChild);
       if (!document.getElementById('fb-debug-container').classList.contains('collapsed')) {
         d.scrollTop=d.scrollHeight; 
       }
@@ -231,6 +232,12 @@ input[type="date"]::-webkit-date-and-time-value { text-align: center; }
     console.log(msg);
   };
   window.dbg = dbg;
+  // Debug-Konsole nur auf Wunsch: 5× schnell auf "Version" in der Seitenleiste tippen (bleibt pro Gerät gespeichert)
+  window.setDebugVisible = (on) => {
+    try { localStorage.setItem('ff-debug', on ? '1' : '0'); } catch(e) {}
+    const c = document.getElementById('fb-debug-container'); if (c) c.style.display = on ? '' : 'none';
+  };
+  try { if (localStorage.getItem('ff-debug') === '1') document.getElementById('fb-debug-container').style.display = ''; } catch(e) {}
   window.onerror = (msg,src,line,col,err) => {
     dbg('JS ERROR: '+msg+' ('+src+':'+line+':'+col+')', '#f55');
     if(err && err.stack) dbg('STACK: '+err.stack.split('\n').slice(0,3).join(' | '), '#f88');
@@ -665,6 +672,8 @@ const purgeDemoPRs=prs=>{
 // Reihenfolge-unabhängiges JSON: Firestore liefert Objektfelder in beliebiger Reihenfolge
 // zurück. Alle Sync-Vergleiche (lastSyncRef) MÜSSEN hierüber laufen, sonst hält die App
 // identische Daten für verschieden und lädt endlos neu hoch (Schreibschleife).
+// Wird beim Build gesetzt (vite.config.js): Datum + Commit. Im Dev-Server "dev".
+const APP_VERSION = window.__FF_VERSION__ || "dev";
 const stableStr = v => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x)) ? Object.keys(x).sort().reduce((o, key) => (o[key] = x[key], o), {}) : x);
 const stripBase64 = (val, key) => {
   if (!val) return val;
@@ -3478,7 +3487,7 @@ function FitForge(){
           <div style={s.streakCard}><span style={{color:"#FFD166",display:"flex"}}>{IC.fire}</span><div><div style={s.streakN}>{cwDays} {cwDays === 1 ? 'Tag' : 'Tage'}</div><div style={s.streakL}>{cwSessions} {cwSessions === 1 ? 'Einheit' : 'Einheiten'}</div></div></div>
           {lastSync && <div style={{fontSize:10, color:"#444", textAlign:"center", padding:"0 10px"}}>Cloud Sync: {lastSync.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>}
           <div style={{fontSize:9, color:"#444", display:"flex", justifyContent:"center", gap:8, alignItems:"center"}}>
-            <span>Version: 1.0.4</span>
+            <span onClick={()=>{const n=Date.now();const t=(window.__verTaps||[]).filter(x=>n-x<2500);t.push(n);window.__verTaps=t;if(t.length>=5){window.__verTaps=[];const on=document.getElementById('fb-debug-container')?.style.display==='none';window.setDebugVisible?.(on);showToast(on?'🛠️ Debug-Konsole an':'Debug-Konsole aus','info');}}} style={{cursor:'default',userSelect:'none'}}>Version: {APP_VERSION}</span>
             <button onClick={() => {
               if (navigator.serviceWorker) {
                 navigator.serviceWorker.getRegistrations().then(regs => {
@@ -12597,7 +12606,22 @@ ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(
 // App-Code kompiliert; das Ergebnis landet im Cache (Schlüssel = Hash des
 // Quellcodes). Bei jedem weiteren Besuch startet die App ohne Babel sofort.
 (async function () {
-  const src = document.getElementById('ff-src').textContent;
+  const srcEl = document.getElementById('ff-src');
+  // Produktions-Build: App wurde beim Deploy vorkompiliert (vite.config.js) –
+  // einfach die fertige Datei laden (Service Worker cached sie für offline).
+  const precompiled = srcEl.getAttribute('data-compiled');
+  if (precompiled) {
+    if (document.readyState === 'loading') await new Promise(res => document.addEventListener('DOMContentLoaded', res));
+    if (!window.React || !window.ReactDOM) await new Promise(res => window.addEventListener('load', res));
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.type = 'module'; s.src = precompiled;
+      s.onload = res; s.onerror = () => rej(new Error('App-Datei konnte nicht geladen werden'));
+      document.body.appendChild(s);
+    });
+    return;
+  }
+  const src = srcEl.textContent;
   const COMPILE_CACHE = 'ff-compiled';
 
   let hash = null;
