@@ -1491,6 +1491,10 @@ function FitForge(){
   const [weeklyReport, setWeeklyReport] = useState(null);
   const [checkinModalOpen, setCheckinModalOpen] = useState(false);
   const [presetPlanId, setPresetPlanId] = useState(null);
+  // KI-Assistent (window.ffOpenAI({prompt, task, autoSend}) öffnet ihn von überall)
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiInit, setAiInit] = useState(null);
+  useEffect(() => { window.ffOpenAI = (init) => { setAiInit(init ? { ...init, _t: Date.now() } : null); setAiOpen(true); }; }, []);
   const [autoOpenAdd, setAutoOpenAdd] = useState(null);
   const [presetMealType, setPresetMealType] = useState(null);
   const [stretchFilter, setStretchFilter] = useState(false);
@@ -3499,7 +3503,7 @@ function FitForge(){
           </div>
         </div>
       </aside>
-      <main style={{...s.main, marginLeft: isMobile ? 0 : 236, minWidth: 0, maxWidth: isMobile ? "100%" : "none", overflowX: isMobile ? "hidden" : "visible"}}>
+      <main style={{...s.main, marginLeft: isMobile ? 0 : 236, ...(isMobile ? { paddingBottom: `calc(${BOTTOM_NAV_H + 24}px + env(safe-area-inset-bottom))` } : {}), minWidth: 0, maxWidth: isMobile ? "100%" : "none", overflowX: isMobile ? "hidden" : "visible"}}>
         <div style={s.topBar}>
           <div style={{display:"flex",alignItems:"center",gap:12, flex: 1, minWidth: 0}}>
             {isMobile && <button style={{...s.iconCircle, border:"none", background:"transparent", color:"#F0EDE8", flexShrink: 0}} onClick={()=>setSidebarOpen(o=>!o)}>{sidebarOpen ? IC.x : IC.menu}</button>}
@@ -3611,6 +3615,13 @@ function FitForge(){
           {view==="profile"&&<ProfilePage user={user} setUser={setUser} notify={showToast} isMobile={isMobile} onRescue={rescueWorkouts} latestWeight={(()=>{const lw=[...(data.weightHistory||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];return lw?.value||parseFloat(user.weight)||null;})()}/>}
         </div>
       </main>
+      <AssistantSheet open={aiOpen} onClose={()=>setAiOpen(false)} init={aiInit} data={data} user={user} prs={prs} nutrition={nutrition} view={view} notify={showToast} isMobile={isMobile}
+        onAction={(a)=>{
+          if(a.type==='navigate'&&a.view){setView(a.view);setPresetPlanId(null);setAutoOpenAdd(null);closeAll();}
+          else if(a.type==='start_workout'){const p=(data.plans||[]).find(x=>String(x.id)===String(a.planId));if(!p)return showToast('Plan nicht gefunden','error');setActiveWorkout(null);setPresetPlanId(p.id);setView('log');closeAll();}
+          else if(a.type==='save_plan'&&a.plan){setData(d=>({...d,plans:[...(d.plans||[]),a.plan]}));}
+        }}/>
+      {isMobile && <BottomNav view={view} onNav={(id)=>{if(id==='ai'){window.ffOpenAI();return;}setView(id);setPresetPlanId(null);setAutoOpenAdd(null);setPresetMealType(null);setStretchFilter(false);closeAll();setSidebarOpen(false);}}/>}
       {logModal&&<QuickLogModal data={data} setData={setData} onClose={()=>setLogModal(false)} notify={showToast}/>}
       {planModal&&<PlanModal data={data} setData={setData} editPlan={editPlan} library={library} onClose={()=>{setPlanModal(false);setEditPlan(null);}} notify={showToast}/>}
       {weeklyReport&&<WeeklyReportModal report={weeklyReport} onClose={()=>setWeeklyReport(null)} data={data}/>}
@@ -4607,6 +4618,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
           <div style={{display:"flex", gap: 8, width: isMobile ? "100%" : "auto"}}>
             <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{...s.inp,flex: isMobile ? "0 0 120px" : "0 0 150px",padding:"8px 10px", fontSize: 13}}/>
             <button style={{...s.primaryBtn, flex:1, justifyContent:"center", padding: "8px 16px"}} onClick={()=>setShowAdd(o=>!o)}>{IC.plus} Hinzufügen</button>
+            <button style={{...s.secBtn,borderColor:"rgba(167,139,250,0.45)",color:"#A78BFA",background:"rgba(167,139,250,0.08)",whiteSpace:"nowrap",flexShrink:0,padding:isMobile?"8px 12px":s.secBtn.padding}} onClick={()=>window.ffOpenAI?.({autoSend:true,prompt:"Schlag mir ein Gericht passend zu meinen heutigen Makros vor.",task:"meal"})} aria-label="KI-Gerichtidee">✨{isMobile?"":" Idee"}</button>
           </div>
         </div>
       </div>
@@ -4822,7 +4834,7 @@ function Nutrition({nutrition,setNutrition,user,notify,favFoods,setFavFoods,isMo
 }
 function Plans({data,setData,onNew,onEdit,notify}){
   const del=id=>{setData(d=>({...d,plans:d.plans.filter(p=>p.id!==id),deletedPlanIds:[...(d.deletedPlanIds||[]),id]}));notify("Plan gelöscht");};
-  return(<div style={s.page}><div style={s.pageHead}><div><h1 style={s.pageTitle}>Trainingspläne</h1><p style={s.pageSub}>{data.plans.length} aktive Pläne</p></div><button className="mobile-small-btn" style={s.primaryBtn} onClick={onNew}>{IC.plus} <span className="mobile-hide">Neuer Plan</span></button></div>
+  return(<div style={s.page}><div style={s.pageHead}><div><h1 style={s.pageTitle}>Trainingspläne</h1><p style={s.pageSub}>{data.plans.length} aktive Pläne</p></div><div style={{display:"flex",gap:8}}><button style={{...s.secBtn,borderColor:"rgba(167,139,250,0.45)",color:"#A78BFA",background:"rgba(167,139,250,0.08)",whiteSpace:"nowrap"}} onClick={()=>window.ffOpenAI?.({prompt:"Erstelle mir einen neuen Trainingsplan. Ziel: ",task:"plan"})}>✨ KI-Plan</button><button className="mobile-small-btn" style={s.primaryBtn} onClick={onNew}>{IC.plus} <span className="mobile-hide">Neuer Plan</span></button></div></div>
     <div style={s.plansGrid}>{data.plans.map(plan=>{
       const exs=plan.exercises.map(e=>typeof e==="string"?{name:e,photo:null}:e);
       return(<div key={plan.id} style={{...s.planCard,borderTopColor:plan.color,overflow:"hidden"}} className="planCard">
@@ -6689,6 +6701,7 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
             >
               🏆 Zu Challenge hinzufügen
             </button>
+            <button style={{...s.secBtn, padding:"6px 12px", fontSize:12, borderColor:"rgba(167,139,250,0.45)", color:"#A78BFA", background:"rgba(167,139,250,0.08)"}} onClick={()=>window.ffOpenAI?.({autoSend:true, task:"analyze", prompt:`Analysiere mein Training "${w.name}" vom ${w.date} (id ${w.id}) im Vergleich zu früheren Einheiten.`})}>✨ Analysieren</button>
           </div>
           
           <div style={{display:"flex",background:"rgba(255,255,255,0.03)",borderRadius:16,overflow:"hidden",marginBottom:26,border:"1px solid rgba(255,255,255,0.07)"}}>
@@ -8951,6 +8964,207 @@ function ChallengesPage({user,setUser,notify,isMobile}){
           </Overlay>
         );
       })()}
+    </div>
+  );
+}
+
+// ─── Handy-Navigation unten (Daumenzone) ─────────────────────────────────────
+const BOTTOM_NAV_H = 64;
+function BottomNav({ view, onNav }){
+  const items = [
+    ["dashboard", "Home", IC.dashboard],
+    ["history", "Verlauf", IC.history],
+    ["log", "Start", null],
+    ["nutrition", "Ernährung", <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path d="M4 3v7a3 3 0 003 3v8M7 3v6M10 3v7a3 3 0 01-3 3M17 21V3c-2 1-3 4-3 7s1 4 3 4"/></svg>],
+    ["ai", "Coach", <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path d="M12 3l1.8 4.6L18 9.4l-4.2 1.8L12 16l-1.8-4.8L6 9.4l4.2-1.8zM19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8zM5 16l.6 1.4 1.4.6-1.4.6L5 20l-.6-1.4L3 18l1.4-.6z"/></svg>],
+  ];
+  return (
+    <nav aria-label="Hauptnavigation" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 90, paddingBottom: "env(safe-area-inset-bottom)", background: "rgba(13,13,15,0.92)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", height: BOTTOM_NAV_H, maxWidth: 520, margin: "0 auto" }}>
+        {items.map(([id, label, icon]) => {
+          const on = view === id;
+          if (id === "log") return (
+            <button key={id} onClick={() => onNav(id)} aria-label="Training starten" style={{ all: "unset", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, width: 72, transform: "translateY(-14px)" }}>
+              <span style={{ width: 58, height: 58, borderRadius: 29, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#FF6B35,#FF8C60)", boxShadow: on ? "0 0 0 4px rgba(255,107,53,0.3), 0 8px 22px rgba(255,107,53,0.45)" : "0 8px 22px rgba(255,107,53,0.35)", color: "#fff" }}>
+                <svg width="26" height="26" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 001.5.9l10.5-6.5a1 1 0 000-1.8L9.5 4.6A1 1 0 008 5.5z"/></svg>
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: on ? "#FF6B35" : "#aaa" }}>{label}</span>
+            </button>
+          );
+          return (
+            <button key={id} onClick={() => onNav(id)} aria-label={label} aria-current={on ? "page" : undefined} style={{ all: "unset", cursor: "pointer", flex: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, color: on ? "#FF6B35" : (id === "ai" ? "#A78BFA" : "#8a8793") }}>
+              <span style={{ display: "flex" }}>{icon}</span>
+              <span style={{ fontSize: 10, fontWeight: on ? 800 : 600 }}>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+// ─── KI-Assistent ─────────────────────────────────────────────────────────────
+// Öffnen von überall: window.ffOpenAI({ prompt, task, autoSend })  (task: chat|plan|meal|analyze)
+// Anbieter/Modell stellt der Server ein (api/ai.js). Ohne KI greift die lokale Befehlserkennung.
+const AI_VIEWS = [
+  ["dashboard",/dashboard|start ?seite|übersicht|home/],["log",/training starten|workout starten|loslegen/],
+  ["plans",/trainingspl[aä]n|pl[aä]ne/],["history",/verlauf|historie|vergangene/],["library",/bibliothek|übungen/],
+  ["stats",/statistik/],["fortschritt",/fortschritt|gewicht/],["gesundheit",/schlaf|gesundheit|puls|schritte/],
+  ["wochenplan",/wochenplan|woche/],["nutrition",/ernährung|essen|kalorien|mahlzeit/],["goals",/forge ?points|punkte/],
+  ["challenges",/challenge/],["profile",/profil|einstellung/]
+];
+const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
+function localIntent(text, plans){
+  const t = (text||"").toLowerCase();
+  if (/(start|beginn|leg los)/.test(t)) {
+    const nt = norm(t);
+    let best = null, score = 0;
+    (plans||[]).forEach(p => {
+      const words = norm(p.name).split(" ").filter(w => w.length > 2);
+      const hit = words.filter(w => nt.includes(w)).length;
+      const sc = words.length ? hit / words.length : 0;
+      if (sc > score) { score = sc; best = p; }
+    });
+    if (best && score >= 0.5) return { reply: `Starte „${best.name}“ 💪`, actions: [{ type: "start_workout", planId: best.id }] };
+    if (/training|workout/.test(t)) return { reply: "Öffne Training starten.", actions: [{ type: "navigate", view: "log" }] };
+  }
+  if (/(öffne|oeffne|zeig|geh|wechsel|navigier|bring mich)/.test(t)) {
+    const v = AI_VIEWS.find(([, re]) => re.test(t));
+    if (v) return { reply: "Mach ich.", actions: [{ type: "navigate", view: v[0] }] };
+  }
+  return null;
+}
+function buildAIContext({ data, user, prs, nutrition, view }){
+  const today = todayStr();
+  return {
+    view,
+    user: { name: user.firstName, weight: user.weight, height: user.height, goal: user.goal, age: user.age },
+    plans: (data.plans||[]).map(p => ({ id: p.id, name: p.name, types: p.types, exercises: (p.exercises||[]).map(e => typeof e === "string" ? e : e.name) })),
+    recentWorkouts: [...(data.workouts||[])].sort((a,b)=>b.date.localeCompare(a.date)).slice(0, 15).map(w => ({
+      id: w.id, date: w.date, name: w.name, duration: w.duration, health: w.health,
+      exercises: (w.exercises||[]).map(e => ({ name: e.name, sets: (e.sets||[]).map(s => ({ w: s.weight, r: s.reps, km: s.km, kcal: s.kcal })) }))
+    })),
+    prs: Object.fromEntries(Object.entries(prs||{}).slice(0, 40).map(([k,v]) => [k, { w: v.weight, r: v.reps, date: v.date }])),
+    weight: [...(data.weightHistory||[])].sort((a,b)=>b.date.localeCompare(a.date)).slice(0, 10),
+    nutritionToday: nutrition?.[today] ? { meals: (nutrition[today].meals||[]).map(m => ({ name: m.name, kcal: m.kcal, protein: m.protein })) } : null,
+  };
+}
+
+function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view, onAction, notify, isMobile }){
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [aiState, setAiState] = useState("unknown"); // unknown | ready | off
+  const recRef = useRef(null);
+  const endRef = useRef(null);
+  const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+  useEffect(() => {
+    if (!open || !init) return;
+    if (init.autoSend && init.prompt) send(init.prompt, init.task);
+    else if (init.prompt) setInput(init.prompt);
+  }, [open, init]);
+  useEffect(() => () => { try { recRef.current?.abort(); } catch(e) {} }, []);
+
+  const runActions = (actions) => (actions||[]).forEach(a => {
+    if (a.type === "navigate" || a.type === "start_workout") { onAction(a); onClose(); }
+  });
+
+  const send = async (text, task = "chat") => {
+    const q = (text ?? input).trim();
+    if (!q || busy) return;
+    setInput("");
+    const next = [...msgs, { role: "user", content: q }];
+    setMsgs(next);
+    // 1) Einfache Sprachbefehle sofort lokal – funktioniert auch offline und ohne KI
+    const loc = task === "chat" ? localIntent(q, data.plans) : null;
+    if (loc) { setMsgs(m => [...m, { role: "assistant", content: loc.reply, actions: loc.actions }]); setTimeout(() => runActions(loc.actions), 350); return; }
+    // 2) Alles andere an die KI
+    if (typeof navigator !== "undefined" && navigator.onLine === false) { setMsgs(m => [...m, { role: "assistant", content: "📴 Offline – die KI braucht Internet. Befehle wie „öffne Ernährung“ oder „starte <Planname>“ gehen trotzdem." }]); return; }
+    setBusy(true);
+    try {
+      const idt = await firebase.auth().currentUser.getIdToken();
+      const r = await fetch("/api/ai", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + idt },
+        body: JSON.stringify({ task, messages: next.map(m => ({ role: m.role, content: m.content })), context: buildAIContext({ data, user, prs, nutrition, view }) }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 501 || r.status === 404) { setAiState("off"); setMsgs(m => [...m, { role: "assistant", content: "🔌 Die KI ist noch nicht verbunden. Sobald ein Modell eingerichtet ist, kann ich Pläne erstellen, Gerichte vorschlagen und Trainings analysieren. Sprachbefehle wie „öffne Verlauf“ oder „starte <Planname>“ funktionieren schon jetzt." }]); }
+      else if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+      else { setAiState("ready"); setMsgs(m => [...m, { role: "assistant", content: j.reply || "…", actions: j.actions }]); runActions(j.actions); }
+    } catch(e) { setMsgs(m => [...m, { role: "assistant", content: "⚠️ " + e.message }]); }
+    setBusy(false);
+  };
+
+  const toggleMic = () => {
+    if (!SR) return notify("Spracheingabe wird von diesem Browser nicht unterstützt – nutze das 🎤 der Tastatur.", "error");
+    if (listening) { try { recRef.current?.stop(); } catch(e) {} return; }
+    const rec = new SR();
+    rec.lang = "de-DE"; rec.interimResults = true; rec.continuous = false;
+    let finalText = "";
+    rec.onresult = (e) => { let t = ""; for (const r of e.results) { t += r[0].transcript; if (r.isFinal) finalText = t; } setInput(t); };
+    rec.onend = () => { setListening(false); if (finalText.trim()) send(finalText); };
+    rec.onerror = (e) => { setListening(false); if (e.error !== "aborted" && e.error !== "no-speech") notify("Spracheingabe: " + e.error, "error"); };
+    recRef.current = rec; setListening(true);
+    try { rec.start(); } catch(e) { setListening(false); }
+  };
+
+  const acceptPlan = (plan) => {
+    const p = { id: Date.now(), name: plan.name || "KI-Plan", color: plan.color || "#A78BFA", days: [], muscles: plan.muscles || [], types: plan.types || [],
+      exercises: (plan.exercises||[]).map(e => ({ name: e.name, photo: null, ...(e.sets ? { targetSets: e.sets } : {}), ...(e.reps ? { targetReps: String(e.reps) } : {}), ...(e.note ? { note: e.note } : {}) })),
+      updatedAt: Date.now(), aiGenerated: true };
+    onAction({ type: "save_plan", plan: p });
+    notify(`Plan „${p.name}“ gespeichert ✅`);
+  };
+
+  if (!open) return null;
+  const quick = [
+    ["🏋️ Plan erstellen", "Erstelle mir einen Trainingsplan passend zu meinen bisherigen Trainings.", "plan"],
+    ["🍽️ Gericht vorschlagen", "Schlag mir ein Gericht passend zu meinen heutigen Makros vor.", "meal"],
+    ["📈 Letzte Woche analysieren", "Analysiere meine Trainings der letzten 7 Tage.", "analyze"],
+  ];
+  const bubble = (m, i) => (
+    <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%" }}>
+      <div style={{ padding: "10px 13px", borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", background: m.role === "user" ? "linear-gradient(135deg,#FF6B35,#FF8C60)" : "rgba(255,255,255,0.06)", color: m.role === "user" ? "#fff" : "#E8E5E0", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.content}</div>
+      {(m.actions||[]).map((a, j) => a.type === "create_plan" && a.plan ? (
+        <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.08)" }}>
+          <div style={{ fontWeight: 800, color: "#F0EDE8", marginBottom: 6 }}>📋 {a.plan.name}</div>
+          {(a.plan.exercises||[]).map((e, k) => <div key={k} style={{ fontSize: 12, color: "#bbb", padding: "2px 0" }}>• {e.name}{e.sets ? ` – ${e.sets}×${e.reps||""}` : ""}</div>)}
+          <button style={{ ...s.primaryBtn, marginTop: 10, width: "100%", justifyContent: "center" }} onClick={() => acceptPlan(a.plan)}>✅ Plan übernehmen</button>
+        </div>
+      ) : a.type === "suggest_meal" && a.meal ? (
+        <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(0,217,192,0.3)", background: "rgba(0,217,192,0.07)" }}>
+          <div style={{ fontWeight: 800, color: "#F0EDE8" }}>🍽️ {a.meal.name}</div>
+          <div style={{ fontSize: 12, color: "#00D9C0", margin: "4px 0 6px" }}>{[a.meal.kcal && `${a.meal.kcal} kcal`, a.meal.protein && `${a.meal.protein} g Protein`, a.meal.carbs && `${a.meal.carbs} g KH`, a.meal.fat && `${a.meal.fat} g Fett`].filter(Boolean).join(" · ")}</div>
+          {(a.meal.ingredients||[]).length > 0 && <div style={{ fontSize: 12, color: "#bbb" }}>{a.meal.ingredients.join(", ")}</div>}
+          {(a.meal.steps||[]).map((st, k) => <div key={k} style={{ fontSize: 12, color: "#999", marginTop: 3 }}>{k+1}. {st}</div>)}
+        </div>
+      ) : null)}
+    </div>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
+      <div className="dropIn" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, height: isMobile ? "88vh" : "78vh", background: "linear-gradient(170deg,#17171E,#0D0D0F)", border: "1px solid rgba(255,255,255,0.08)", borderBottom: "none", borderRadius: "24px 24px 0 0", display: "flex", flexDirection: "column", paddingBottom: "env(safe-area-inset-bottom)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div><div style={{ fontWeight: 800, fontSize: 16, color: "#F0EDE8" }}>✨ FitForge Coach</div><div style={{ fontSize: 11, color: aiState === "off" ? "#FFD166" : "#666" }}>{aiState === "off" ? "KI noch nicht verbunden · Sprachbefehle aktiv" : "Frag mich oder sag, was ich tun soll"}</div></div>
+          <button onClick={onClose} aria-label="Schließen" style={{ ...s.iconCircle, border: "none", background: "rgba(255,255,255,0.06)", color: "#aaa" }}>{IC.x}</button>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+          {!msgs.length && <>
+            <div style={{ color: "#888", fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>Zum Beispiel: <i>„Starte Push Pull Legs“</i>, <i>„Öffne Ernährung“</i>, <i>„Wie war mein Training diese Woche?“</i></div>
+            {quick.map(([l, p, t]) => <button key={l} onClick={() => send(p, t)} style={{ ...s.secBtn, justifyContent: "flex-start", textAlign: "left" }}>{l}</button>)}
+          </>}
+          {msgs.map(bubble)}
+          {busy && <div style={{ alignSelf: "flex-start", color: "#888", fontSize: 13 }}>✨ denkt nach…</div>}
+          <div ref={endRef} />
+        </div>
+        <form onSubmit={e => { e.preventDefault(); send(); }} style={{ display: "flex", gap: 8, padding: 12, borderTop: "1px solid rgba(255,255,255,0.06)", alignItems: "center", margin: 0 }}>
+          <button type="button" onClick={toggleMic} aria-label="Spracheingabe" style={{ flexShrink: 0, width: 46, height: 46, borderRadius: 23, border: "none", cursor: "pointer", fontSize: 20, background: listening ? "#EF476F" : "rgba(255,255,255,0.08)", color: "#fff", boxShadow: listening ? "0 0 0 6px rgba(239,71,111,0.25)" : "none", transition: "all .2s" }}>🎤</button>
+          <input value={input} onChange={e => setInput(e.target.value)} enterKeyHint="send" placeholder={listening ? "Ich höre zu…" : "Nachricht oder Befehl…"} style={{ ...s.inp, flex: 1, minWidth: 0, margin: 0, fontSize: 16 }} />
+          <button type="submit" disabled={busy || !input.trim()} style={{ ...s.primaryBtn, flexShrink: 0, padding: "12px 16px", opacity: busy || !input.trim() ? 0.5 : 1 }}>➤</button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -12796,7 +13010,7 @@ if ('serviceWorker' in navigator) {
     if (document.getElementById('ff-a2hs')) return;
     const b = document.createElement('div');
     b.id = 'ff-a2hs';
-    b.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:99999;display:flex;align-items:center;gap:12px;padding:12px 14px;background:linear-gradient(160deg,rgba(23,23,30,.97),rgba(13,13,15,.97));border:1px solid rgba(255,255,255,.1);border-radius:18px;box-shadow:0 10px 32px rgba(0,0,0,.55),0 0 0 1px rgba(255,107,53,.08);font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;color:#F0EDE8;max-width:440px;margin:0 auto;transition:transform .35s ease,opacity .35s ease;transform:translateY(120%);opacity:0;';
+    b.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(' + (window.innerWidth < 768 ? 88 : 12) + 'px + env(safe-area-inset-bottom));z-index:99999;display:flex;align-items:center;gap:12px;padding:12px 14px;background:linear-gradient(160deg,rgba(23,23,30,.97),rgba(13,13,15,.97));border:1px solid rgba(255,255,255,.1);border-radius:18px;box-shadow:0 10px 32px rgba(0,0,0,.55),0 0 0 1px rgba(255,107,53,.08);font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;color:#F0EDE8;max-width:440px;margin:0 auto;transition:transform .35s ease,opacity .35s ease;transform:translateY(120%);opacity:0;';
     b.innerHTML =
       '<img src="/apple-touch-icon.png" alt="" style="width:42px;height:42px;border-radius:11px;flex-shrink:0;"/>'
       + '<div style="flex:1;min-width:0;">'
