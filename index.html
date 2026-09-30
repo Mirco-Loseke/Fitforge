@@ -280,6 +280,41 @@ const fbGet = async (key, fallback) => {
   }
 };
 
+// ── Datenverlust-Schutz ────────────────────────────────────────────────────
+// Liefert alle Einträge des Cloud-Stands, die im neuen Stand fehlen würden,
+// OHNE dass sie per Tombstone absichtlich gelöscht wurden. Nur für "data".
+const findLostEntries = (cloud, next) => {
+  if (!cloud || !next) return [];
+  const lost = [];
+  const tW = new Set([...(cloud.deletedWorkoutIds||[]), ...(next.deletedWorkoutIds||[])]);
+  const tP = new Set([...(cloud.deletedPlanIds||[]), ...(next.deletedPlanIds||[])]);
+  const tD = new Set([...(cloud.deletedWeightDates||[]), ...(next.deletedWeightDates||[])]);
+  const nW = new Set((next.workouts||[]).map(w => w && w.id));
+  const nP = new Set((next.plans||[]).map(p => p && p.id));
+  const nD = new Set((next.weightHistory||[]).map(h => h && h.date));
+  (cloud.workouts||[]).forEach(w => { if (w && !tW.has(w.id) && !nW.has(w.id)) lost.push("W"+w.id); });
+  (cloud.plans||[]).forEach(p => { if (p && !tP.has(p.id) && !nP.has(p.id)) lost.push("P"+p.id); });
+  (cloud.weightHistory||[]).forEach(h => { if (h && !tD.has(h.date) && !nD.has(h.date)) lost.push("G"+h.date); });
+  // Messungen haben keine Tombstones → nur Totalverlust blockieren
+  if ((cloud.measurements||[]).length >= 3 && !(next.measurements||[]).length) lost.push("M*");
+  return lost;
+};
+// Eintragsmenge eines Werts (für die generische Schrumpf-Erkennung der anderen Keys)
+const countEntries = v => v == null ? 0 : Array.isArray(v) ? v.length : typeof v === "object" ? Object.keys(v).length : 1;
+
+// Hält die letzten 10 abweichenden Cloud-Stände pro Key lokal vor (Notfall-Wiederherstellung).
+const keepLocalBackup = (uid, key, val) => {
+  try {
+    const bk = `ff_${uid}_backups_${key}`;
+    const list = JSON.parse(localStorage.getItem(bk) || "[]");
+    const str = JSON.stringify(val);
+    if (list.length && list[list.length-1].v === str) return;
+    list.push({ t: Date.now(), v: str });
+    while (list.length > 10) list.shift();
+    localStorage.setItem(bk, JSON.stringify(list));
+  } catch(e) { /* Quota voll → Cloud-Backup bleibt */ }
+};
+
 const fbSet = async (key, value) => {
   try {
     const uid = getUid();
@@ -288,7 +323,43 @@ const fbSet = async (key, value) => {
     else localStorage.setItem("ff_" + key, JSON.stringify(cleaned));
 
     if (window.firebaseDb && uid) {
-      await window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", `${uid}_${key}`), { value: cleaned });
+      const ref = window.firebaseDoc(window.firebaseDb, "fitforge", `${uid}_${key}`);
+      // SCHUTZ 1: Vor jedem Schreiben den ECHTEN Server-Stand lesen (nicht Cache).
+      // Kein Server erreichbar → gar nicht schreiben (lokal ist schon gesichert).
+      let serverSnap;
+      try { serverSnap = await ref.get({ source: "server" }); }
+      catch(e) { if(window.dbg) dbg(`⏸️ ${key}: Server nicht erreichbar – Upload verschoben`, '#fa0'); return; }
+      const serverVal = serverSnap.exists ? serverSnap.data().value : null;
+
+      if (serverVal != null) {
+        // SCHUTZ 2: Nie etwas wegschreiben, was in der Cloud steht und nicht absichtlich gelöscht wurde.
+        if (key === "data") {
+          const lost = findLostEntries(serverVal, cleaned);
+          if (lost.length) {
+            console.error(`BLOCKIERT: Upload von data hätte ${lost.length} Einträge gelöscht`, lost.slice(0,20));
+            if(window.dbg) dbg(`🛑 data-Upload blockiert: ${lost.length} Einträge wären verloren gegangen`, '#f55');
+            window.dispatchEvent(new CustomEvent("ff-cloud-conflict", { detail: { key, serverVal } }));
+            return;
+          }
+        } else if (countEntries(serverVal) >= 3 && countEntries(cleaned) < countEntries(serverVal) / 2) {
+          console.error(`BLOCKIERT: ${key} würde von ${countEntries(serverVal)} auf ${countEntries(cleaned)} Einträge schrumpfen`);
+          if(window.dbg) dbg(`🛑 ${key}-Upload blockiert (starker Datenschwund)`, '#f55');
+          window.dispatchEvent(new CustomEvent("ff-cloud-conflict", { detail: { key, serverVal } }));
+          return;
+        }
+        // SCHUTZ 3: Automatische Backups des bisherigen Cloud-Stands – lokal (10 Versionen)
+        // und in der Cloud (1 Snapshot pro Tag und Key, bleibt dauerhaft liegen).
+        if (JSON.stringify(serverVal) !== JSON.stringify(cleaned)) {
+          keepLocalBackup(uid, key, serverVal);
+          const day = new Date().toISOString().slice(0,10);
+          const bRef = window.firebaseDoc(window.firebaseDb, "fitforge", `${uid}_backup_${key}_${day}`);
+          try {
+            const b = await bRef.get({ source: "server" });
+            if (!b.exists) await bRef.set({ value: serverVal, createdAt: Date.now() });
+          } catch(e) { console.warn("Cloud-Backup nicht möglich:", e.message); }
+        }
+      }
+      await window.firebaseSetDoc(ref, { value: cleaned });
     }
   } catch(e) { 
     console.error("fbSet error:", e);
@@ -2673,6 +2744,25 @@ function FitForge(){
       });
     }, 300);
   };
+
+  // Blockierter Upload (fbSet-Schutz): Cloud-Stand in den lokalen Stand mergen,
+  // damit der nächste Upload eine Obermenge ist und nichts verloren geht.
+  useEffect(() => {
+    const onConflict = (e) => {
+      const { key, serverVal } = e.detail || {};
+      if (key === "data") setData(prev => ({ ...mergeData(prev, serverVal), photos: prev.photos || [], exercisePhotos: prev.exercisePhotos || {} }));
+      else if (key === "prs") setPrs(prev => mergePRs(prev, serverVal));
+      else if (key === "nutrition") setNutrition(prev => mergeNutrition(prev, serverVal));
+      else if (key === "weekPlans") setWeekPlans(prev => mergeWeekPlans(prev, serverVal));
+      else if (key === "user") setUser(prev => mergeUser(prev, serverVal));
+      else if (key === "favFoods") setFavFoods(prev => { const ids = new Set((prev||[]).map(f => JSON.stringify(f))); return [...(prev||[]), ...(serverVal||[]).filter(f => !ids.has(JSON.stringify(f)))]; });
+      else if (key === "photos") setData(prev => ({ ...prev, photos: [...(prev.photos||[]), ...(serverVal||[]).filter(sp => !(prev.photos||[]).some(p => JSON.stringify(p) === JSON.stringify(sp)))] }));
+      else if (key === "exercisePhotos") setData(prev => ({ ...prev, exercisePhotos: { ...(serverVal||{}), ...(prev.exercisePhotos||{}) } }));
+      showToast("🛡️ Datenschutz: Cloud-Stand wurde übernommen statt überschrieben", "info");
+    };
+    window.addEventListener("ff-cloud-conflict", onConflict);
+    return () => window.removeEventListener("ff-cloud-conflict", onConflict);
+  }, []);
 
   useEffect(() => { syncToCloud("data", data); }, [data, loaded, syncTick]);
   useEffect(() => { syncToCloud("user", user); }, [user, loaded, syncTick]);
