@@ -1445,6 +1445,8 @@ function FitForge(){
   const [library,setLibrary]=useState(()=>ls("library", []));
   const [weekPlans,setWeekPlans]=useState({});
   const [favFoods,setFavFoods]=useState([]);
+  // Apple-Health-Daten (vom iPhone-Kurzbefehl über /api/health) – nur lesend, schreibt der Server
+  const [health,setHealth]=useState(null);
   const [challenges,setChallenges]=useState([]);
   
   const [authUser,setAuthUser]=useState(null);
@@ -1842,9 +1844,12 @@ function FitForge(){
     const mergedWorkouts = [...(local.workouts || [])];
     (remote.workouts || []).forEach(rw => {
       if (rw && rw.id) {
-        const exists = mergedWorkouts.some(lw => lw.id === rw.id);
-        if (!exists) {
+        const li = mergedWorkouts.findIndex(lw => lw.id === rw.id);
+        if (li < 0) {
           mergedWorkouts.push(rw);
+        } else if (rw.health && !mergedWorkouts[li].health) {
+          // Apple-Watch-Verknüpfung vom anderen Gerät übernehmen
+          mergedWorkouts[li] = { ...mergedWorkouts[li], health: rw.health };
         }
       }
     });
@@ -1907,7 +1912,8 @@ function FitForge(){
       workouts: filteredWorkouts,
       plans: filteredPlans,
       weightHistory: filteredWeightHistory,
-      deletedPlanIds, deletedWorkoutIds, deletedWeightDates
+      deletedPlanIds, deletedWorkoutIds, deletedWeightDates,
+      hkImported: [...new Set([...(local.hkImported||[]), ...(remote.hkImported||[])])].slice(-2000)
     });
   };
 
@@ -2500,6 +2506,19 @@ function FitForge(){
           unsubs.push(unsub);
         });
 
+        // Apple-Health-Listener (nur lesen; kein Einfluss auf loaded/Sync-Sperren)
+        try {
+          const hCache = localStorage.getItem(`ff_${uid}_health`);
+          setHealth(hCache ? JSON.parse(hCache) : null);
+          const hRef = window.firebaseDoc(window.firebaseDb, "fitforge", `${uid}_health`);
+          unsubs.push(window.firebaseOnSnapshot(hRef, (snap) => {
+            if (cancelled || !snap.exists) return;
+            const v = snap.data().value || null;
+            try { localStorage.setItem(`ff_${uid}_health`, JSON.stringify(v)); } catch(e) {}
+            setHealth(v);
+          }, (err) => console.warn("Health listener error:", err.message)));
+        } catch(e) { console.warn("Could not setup health listener:", e.message); }
+
         // Setup challenges realtime listener
         try {
           const chalQuery = window.firebaseDb.collection("challenges").where("participants", "array-contains", uid);
@@ -2531,6 +2550,7 @@ function FitForge(){
         setNutrition({});
         setWeekPlans({});
         setFavFoods([]);
+        setHealth(null);
         setChallenges([]);
         lastSyncRef.current = {};
       }
@@ -2798,6 +2818,47 @@ function FitForge(){
     window.addEventListener("ff-cloud-conflict", onConflict);
     return () => window.removeEventListener("ff-cloud-conflict", onConflict);
   }, []);
+
+  // Apple-Watch-Trainings in den Verlauf übernehmen. Erst NACH bestätigtem Cloud-Stand,
+  // damit der Import in die echten Daten gemerged wird. Jede Health-ID wird genau einmal
+  // verarbeitet (data.hkImported) – gelöschte Importe kommen also nicht wieder.
+  // Überschneidet sich das Watch-Training zeitlich mit einem in FitForge geloggten Training,
+  // werden Puls/Kalorien/Distanz an dieses angehängt statt ein Duplikat anzulegen.
+  useEffect(() => {
+    if (!loaded || !cloudConfirmedRef.current["data"] || !health?.workouts) return;
+    const hkWs = Object.values(health.workouts);
+    if (!hkWs.some(h => !(data.hkImported||[]).includes(h.id))) return;
+    const toMin = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t||""); return m ? (+m[1])*60 + (+m[2]) : null; };
+    setData(d => {
+      const done = new Set(d.hkImported || []);
+      const tomb = new Set(d.deletedWorkoutIds || []);
+      let workouts = [...(d.workouts || [])], added = 0, linked = 0;
+      hkWs.sort((a,b) => a.startTs - b.startTs).forEach(h => {
+        if (done.has(h.id)) return;
+        done.add(h.id);
+        if (tomb.has(h.id) || workouts.some(w => w.id === h.id)) return;
+        const hs = toMin(h.startTime), he = toMin(h.endTime) ?? (hs != null ? hs + (h.duration||0) : null);
+        const idx = workouts.findIndex(w => {
+          if (w.date !== h.date || w.health || String(w.id).startsWith("hk_")) return false;
+          const ws = toMin(w.startTime), we = toMin(w.endTime) ?? (ws != null ? ws + (w.duration||0) : null);
+          return ws != null && hs != null && ws < he + 5 && hs < we + 5;
+        });
+        const hData = { hrAvg: h.hrAvg, hrMax: h.hrMax, kcal: h.kcal, km: h.km, name: h.name, hkId: h.id };
+        if (idx >= 0) { workouts[idx] = { ...workouts[idx], health: hData }; linked++; return; }
+        workouts.push({
+          id: h.id, planId: null, name: h.name, date: h.date, duration: h.duration || 0,
+          startTime: h.startTime, endTime: h.endTime, source: "apple_watch", note: "", photo: null,
+          exercises: [{ name: h.name, sets: [{ km: h.km || "", kcal: h.kcal || "", done: true }] }],
+          health: hData
+        });
+        added++;
+      });
+      if (!added && !linked && done.size === (d.hkImported||[]).length) return d;
+      if (added || linked) setTimeout(() => showToast(`⌚ Apple Watch: ${added ? added+" Training"+(added>1?"s":"")+" importiert" : ""}${added&&linked?", ":""}${linked ? linked+" verknüpft" : ""}`), 0);
+      workouts.sort((a, b) => new Date(a.date) - new Date(b.date));
+      return { ...d, workouts, hkImported: [...done].slice(-2000) };
+    });
+  }, [health, loaded, syncTick, data.hkImported]);
 
   useEffect(() => { syncToCloud("data", data); }, [data, loaded, syncTick]);
   useEffect(() => { syncToCloud("user", user); }, [user, loaded, syncTick]);
@@ -3355,6 +3416,7 @@ function FitForge(){
             ["library","Bibliothek",IC.library],
             ["stats","Statistiken",IC.stats],
             ["fortschritt","Fortschritt",IC.progress],
+            ["gesundheit","Schlaf & Gesundheit",(<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 000-7.8z"/><path d="M3.5 12h4l2-3 3 6 2-3h6"/></svg>)],
             ["wochenplan","Wochenplan",IC.calendar],
             ["nutrition","Ernährung",(<NutritionViewIcon favFoods={favFoods} nutrition={nutrition}/>)],
             ["goals","Forge Points",IC.goals],
@@ -3482,6 +3544,7 @@ function FitForge(){
           {view==="wochenplan"&&<WochenplanPage weekPlans={weekPlans} setWeekPlans={setWeekPlans} data={data} user={user} library={library} notify={showToast} favFoods={favFoods} nutrition={nutrition}/>}
           {view==="log"&&<LogWorkout user={user} setUser={setUser} data={data} setData={setData} notify={showToast} prs={prs} onSavePR={savePR} library={library} activeWorkout={activeWorkout} setActiveWorkout={setActiveWorkout} presetPlanId={presetPlanId} setView={setView} isMobile={isMobile} stretchFilter={stretchFilter} setStretchFilter={setStretchFilter} updateChallengesProgress={updateChallengesProgress}/>}
           {view==="history"&&<History data={data} setData={setData} selWO={selWO} setSelWO={setSelWO} notify={showToast} library={library} setWeeklyReport={setWeeklyReport} isMobile={isMobile} challenges={challenges}/>}
+          {view==="gesundheit"&&<HealthPage health={health} data={data} isMobile={isMobile} notify={showToast}/>}
           {view==="stats"&&<Stats data={data} prs={prs} nutrition={nutrition} user={user}/>}
           {view==="fortschritt"&&<ProgressPage data={data} setData={setData} user={user} notify={showToast} isMobile={isMobile} autoOpenAdd={autoOpenAdd==="fortschritt"}/>}
           {view==="nutrition"&&<Nutrition nutrition={nutrition} setNutrition={setNutrition} user={user} notify={showToast} favFoods={favFoods} setFavFoods={setFavFoods} isMobile={isMobile} autoOpenAdd={autoOpenAdd==="nutrition"} presetMealType={presetMealType}/>}
@@ -6553,7 +6616,7 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
             {[
               [`${w.duration} min`, "Dauer", "#FF6B35"],
               [(w.exercises||[]).length, "Übungen", "#00D9C0"],
-              [w.hiitMode ? "HIIT" : "Klassik", "Modus", "#FFD166"],
+              [w.source==="apple_watch" ? "⌚ Watch" : w.hiitMode ? "HIIT" : "Klassik", "Modus", "#FFD166"],
               [`${w.startTime||"--:--"} - ${w.endTime||"--:--"}`, "Zeit", "#F0EDE8"]
             ].map(([v,l,c],i)=>(
               <div key={i} style={{flex:1,padding:isMobile?10:14,textAlign:"center",borderRight:i<3?"1px solid rgba(255,255,255,0.06)":"none"}}>
@@ -6564,6 +6627,31 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
           </div>
           
           {w.note&&<div style={{color:"#aaa",fontStyle:"italic",fontSize:14,marginBottom:22,padding:16,background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)"}}>„{w.note}"</div>}
+
+          {w.health && (()=>{
+            const h=w.health;
+            const pace = h.km>0 && w.duration>0 ? (()=>{const p=w.duration/h.km;return `${Math.floor(p)}:${String(Math.round((p%1)*60)).padStart(2,"0")} /km`;})() : null;
+            const tiles=[
+              h.hrAvg&&[`${h.hrAvg}`,"Ø Puls","#EF476F"],
+              h.hrMax&&[`${h.hrMax}`,"Max Puls","#EF476F"],
+              h.kcal&&[`${h.kcal}`,"kcal aktiv","#FF6B6B"],
+              h.km&&[`${h.km.toFixed?h.km.toFixed(2):h.km}`,"km","#4CC9F0"],
+              pace&&[pace,"Pace","#00D9C0"]
+            ].filter(Boolean);
+            return (
+              <div style={{marginBottom:26,padding:16,borderRadius:16,background:"rgba(239,71,111,0.06)",border:"1px solid rgba(239,71,111,0.2)"}}>
+                <div style={{fontSize:13,fontWeight:800,color:"#F0EDE8",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>⌚ Apple Watch{h.name&&h.name!==w.name?<span style={{fontWeight:500,color:"#888"}}>· {h.name}</span>:null}</div>
+                {tiles.length ? <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(tiles.length, isMobile?3:5)},1fr)`,gap:8}}>
+                  {tiles.map(([v,l,c])=>(
+                    <div key={l} style={{background:"rgba(0,0,0,0.25)",borderRadius:12,padding:"10px 6px",textAlign:"center",minWidth:0}}>
+                      <div style={{fontSize:isMobile?15:18,fontWeight:800,color:c,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</div>
+                      <div style={{fontSize:10,color:"#777",marginTop:3}}>{l}</div>
+                    </div>
+                  ))}
+                </div> : <div style={{fontSize:12,color:"#888"}}>Keine Messwerte übertragen.</div>}
+              </div>
+            );
+          })()}
           
           {w.earnedPoints && (
             <div style={{background:"linear-gradient(135deg, rgba(255,209,102,0.1) 0%, rgba(255,159,28,0.1) 100%)", borderRadius:16, border:"1px solid rgba(255,209,102,0.2)", padding:20, marginBottom:26}}>
@@ -8784,6 +8872,184 @@ function ChallengesPage({user,setUser,notify,isMobile}){
           </Overlay>
         );
       })()}
+    </div>
+  );
+}
+
+// ─── Schlaf & Gesundheit (Apple Health über iPhone-Kurzbefehl) ────────────────
+const fmtHM = m => m==null ? "–" : `${Math.floor(m/60)}h ${String(Math.round(m%60)).padStart(2,"0")}m`;
+const SLEEP_COL = { deep:"#4361EE", core:"#4CC9F0", rem:"#A78BFA", awake:"#FFD166" };
+function HealthPage({health,data,isMobile,notify}){
+  const sleep = Object.values(health?.sleep||{}).sort((a,b)=>a.date.localeCompare(b.date));
+  const daily = Object.values(health?.daily||{}).sort((a,b)=>a.date.localeCompare(b.date));
+  const hkWorkouts = (data.workouts||[]).filter(w=>w.health);
+  const last = sleep[sleep.length-1];
+  const last7 = sleep.slice(-7), last14 = sleep.slice(-14);
+  const avg = (arr,k) => { const v=arr.map(x=>x[k]).filter(x=>x!=null&&x>0); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; };
+  const today = daily[daily.length-1];
+  const lastReceived = Math.max(0, ...[...sleep,...daily,...Object.values(health?.workouts||{})].map(x=>x.receivedAt||0));
+  const hasData = sleep.length || daily.length || hkWorkouts.length;
+  const [setupOpen,setSetupOpen] = useState(!hasData);
+  const [token,setToken] = useState("");
+  const [tokLoading,setTokLoading] = useState(false);
+  const apiUrl = `${location.origin}/api/health`;
+
+  const getToken = async () => {
+    setTokLoading(true);
+    try {
+      const idt = await firebase.auth().currentUser.getIdToken();
+      const r = await fetch("/api/health-token", { method:"POST", headers:{ Authorization:"Bearer "+idt } });
+      const j = await r.json().catch(()=>({}));
+      if (!r.ok) throw new Error(j.error || ("HTTP "+r.status));
+      setToken(j.token);
+    } catch(e) { notify("Token konnte nicht erzeugt werden: "+e.message, "error"); }
+    setTokLoading(false);
+  };
+  const copy = (txt,label) => { navigator.clipboard?.writeText(txt).then(()=>notify(`${label} kopiert ✅`)).catch(()=>notify("Kopieren nicht möglich – bitte manuell markieren","error")); };
+
+  const card = {background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:isMobile?16:20,marginBottom:16};
+  const h3 = {fontSize:13,fontWeight:800,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px",margin:"0 0 12px"};
+  const tile = (v,l,c,sub) => (
+    <div key={l} style={{background:"rgba(0,0,0,0.25)",borderRadius:14,padding:"12px 10px",minWidth:0}}>
+      <div style={{fontSize:isMobile?19:22,fontWeight:800,color:c,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</div>
+      <div style={{fontSize:11,color:"#888",marginTop:2}}>{l}</div>
+      {sub&&<div style={{fontSize:10,color:"#555",marginTop:2}}>{sub}</div>}
+    </div>
+  );
+  const step = (n,title,body) => (
+    <div style={{display:"flex",gap:12,marginBottom:14}}>
+      <div style={{flexShrink:0,width:24,height:24,borderRadius:12,background:"#FF6B35",color:"#000",fontWeight:900,fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>{n}</div>
+      <div style={{fontSize:13,color:"#ccc",lineHeight:1.55,minWidth:0}}><b style={{color:"#F0EDE8"}}>{title}</b><div>{body}</div></div>
+    </div>
+  );
+  const code = t => <code style={{background:"rgba(255,255,255,0.08)",padding:"1px 6px",borderRadius:6,fontSize:12,wordBreak:"break-all"}}>{t}</code>;
+
+  const maxH = Math.max(600, ...last14.map(s=>s.asleepMin||0));
+  const stepsMax = Math.max(1, ...daily.slice(-7).map(d=>d.steps||0));
+
+  return (
+    <div style={s.page} className="fadeIn">
+      <div style={s.pageHead}><div><h1 style={s.pageTitle}>Schlaf & Gesundheit</h1><p style={s.pageSub}>{lastReceived ? `Apple Watch · zuletzt aktualisiert ${new Date(lastReceived).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}` : "Apple Watch noch nicht verbunden"}</p></div></div>
+
+      {last && (
+        <div style={card}>
+          <div style={h3}>😴 Letzte Nacht · {new Date(last.date).toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"short"})}</div>
+          <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:6}}>
+            <div style={{fontSize:isMobile?34:40,fontWeight:900,fontFamily:"'DM Sans',sans-serif",color:"#F0EDE8",letterSpacing:"-1px"}}>{fmtHM(last.asleepMin)}</div>
+            {avg(last7,"asleepMin") && <div style={{fontSize:12,color:(last.asleepMin>=avg(last7,"asleepMin")?"#00D9C0":"#FFD166")}}>{last.asleepMin>=avg(last7,"asleepMin")?"▲":"▼"} Ø 7 Tage {fmtHM(avg(last7,"asleepMin"))}</div>}
+          </div>
+          <div style={{fontSize:13,color:"#888",marginBottom:14}}>🌙 {last.bedtime} → ☀️ {last.wakeTime}</div>
+          {(last.deepMin+last.coreMin+last.remMin)>0 && <>
+            <div style={{display:"flex",height:14,borderRadius:7,overflow:"hidden",marginBottom:10,background:"rgba(255,255,255,0.05)"}}>
+              {["deep","core","rem","awake"].map(k=>{const m=last[k+"Min"]||0;return m>0&&<div key={k} style={{width:`${m/(last.asleepMin+(last.awakeMin||0))*100}%`,background:SLEEP_COL[k]}}/>;})}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+              {[["deep","Tief"],["core","Kern"],["rem","REM"],["awake","Wach"]].map(([k,l])=>(
+                <div key={k} style={{minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#888"}}><span style={{width:8,height:8,borderRadius:4,background:SLEEP_COL[k],flexShrink:0}}/>{l}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:"#F0EDE8",marginTop:2,whiteSpace:"nowrap"}}>{fmtHM(last[k+"Min"])}</div>
+                </div>
+              ))}
+            </div>
+          </>}
+        </div>
+      )}
+
+      {last14.length>1 && (
+        <div style={card}>
+          <div style={h3}>📊 Schlaf der letzten {last14.length} Nächte</div>
+          <div style={{position:"relative",height:140,display:"flex",alignItems:"flex-end",gap:isMobile?4:8,paddingTop:10}}>
+            <div style={{position:"absolute",left:0,right:0,bottom:`${480/maxH*100}%`,borderTop:"1px dashed rgba(0,217,192,0.4)"}}><span style={{position:"absolute",right:0,top:-16,fontSize:10,color:"#00D9C0"}}>8h</span></div>
+            {last14.map(n=>(
+              <div key={n.date} title={`${n.date}: ${fmtHM(n.asleepMin)}`} style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",justifyContent:"flex-end",height:"100%"}}>
+                <div style={{height:`${(n.asleepMin||0)/maxH*100}%`,borderRadius:"6px 6px 2px 2px",background:(n.asleepMin>=420?"#4CC9F0":"rgba(76,201,240,0.45)")}}/>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:isMobile?4:8,marginTop:6}}>
+            {last14.map(n=><div key={n.date} style={{flex:1,minWidth:0,textAlign:"center",fontSize:9,color:"#555"}}>{new Date(n.date).getDate()}</div>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:14}}>
+            {tile(fmtHM(avg(last7,"asleepMin")),"Ø Schlaf (7T)","#4CC9F0")}
+            {tile(fmtHM(avg(last7,"deepMin")),"Ø Tiefschlaf","#4361EE")}
+            {tile(fmtHM(avg(last7,"remMin")),"Ø REM","#A78BFA")}
+          </div>
+        </div>
+      )}
+
+      {today && (
+        <div style={card}>
+          <div style={h3}>❤️ Tageswerte · {new Date(today.date).toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"short"})}</div>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:8}}>
+            {tile(today.steps!=null?today.steps.toLocaleString("de-DE"):"–","Schritte","#00D9C0")}
+            {tile(today.restingHR!=null?`${today.restingHR}`:"–","Ruhepuls (bpm)","#EF476F",avg(daily.slice(-7),"restingHR")?`Ø 7T: ${Math.round(avg(daily.slice(-7),"restingHR"))}`:null)}
+            {tile(today.hrv!=null?`${today.hrv}`:"–","HRV (ms)","#A78BFA",avg(daily.slice(-7),"hrv")?`Ø 7T: ${Math.round(avg(daily.slice(-7),"hrv"))}`:null)}
+            {tile(today.kcal!=null?`${today.kcal}`:"–","Aktive kcal","#FF6B6B")}
+          </div>
+          {daily.filter(d=>d.steps).length>1 && <>
+            <div style={{fontSize:11,color:"#666",margin:"16px 0 6px"}}>Schritte · 7 Tage</div>
+            <div style={{display:"flex",alignItems:"flex-end",gap:6,height:60}}>
+              {daily.slice(-7).map(d=><div key={d.date} title={`${d.date}: ${d.steps||0}`} style={{flex:1,height:`${(d.steps||0)/stepsMax*100}%`,minHeight:2,borderRadius:4,background:(d.steps||0)>=10000?"#00D9C0":"rgba(0,217,192,0.4)"}}/>)}
+            </div>
+          </>}
+        </div>
+      )}
+
+      {hkWorkouts.length>0 && (
+        <div style={card}>
+          <div style={h3}>⌚ Watch-Trainings</div>
+          {hkWorkouts.slice(-5).reverse().map(w=>(
+            <div key={w.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)",fontSize:13}}>
+              <div style={{minWidth:0}}><div style={{fontWeight:700,color:"#F0EDE8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{w.name}</div><div style={{color:"#666",fontSize:11}}>{new Date(w.date).toLocaleDateString("de-DE",{day:"numeric",month:"short"})} · {w.duration} min</div></div>
+              <div style={{textAlign:"right",flexShrink:0,color:"#aaa",fontSize:12}}>{w.health.km?`${w.health.km} km · `:""}{w.health.kcal?`${w.health.kcal} kcal`:""}<div style={{color:"#EF476F"}}>{w.health.hrAvg?`Ø ${w.health.hrAvg} bpm`:""}</div></div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{...card,borderColor:"rgba(255,107,53,0.25)"}}>
+        <button onClick={()=>setSetupOpen(o=>!o)} style={{all:"unset",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",gap:10}}>
+          <span style={{fontSize:15,fontWeight:800,color:"#F0EDE8"}}>🔗 Apple Watch verbinden</span>
+          <span style={{color:"#FF6B35",fontSize:13,flexShrink:0}}>{setupOpen?"Einklappen ▲":"Anleitung ▼"}</span>
+        </button>
+        {setupOpen && <div style={{marginTop:16}}>
+          <p style={{fontSize:13,color:"#999",lineHeight:1.55,marginTop:0}}>Die Uhr speichert Trainings, Puls und Schlaf in Apple Health. Zwei Kurzbefehl-Automationen auf dem iPhone schicken die Daten automatisch hierher – Trainings landen im Verlauf, Schlaf & Tageswerte auf dieser Seite.</p>
+
+          {step(1,"Persönlichen Schlüssel erzeugen",<>
+            {!token ? <button style={{...s.primaryBtn,marginTop:8}} onClick={getToken} disabled={tokLoading}>{tokLoading?"Erzeuge…":"🔑 Schlüssel erzeugen"}</button> : <>
+              <div style={{marginTop:8,padding:10,borderRadius:10,background:"rgba(0,0,0,0.3)",fontSize:11,fontFamily:"monospace",wordBreak:"break-all",color:"#FFD166"}}>{token}</div>
+              <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                <button style={{...s.secBtn,padding:"6px 12px",fontSize:12}} onClick={()=>copy("Bearer "+token,"Header-Wert")}>📋 „Bearer …“ kopieren</button>
+                <button style={{...s.secBtn,padding:"6px 12px",fontSize:12}} onClick={()=>copy(apiUrl,"URL")}>📋 URL kopieren</button>
+              </div>
+              <div style={{fontSize:11,color:"#666",marginTop:6}}>Geheim halten – wer ihn hat, kann Daten in deinen Account schicken.</div>
+            </>}
+          </>)}
+
+          {step(2,"Kurzbefehl „FitForge Training“ anlegen",<>
+            Kurzbefehle-App → <b>+</b> → Aktionen:<br/>
+            • <b>Health-Samples suchen</b>: Typ <i>Trainings</i>, sortiert nach <i>Startdatum</i>, <i>Neueste zuerst</i>, Limit <i>1</i><br/>
+            • <b>Health-Samples suchen</b>: <i>Aktive Energie</i>, Startdatum zwischen Start- und Enddatum des Trainings → <b>Statistik berechnen</b>: <i>Summe</i><br/>
+            • <b>Health-Samples suchen</b>: <i>Herzfrequenz</i>, gleicher Zeitraum<br/>
+            • (Laufen/Gehen) <b>Health-Samples suchen</b>: <i>Gehen + Laufen Distanz</i>, gleicher Zeitraum → <i>Summe</i><br/>
+            • <b>Inhalte von URL abrufen</b>: URL {code(apiUrl)}, Methode <i>POST</i>, Header {code("Authorization")} = dein „Bearer …“-Wert, Hauptteil <i>JSON</i>:<br/>
+            {code("type")} = {code("workout")}, {code("name")} = Trainingstyp, {code("start")} / {code("end")} = Start-/Enddatum (<i>Datumsformat: ISO 8601</i>), {code("kcal")} = Summe Energie, {code("hr")} = Herzfrequenz-Samples, {code("km")} = Summe Distanz
+          </>)}
+
+          {step(3,"Automation: nach jedem Watch-Training",<>Kurzbefehle → <b>Automation</b> → <b>+</b> → <i>Apple Watch-Training</i> → <i>Endet</i> (alle Trainings) → <b>Sofort ausführen</b> → Kurzbefehl „FitForge Training“.</>)}
+
+          {step(4,"Kurzbefehl „FitForge Schlaf & Tag“",<>
+            • <b>Health-Samples suchen</b>: <i>Schlafanalyse</i>, Startdatum <i>in den letzten 1 Tagen</i><br/>
+            • <b>Wiederholen mit jedem</b>: <b>Text</b> {code("Wert;Startdatum;Enddatum")} (Daten als ISO 8601) → nach der Schleife <b>Text kombinieren</b> mit <i>Neue Zeile</i><br/>
+            • <b>Inhalte von URL abrufen</b> (wie oben) mit JSON {code("type")} = {code("sleep")}, {code("samples")} = kombinierter Text<br/>
+            • Für Tageswerte: <i>Schritte</i> (gestern, Summe), <i>Ruhepuls</i>, <i>Herzfrequenzvariabilität</i> suchen und ein zweites <b>Inhalte von URL abrufen</b> mit {code("type")} = {code("daily")}, {code("date")}, {code("steps")}, {code("restingHR")}, {code("hrvList")}
+          </>)}
+
+          {step(5,"Automation: jeden Morgen",<><b>Automation</b> → <i>Tageszeit</i> 10:00, täglich → <b>Sofort ausführen</b> → „FitForge Schlaf & Tag“. Uhr nachts tragen und in der Health-App unter <i>Schlaf</i> einen Schlafplan aktivieren.</>)}
+
+          <div style={{fontSize:12,color:"#777",lineHeight:1.5,marginTop:4}}>💡 Überschneidet sich ein Watch-Training zeitlich mit einem in FitForge geloggten Training, werden Puls & Kalorien automatisch daran angehängt – kein Duplikat.</div>
+        </div>}
+      </div>
     </div>
   );
 }
