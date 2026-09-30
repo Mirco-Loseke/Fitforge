@@ -322,49 +322,66 @@ const fbSet = async (key, value) => {
     if (uid) localStorage.setItem(`ff_${uid}_${key}`, JSON.stringify(cleaned));
     else localStorage.setItem("ff_" + key, JSON.stringify(cleaned));
 
-    if (window.firebaseDb && uid) {
-      const ref = window.firebaseDoc(window.firebaseDb, "fitforge", `${uid}_${key}`);
-      // SCHUTZ 1: Vor jedem Schreiben den ECHTEN Server-Stand lesen (nicht Cache).
-      // Kein Server erreichbar → gar nicht schreiben (lokal ist schon gesichert).
-      let serverSnap;
-      try { serverSnap = await ref.get({ source: "server" }); }
-      catch(e) { if(window.dbg) dbg(`⏸️ ${key}: Server nicht erreichbar – Upload verschoben`, '#fa0'); return; }
-      const serverVal = serverSnap.exists ? serverSnap.data().value : null;
+    if (!(window.firebaseDb && uid)) return "offline";
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return "offline";
 
-      if (serverVal != null) {
-        // SCHUTZ 2: Nie etwas wegschreiben, was in der Cloud steht und nicht absichtlich gelöscht wurde.
-        if (key === "data") {
-          const lost = findLostEntries(serverVal, cleaned);
-          if (lost.length) {
-            console.error(`BLOCKIERT: Upload von data hätte ${lost.length} Einträge gelöscht`, lost.slice(0,20));
-            if(window.dbg) dbg(`🛑 data-Upload blockiert: ${lost.length} Einträge wären verloren gegangen`, '#f55');
-            window.dispatchEvent(new CustomEvent("ff-cloud-conflict", { detail: { key, serverVal } }));
-            return;
+    const ref = window.firebaseDoc(window.firebaseDb, "fitforge", `${uid}_${key}`);
+    // SCHUTZ 1: Lesen + Schreiben als Transaktion direkt gegen den SERVER (nie Cache).
+    // Offline schlägt sie fehl → nichts wird geschrieben, lokal ist schon gesichert.
+    // Schreibt ein anderes Gerät gleichzeitig, wiederholt Firestore die Transaktion
+    // mit dem neuen Server-Stand → kein Gerät kann das andere blind überschreiben.
+    let conflictVal = null, backupVal = null;
+    try {
+      await Promise.race([
+        window.firebaseDb.runTransaction(async (t) => {
+          conflictVal = null; backupVal = null;
+          const snap = await t.get(ref);
+          const serverVal = snap.exists ? snap.data().value : null;
+          if (serverVal != null) {
+            // SCHUTZ 2: Nie etwas wegschreiben, was in der Cloud steht und nicht absichtlich gelöscht wurde.
+            if (key === "data") {
+              const lost = findLostEntries(serverVal, cleaned);
+              if (lost.length) {
+                console.error(`BLOCKIERT: Upload von data hätte ${lost.length} Einträge gelöscht`, lost.slice(0,20));
+                conflictVal = serverVal; return;
+              }
+            } else if (countEntries(serverVal) >= 3 && countEntries(cleaned) < countEntries(serverVal) / 2) {
+              console.error(`BLOCKIERT: ${key} würde von ${countEntries(serverVal)} auf ${countEntries(cleaned)} Einträge schrumpfen`);
+              conflictVal = serverVal; return;
+            }
+            if (JSON.stringify(serverVal) !== JSON.stringify(cleaned)) backupVal = serverVal;
           }
-        } else if (countEntries(serverVal) >= 3 && countEntries(cleaned) < countEntries(serverVal) / 2) {
-          console.error(`BLOCKIERT: ${key} würde von ${countEntries(serverVal)} auf ${countEntries(cleaned)} Einträge schrumpfen`);
-          if(window.dbg) dbg(`🛑 ${key}-Upload blockiert (starker Datenschwund)`, '#f55');
-          window.dispatchEvent(new CustomEvent("ff-cloud-conflict", { detail: { key, serverVal } }));
-          return;
-        }
-        // SCHUTZ 3: Automatische Backups des bisherigen Cloud-Stands – lokal (10 Versionen)
-        // und in der Cloud (1 Snapshot pro Tag und Key, bleibt dauerhaft liegen).
-        if (JSON.stringify(serverVal) !== JSON.stringify(cleaned)) {
-          keepLocalBackup(uid, key, serverVal);
-          const day = new Date().toISOString().slice(0,10);
-          const bRef = window.firebaseDoc(window.firebaseDb, "fitforge", `${uid}_backup_${key}_${day}`);
-          try {
-            const b = await bRef.get({ source: "server" });
-            if (!b.exists) await bRef.set({ value: serverVal, createdAt: Date.now() });
-          } catch(e) { console.warn("Cloud-Backup nicht möglich:", e.message); }
-        }
-      }
-      await window.firebaseSetDoc(ref, { value: cleaned });
+          t.set(ref, { value: cleaned });
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 15000))
+      ]);
+    } catch(e) {
+      if (window.dbg) dbg(`⏸️ ${key}: Server nicht erreichbar – Upload folgt automatisch`, '#fa0');
+      return "offline";
     }
+
+    if (conflictVal != null) {
+      if (window.dbg) dbg(`🛑 ${key}-Upload blockiert – Cloud-Stand wird übernommen`, '#f55');
+      window.dispatchEvent(new CustomEvent("ff-cloud-conflict", { detail: { key, serverVal: conflictVal } }));
+      return "blocked";
+    }
+
+    // SCHUTZ 3: Automatische Backups des bisherigen Cloud-Stands – lokal (10 Versionen)
+    // und in der Cloud (1 Snapshot pro Tag und Key, bleibt dauerhaft liegen).
+    if (backupVal != null) {
+      keepLocalBackup(uid, key, backupVal);
+      const day = new Date().toISOString().slice(0,10);
+      const bRef = window.firebaseDoc(window.firebaseDb, "fitforge", `${uid}_backup_${key}_${day}`);
+      bRef.get({ source: "server" })
+        .then(b => { if (!b.exists) return bRef.set({ value: backupVal, createdAt: Date.now() }); })
+        .catch(e => console.warn("Cloud-Backup nicht möglich:", e.message));
+    }
+    return "ok";
   } catch(e) { 
     console.error("fbSet error:", e);
     if(window.dbg) dbg(`❌ Cloud-Speicher Fehler: ${e.message}`, '#f55');
     window.showToast?.(`Cloud-Speicher Fehler: ${e.message}`, "error");
+    return "error";
   }
 };
 
@@ -2616,6 +2633,20 @@ function FitForge(){
 
   // ── Sync to Firestore on local change (debounced) ────────────────────────
   const debRef = useRef({});
+  // Keys, deren letzter Upload nicht vom Server bestätigt wurde (offline/Timeout/blockiert).
+  // Werden automatisch erneut versucht, bis die Cloud den Stand hat.
+  const pendingSyncRef = useRef({});
+  useEffect(() => {
+    const retry = () => { if (Object.values(pendingSyncRef.current).some(Boolean)) setSyncTick(t => t + 1); };
+    const onOnline = () => { showToast("🌐 Wieder online – Daten werden abgeglichen", "info"); retry(); };
+    const onOffline = () => showToast("📴 Offline – alles wird auf dem Gerät gespeichert und später synchronisiert", "info");
+    const onVisible = () => { if (document.visibilityState === "visible") retry(); };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    document.addEventListener("visibilitychange", onVisible);
+    const iv = setInterval(retry, 20000);
+    return () => { window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); document.removeEventListener("visibilitychange", onVisible); clearInterval(iv); };
+  }, []);
   const syncToCloud = (key, val) => {
     if (!authUser || !loaded) return;
     
@@ -2686,8 +2717,9 @@ function FitForge(){
           if (window.dbg) {
             dbg(`📤 Synchronisiere data (Größe: ${(dataStr.length/1024).toFixed(1)} KB)...`, '#ff0');
           }
-          fbSet("data", cleanedData).finally(() => {
-            lastSyncRef.current["data"] = dataStr;
+          fbSet("data", cleanedData).then(r => {
+            if (r === "ok") { lastSyncRef.current["data"] = dataStr; pendingSyncRef.current["data"] = false; }
+            else pendingSyncRef.current["data"] = true;
           });
         }, 300);
       }
@@ -2697,8 +2729,9 @@ function FitForge(){
         clearTimeout(debRef.current["photos"]);
         debRef.current["photos"] = setTimeout(() => {
           if (window.dbg) dbg(`📤 Synchronisiere photos (Größe: ${(photosStr.length/1024).toFixed(1)} KB)...`, '#ff0');
-          fbSet("photos", cleanedPhotos || []).finally(() => {
-            lastSyncRef.current["photos"] = photosStr;
+          fbSet("photos", cleanedPhotos || []).then(r => {
+            if (r === "ok") { lastSyncRef.current["photos"] = photosStr; pendingSyncRef.current["photos"] = false; }
+            else pendingSyncRef.current["photos"] = true;
           });
         }, 300);
       }
@@ -2708,8 +2741,9 @@ function FitForge(){
         clearTimeout(debRef.current["exercisePhotos"]);
         debRef.current["exercisePhotos"] = setTimeout(() => {
           if (window.dbg) dbg(`📤 Synchronisiere exercisePhotos (Größe: ${(exPhotosStr.length/1024).toFixed(1)} KB)...`, '#ff0');
-          fbSet("exercisePhotos", cleanedExPhotos || {}).finally(() => {
-            lastSyncRef.current["exercisePhotos"] = exPhotosStr;
+          fbSet("exercisePhotos", cleanedExPhotos || {}).then(r => {
+            if (r === "ok") { lastSyncRef.current["exercisePhotos"] = exPhotosStr; pendingSyncRef.current["exercisePhotos"] = false; }
+            else pendingSyncRef.current["exercisePhotos"] = true;
           });
         }, 300);
       }
@@ -2739,8 +2773,9 @@ function FitForge(){
     clearTimeout(debRef.current[key]);
     debRef.current[key] = setTimeout(() => {
       if (window.dbg) dbg(`📤 Synchronisiere ${key}...`, '#ff0');
-      fbSet(key, val).finally(() => {
-        lastSyncRef.current[key] = valStr;
+      fbSet(key, val).then(r => {
+        if (r === "ok") { lastSyncRef.current[key] = valStr; pendingSyncRef.current[key] = false; }
+        else pendingSyncRef.current[key] = true;
       });
     }, 300);
   };
@@ -2929,7 +2964,7 @@ function FitForge(){
     if(window.dbg) dbg("☁️ Manueller Voll-Upload gestartet…", '#0ff');
     try{
       const { photos, exercisePhotos, ...dataNoPhotos } = data;
-      await Promise.all([
+      const results = await Promise.all([
         fbSet("data", dataNoPhotos),
         fbSet("photos", photos || []),
         fbSet("exercisePhotos", exercisePhotos || {}),
@@ -2943,7 +2978,7 @@ function FitForge(){
           return window.firebaseSetDoc(window.firebaseDoc(window.firebaseDb, "fitforge", "shared_library"), { value: stripBase64(library, "library"), deletedIds: localDeleted });
         })()
       ]);
-      let confirmed=true;
+      let confirmed=results.slice(0,8).every(r=>r==="ok");
       try{
         await Promise.race([
           window.firebaseDb.waitForPendingWrites(),

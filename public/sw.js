@@ -4,7 +4,7 @@
 // - CDN-Skripte/Styles/Fonts/Bilder werden cache-first ausgeliefert
 // Firestore-/Auth-Aufrufe werden NICHT angefasst (das SDK regelt offline selbst).
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const PRECACHE = 'ff-precache-' + VERSION;
 const RUNTIME = 'ff-runtime-' + VERSION;
 // 'ff-compiled' gehört dem App-Loader (kompilierter App-Code) – nie löschen!
@@ -81,7 +81,14 @@ self.addEventListener('fetch', event => {
     event.respondWith((async () => {
       try {
         // Bypasse den Browser-HTTP-Cache für den Navigations-Fetch, um immer die aktuellste index.html zu laden
-        const fresh = await fetch(req, { cache: 'no-store' }).catch(() => fetch(req));
+        // Schlechtes Netz (Funkloch, Gym-Keller): nach 4s aus dem Cache starten statt zu hängen
+        const net = fetch(req, { cache: 'no-store' }).catch(() => fetch(req));
+        const cachedFirst = await Promise.race([net, new Promise(r => setTimeout(() => r(null), 4000))]);
+        if (!cachedFirst) {
+          const c = await caches.match('/');
+          if (c) { net.then(f => { if (f && f.ok) caches.open(PRECACHE).then(cc => cc.put('/', f)); }).catch(() => {}); return c; }
+        }
+        const fresh = cachedFirst || await net;
         if (fresh && fresh.ok) {
           const cache = await caches.open(PRECACHE);
           // Vercel liefert für alle Pfade index.html – unter '/' cachen
