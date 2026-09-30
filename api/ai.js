@@ -62,7 +62,7 @@ async function geminiModelList() {
   } catch { return ["gemini-flash-latest", "gemini-flash-lite-latest"]; }
 }
 // Fehler, bei denen ein anderes Modell helfen kann (kein Freikontingent, nicht freigeschaltet, unbekannt)
-const modelUnusable = (e) => [403, 404].includes(e.status) || (e.status === 429 && /limit:\s*0|free.?tier|not.*available|quota.*model/i.test(e.message || "")) || (e.status === 400 && /model/i.test(e.message || ""));
+const modelUnusable = (e) => [403, 404, 500, 503].includes(e.status) || /high demand|overloaded|unavailable/i.test(e.message || "") || (e.status === 429 && /limit:\s*0|free.?tier|not.*available|quota.*model/i.test(e.message || "")) || (e.status === 400 && /model/i.test(e.message || ""));
 async function callGemini({ system, messages }) {
   const models = await geminiModelList();
   let lastErr;
