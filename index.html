@@ -111,7 +111,7 @@ input[type="date"] { text-align: center; justify-content: center; align-items: c
 ::-webkit-scrollbar-track{background:#111114;}
 ::-webkit-scrollbar-thumb{background:#2A2A30;border-radius:3px;}
 .trainImg,.trainVideo{width:100%;height:220px;border-radius:15px;object-fit:contain;background:#222;margin-bottom:20px;box-shadow:0 10px 30px rgba(0,0,0,0.5);}
-@keyframes pageEnter{from{opacity:0;transform:translateY(12px);}to{opacity:1;}}
+@keyframes pageEnter{from{opacity:0;transform:translateY(16px) scale(0.99);filter:blur(3px);}to{opacity:1;transform:none;filter:none;}}
 @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
 @keyframes dropIn{from{opacity:0;transform:scale(0.96) translateY(6px);}to{opacity:1;transform:scale(1) translateY(0);}}
 @keyframes spin{to{transform:rotate(360deg);}}
@@ -136,7 +136,7 @@ input[type="date"] { text-align: center; justify-content: center; align-items: c
 .chalCard{transition:transform 0.25s cubic-bezier(0.16,1,0.3,1), box-shadow 0.25s;}
 .chalCard:hover{transform:translateY(-4px);box-shadow:0 14px 36px rgba(0,0,0,0.45);}
 .lineDraw{stroke-dasharray:1;animation:lineDraw 0.9s cubic-bezier(0.4,0,0.2,1) both;}
-.pageEnter{animation:pageEnter 0.4s cubic-bezier(0.16,1,0.3,1) both;}body.modal-open{overflow:hidden!important;height:100%;}
+.pageEnter{animation:pageEnter 0.5s cubic-bezier(0.16,1,0.3,1) both;}body.modal-open{overflow:hidden!important;height:100%;}
 [data-modal-overlay]{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;overflow:hidden!important;-webkit-overflow-scrolling:touch;}
 .fadeIn{animation:fadeIn 0.3s ease both;}
 .dropIn{animation:dropIn 0.25s cubic-bezier(0.16,1,0.3,1) both;}
@@ -177,6 +177,26 @@ input[type="date"] { text-align: center; justify-content: center; align-items: c
 .setDoneFx{animation:setDone 0.55s cubic-bezier(0.34,1.56,0.64,1);}
 .checkPop svg{animation:checkPop 0.45s cubic-bezier(0.34,1.56,0.64,1);}
 @media (prefers-reduced-motion: reduce){.setDoneFx,.checkPop svg{animation:none!important;}}
+/* 8: Ringe füllen sich mit leichtem Nachschwingen */
+@keyframes ringFill{from{stroke-dasharray:0 1000;}}
+.ringFill{animation:ringFill 1.2s cubic-bezier(0.34,1.4,0.64,1) both;}
+/* 7: Streak-Flamme */
+@keyframes flameFlicker{0%,100%{transform:scale(1) rotate(-3deg);filter:drop-shadow(0 0 6px rgba(255,107,53,0.8));}25%{transform:scale(1.08,0.95) rotate(2deg);}50%{transform:scale(0.96,1.07) rotate(-1deg);filter:drop-shadow(0 0 12px rgba(255,209,102,0.95));}75%{transform:scale(1.05,0.97) rotate(3deg);}}
+.flame{display:inline-block;transform-origin:50% 90%;animation:flameFlicker 1.4s ease-in-out infinite;}
+/* 11: untere Leiste */
+@keyframes navBounce{0%{transform:translateY(0) scale(1);}35%{transform:translateY(-6px) scale(1.18);}65%{transform:translateY(1px) scale(0.95);}100%{transform:none;}}
+.navBounce{animation:navBounce 0.5s cubic-bezier(0.34,1.56,0.64,1);}
+/* 13: Tipp-Feedback */
+button:not([disabled]):not([style*="transform"]):active{transform:scale(0.96);}
+button{transition:transform 0.12s ease;}
+@keyframes tapGlow{from{opacity:0.55;transform:translate(-50%,-50%) scale(0.2);}to{opacity:0;transform:translate(-50%,-50%) scale(1);}}
+/* 14: Lade-Platzhalter */
+@keyframes skel{from{background-position:-200% 0;}to{background-position:200% 0;}}
+.skel{background:linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.10) 50%,rgba(255,255,255,0.04) 75%);background-size:200% 100%;animation:skel 1.4s ease-in-out infinite;border-radius:16px;}
+/* 15/16: Level-Up + schwebende Werte */
+@keyframes floatUp{0%{opacity:0;transform:translate(-50%,0) scale(0.7);}15%{opacity:1;transform:translate(-50%,-14px) scale(1.1);}100%{opacity:0;transform:translate(-50%,-90px) scale(1);}}
+@keyframes lvlBadge{0%{opacity:0;transform:scale(0.2) rotate(-180deg);}70%{opacity:1;transform:scale(1.15) rotate(10deg);}100%{opacity:1;transform:none;}}
+@media (prefers-reduced-motion: reduce){.ringFill,.flame,.navBounce,.skel{animation:none!important;}}
 @media (prefers-reduced-motion: reduce){.ffDash > *,.ffCardIn,.ffRowIn,.heroKen,.heroTag,.heroFly,.muscleShape,.muscleSel{animation:none!important;}}
 .newPlanCard:hover{border-color:rgba(255,107,53,0.5)!important;background:rgba(255,107,53,0.04)!important;}
 .newPlanCard:hover .newPlanIcon{background:rgba(255,107,53,0.18)!important;box-shadow:0 0 24px rgba(255,107,53,0.35);transform:scale(1.08);}
@@ -1145,7 +1165,7 @@ function Heatmap({workouts,weeks=16}){
     </div>
   );
 }
-function DonutChart({value,max,color="#FF6B35",size=80,label=""}){const r=30,circ=2*Math.PI*r,pct=Math.min(value/Math.max(max,1),1),dash=pct*circ;return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}><svg width={size} height={size} viewBox="0 0 80 80"><circle cx="40" cy="40" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8"/><circle cx="40" cy="40" r={r} fill="none" stroke={color} strokeWidth="8" strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" transform="rotate(-90 40 40)" style={{transition:"stroke-dasharray 0.5s"}}/><text x="40" y="44" textAnchor="middle" fontSize="12" fontWeight="800" fill="#F0EDE8" fontFamily="DM Sans,sans-serif">{Math.round(pct*100)}%</text></svg>{label&&<div style={{fontSize:10,color:"#666",textAlign:"center",maxWidth:70}}>{label}</div>}</div>);}
+function DonutChart({value,max,color="#FF6B35",size=80,label=""}){const r=30,circ=2*Math.PI*r,pct=Math.min(value/Math.max(max,1),1),dash=pct*circ;return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}><svg width={size} height={size} viewBox="0 0 80 80"><circle cx="40" cy="40" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8"/><circle className="ringFill" cx="40" cy="40" r={r} fill="none" stroke={color} strokeWidth="8" strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" transform="rotate(-90 40 40)" style={{transition:"stroke-dasharray 0.5s",filter:`drop-shadow(0 0 4px ${color}55)`}}/><text x="40" y="44" textAnchor="middle" fontSize="12" fontWeight="800" fill="#F0EDE8" fontFamily="DM Sans,sans-serif"><CountUp to={Math.round(pct*100)} dur={1100}/>%</text></svg>{label&&<div style={{fontSize:10,color:"#666",textAlign:"center",maxWidth:70}}>{label}</div>}</div>);}
 // Donut mit Segmenten + Legende (z.B. Trainingstypen-Verteilung)
 function DonutBreakdown({items,centerLabel=""}){
   const total=items.reduce((a,x)=>a+x.value,0);
@@ -1161,7 +1181,7 @@ function DonutBreakdown({items,centerLabel=""}){
           const off=-acc*circ;acc+=frac;
           return<circle key={i} cx="55" cy="55" r={r} fill="none" stroke={it.color} strokeWidth="11" strokeLinecap="round"
             strokeDasharray={`${dash} ${circ-dash}`} strokeDashoffset={off} transform="rotate(-90 55 55)"
-            style={{transition:"stroke-dasharray 0.5s"}} opacity="0.9"/>;
+            className="ringFill" style={{transition:"stroke-dasharray 0.5s",animationDelay:`${i*0.08}s`}} opacity="0.9"/>;
         })}
         <text x="55" y="52" textAnchor="middle" fontSize="19" fontWeight="900" fill="#F0EDE8" fontFamily="DM Sans,sans-serif">{total}</text>
         <text x="55" y="66" textAnchor="middle" fontSize="8.5" fontWeight="700" fill="#666" fontFamily="DM Sans,sans-serif">{centerLabel}</text>
@@ -3046,6 +3066,40 @@ function FitForge(){
   }, [loaded, authUser, library]);
 
   useEffect(()=>{setAnimK(k=>k+1);},[view]);
+  // 13: Tipp-Stelle merken + kurzer Leuchtkreis unter dem Finger
+  useEffect(()=>{
+    const onDown=e=>{
+      ffTap.x=e.clientX; ffTap.y=e.clientY; ffTap.t=Date.now();
+      const t=e.target.closest&&e.target.closest("button:not([disabled]),.planCard,.glass-recent,.waterBtn");
+      if(!t)return;
+      try{if(window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;}catch(err){}
+      const g=document.createElement("span");
+      Object.assign(g.style,{position:"fixed",left:e.clientX+"px",top:e.clientY+"px",width:"90px",height:"90px",borderRadius:"50%",pointerEvents:"none",zIndex:"10002",background:"radial-gradient(circle, rgba(255,255,255,0.35), rgba(255,140,96,0.12) 45%, transparent 70%)",animation:"tapGlow 0.5s ease-out forwards"});
+      document.body.appendChild(g); setTimeout(()=>g.remove(),550);
+    };
+    window.addEventListener("pointerdown",onDown,{passive:true});
+    return()=>window.removeEventListener("pointerdown",onDown);
+  },[]);
+  // 16: "+320 kcal" / "+250 ml" schweben auf, wenn heute etwas dazukommt
+  const nutPrevRef=useRef(null);
+  useEffect(()=>{
+    const d=(nutrition||{})[todayStr()]||{};
+    const cur={kcal:Math.round(+d.calories||0),water:(d.waterLog||[]).reduce((a,w)=>a+(+w.ml||0),0)};
+    const prev=nutPrevRef.current; nutPrevRef.current=cur;
+    if(!prev||Date.now()-ffTap.t>4000)return; // nur nach eigener Eingabe, nicht bei Sync
+    if(cur.water>prev.water)ffFloat(`💧 +${cur.water-prev.water} ml`,"#4DD0E1");
+    if(cur.kcal>prev.kcal)setTimeout(()=>ffFloat(`+${cur.kcal-prev.kcal} kcal`,"#FF8C60"),cur.water>prev.water?250:0);
+  },[nutrition]);
+  // 15: Level-Up erkennen (einmal pro erreichtem Level)
+  const [levelUp,setLevelUp]=useState(null);
+  useEffect(()=>{
+    if(!loaded)return;
+    const idx=ffLevelIdx(user.forgePoints);
+    let seen=null;try{seen=localStorage.getItem("ff_level_seen");}catch(e){}
+    if(seen==null||isNaN(+seen)){try{localStorage.setItem("ff_level_seen",String(idx));}catch(e){}return;}
+    if(idx>+seen){try{localStorage.setItem("ff_level_seen",String(idx));}catch(e){} setTimeout(()=>setLevelUp(idx),700);}
+    else if(idx<+seen){try{localStorage.setItem("ff_level_seen",String(idx));}catch(e){}}
+  },[user.forgePoints,loaded]);
   useEffect(()=>{localStorage.setItem("ff_notifs",JSON.stringify(notifs));},[notifs]);
   useEffect(()=>{
     const gen=genWpNotifs(data,weekPlans);
@@ -3287,10 +3341,16 @@ function FitForge(){
   }, [loaded]);
 
   if(showLoadingUI) return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0D0D0F",flexDirection:"column",gap:16}}>
-      <div style={{width:44,height:44,border:"3px solid #FF6B35",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
-      <div style={{color:"#F0EDE8",fontSize:16,fontWeight:700,fontFamily:"'DM Sans',sans-serif",letterSpacing:"0.5px"}}>FitForge wird geladen...</div>
-      <div style={{color:"#444",fontSize:12,fontFamily:"'DM Sans',sans-serif"}}>Sichere Verbindung wird hergestellt...</div>
+    <div style={{minHeight:"100vh",background:"radial-gradient(circle at 50% 0%, #161622 0%, #0A0A0E 60%, #050507 100%)",padding:"calc(18px + env(safe-area-inset-top)) 12px 20px",fontFamily:"'DM Sans',sans-serif",maxWidth:900,margin:"0 auto"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+        <svg width="22" height="22" fill="#FF6B35" viewBox="0 0 24 24" style={{animation:"urgentPulse 1.4s ease-in-out infinite"}}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        <span style={{fontSize:18,fontWeight:800,color:"#F0EDE8",letterSpacing:"-0.5px"}}>FitForge</span>
+        <span style={{marginLeft:"auto",fontSize:11,color:"#555"}}>Daten werden geladen…</span>
+      </div>
+      <div className="skel" style={{height:250,marginBottom:18}}/>
+      <div className="skel" style={{height:150,marginBottom:18,animationDelay:"0.15s"}}/>
+      <div style={{display:"flex",gap:12,marginBottom:18}}>{[0,1,2,3].map(i=><div key={i} className="skel" style={{flex:1,height:90,borderRadius:"50%",maxWidth:90,margin:"0 auto",animationDelay:`${0.2+i*0.08}s`}}/>)}</div>
+      <div className="skel" style={{height:120,animationDelay:"0.3s"}}/>
       <style>{`@keyframes spin{to{transform:rotate(360deg);}}`}</style>
     </div>
   );
@@ -3677,6 +3737,8 @@ function FitForge(){
           else if(a.type==='log_meal'&&a.meal){const m=a.meal,day=todayStr(),rd=v=>Math.round((+v||0)*10)/10;const e={id:Date.now(),name:m.name||'Mahlzeit',calories:Math.round(+m.kcal||+m.calories||0),protein:rd(m.protein),carbs:rd(m.carbs),fat:rd(m.fat),mealType:CHECKIN_MEAL_TYPES.includes(m.mealType)?m.mealType:'Snack',aiEstimated:true};
             setNutrition(n=>{const d=n[day]||{calories:0,protein:0,carbs:0,fat:0,meals:[]};const meals=[...(d.meals||[]),e];return{...n,[day]:{...d,meals,calories:Math.round(meals.reduce((x,y)=>x+(+y.calories||0),0)),protein:rd(meals.reduce((x,y)=>x+(+y.protein||0),0)),carbs:rd(meals.reduce((x,y)=>x+(+y.carbs||0),0)),fat:rd(meals.reduce((x,y)=>x+(+y.fat||0),0))}};});}
         }}/>
+      {isMobile && <PullToRefresh/>}
+      {levelUp!=null && <LevelUpOverlay idx={levelUp} onClose={()=>setLevelUp(null)}/>}
       {isMobile && <BottomNav view={view} onNav={(id)=>{if(id==='ai'){window.ffOpenAI();return;}setView(id);setPresetPlanId(null);setAutoOpenAdd(null);setPresetMealType(null);setStretchFilter(false);closeAll();setSidebarOpen(false);}}/>}
       {logModal&&<QuickLogModal data={data} setData={setData} onClose={()=>setLogModal(false)} notify={showToast}/>}
       {planModal&&<PlanModal data={data} setData={setData} editPlan={editPlan} library={library} onClose={()=>{setPlanModal(false);setEditPlan(null);}} notify={showToast}/>}
@@ -3962,6 +4024,14 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
   const today=new Date(),tn=FULL_WEEKDAYS[today.getDay()===0?6:today.getDay()-1];
   const todayPlan=data.plans.find(p=>p.days.includes(tn));
   const calGoal=parseInt(user.calorieGoal)||2500,protGoal=parseInt(user.proteinGoal)||150;
+  const weekStreak=React.useMemo(()=>{
+    const wk=d=>{const x=new Date(d+"T12:00:00");const day=(x.getDay()+6)%7;x.setDate(x.getDate()-day);return x.toISOString().slice(0,10);};
+    const set=new Set((data.workouts||[]).map(w=>w.date&&wk(w.date)).filter(Boolean));
+    const c=new Date();c.setHours(12,0,0,0);c.setDate(c.getDate()-((c.getDay()+6)%7));
+    if(!set.has(c.toISOString().slice(0,10)))c.setDate(c.getDate()-7); // laufende Woche zählt erst mit Training
+    let n=0;while(set.has(c.toISOString().slice(0,10))){n++;c.setDate(c.getDate()-7);}
+    return n;
+  },[data.workouts]);
   const tnC = parseInt(todayNut.calories)||0, tnP = parseFloat(todayNut.protein)||0, tnCa = parseFloat(todayNut.carbs)||0, tnF = parseFloat(todayNut.fat)||0;
   return(<div style={{
     ...s.page,
@@ -3991,15 +4061,20 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
                   <svg width={ringSize} height={ringSize} viewBox="0 0 64 64">
                     <circle cx="32" cy="32" r={rr} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="6"/>
                     <circle cx="32" cy="32" r={rr} fill="none" stroke={ringDone?"#06D6A0":"#FF6B35"} strokeWidth="6" strokeLinecap="round"
-                      strokeDasharray={`${prog*circ} ${circ}`} transform="rotate(-90 32 32)" style={{transition:"stroke-dasharray 0.8s cubic-bezier(0.16,1,0.3,1), stroke 0.4s",filter:ringDone?"drop-shadow(0 0 5px rgba(6,214,160,0.6))":"drop-shadow(0 0 4px rgba(255,107,53,0.4))"}}/>
-                    <text x="32" y="36" textAnchor="middle" fontSize="14" fontWeight="900" fill="#fff" fontFamily="DM Sans,sans-serif">{ringDone?"✓":`${cwDays}/${weeklyGoal}`}</text>
+                      strokeDasharray={`${prog*circ} ${circ}`} transform="rotate(-90 32 32)" className="ringFill" style={{animationDelay:"0.4s",transition:"stroke-dasharray 0.8s cubic-bezier(0.16,1,0.3,1), stroke 0.4s",filter:ringDone?"drop-shadow(0 0 5px rgba(6,214,160,0.6))":"drop-shadow(0 0 4px rgba(255,107,53,0.4))"}}/>
+                    <text x="32" y="36" textAnchor="middle" fontSize="14" fontWeight="900" fill="#fff" fontFamily="DM Sans,sans-serif">{ringDone?"✓":<><CountUp to={cwDays} dur={900} delay={400}/>/{weeklyGoal}</>}</text>
                   </svg>
                   <span style={{fontSize:8.5,fontWeight:800,color:ringDone?"#06D6A0":"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:0.5}}>Wochenziel</span>
                 </div>
               </div>
               <div className="heroFly" style={{animationDelay:"0.45s",display:"flex", flexDirection:"column", alignItems:"flex-start",position:"relative",zIndex:6}}>
                 {todayPlan&&<div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.12)",backdropFilter:"blur(12px)",borderRadius:20,padding:"6px 14px",fontSize: isMobile ? 11 : 13,color:"#fff",marginBottom:18,width:"fit-content"}}><span style={{width:8,height:8,borderRadius:"50%",background:todayPlan.color,display:"inline-block"}}/> Heute: {todayPlan.name}</div>}
-                <button style={{...s.primaryBtn, width: "fit-content", padding: isMobile ? "7px 14px" : "8px 16px", fontSize: isMobile ? 13 : 14}} onClick={onLog}>{IC.plus} Training starten</button>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <button style={{...s.primaryBtn, width: "fit-content", padding: isMobile ? "7px 14px" : "8px 16px", fontSize: isMobile ? 13 : 14}} onClick={onLog}>{IC.plus} Training starten</button>
+                  {weekStreak>0&&<div title="Wochen am Stück mit mindestens einem Training" style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",border:`1px solid rgba(255,140,96,${Math.min(0.25+weekStreak*0.05,0.7)})`,borderRadius:20,padding:isMobile?"5px 11px":"6px 13px",color:"#fff",fontSize:isMobile?12:13,fontWeight:800,boxShadow:`0 0 ${Math.min(6+weekStreak*2,26)}px rgba(255,107,53,${Math.min(0.15+weekStreak*0.04,0.55)})`}}>
+                    <span className="flame" style={{fontSize:Math.min(15+weekStreak*1.2,26)}}>🔥</span><CountUp to={weekStreak} dur={900} delay={500}/> {weekStreak===1?"Woche":"Wochen"}
+                  </div>}
+                </div>
               </div>
             </>);
           })()}
@@ -4084,15 +4159,15 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
       <div className="glass-card" style={{marginBottom:18}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h2 style={s.secTitle}>Ernährung heute</h2></div>
         <div style={{display:"flex",justifyContent:"space-around",alignItems:"center", gap: isMobile ? 8 : 0, overflowX: isMobile ? "auto" : "visible", paddingBottom: isMobile ? 8 : 0}}>
-          <DonutChart value={tnC} max={calGoal} color="#FF6B35" size={isMobile ? 56 : 68} label={`${tnC} kcal`}/>
-          <DonutChart value={tnP} max={protGoal} color="#00D9C0" size={isMobile ? 56 : 68} label={`${Math.round(tnP)}g Prot`}/>
-          <DonutChart value={tnCa} max={Math.round(calGoal*0.5/4)} color="#FFD166" size={isMobile ? 56 : 68} label={`${Math.round(tnCa)}g Carb`}/>
-          <DonutChart value={tnF} max={Math.round(calGoal*0.3/9)} color="#A78BFA" size={isMobile ? 56 : 68} label={`${Math.round(tnF)}g Fett`}/>
+          <DonutChart value={tnC} max={calGoal} color="#FF6B35" size={isMobile ? 56 : 68} label={<><CountUp to={tnC}/> kcal</>}/>
+          <DonutChart value={tnP} max={protGoal} color="#00D9C0" size={isMobile ? 56 : 68} label={<><CountUp to={Math.round(tnP)}/>g Prot</>}/>
+          <DonutChart value={tnCa} max={Math.round(calGoal*0.5/4)} color="#FFD166" size={isMobile ? 56 : 68} label={<><CountUp to={Math.round(tnCa)}/>g Carb</>}/>
+          <DonutChart value={tnF} max={Math.round(calGoal*0.3/9)} color="#A78BFA" size={isMobile ? 56 : 68} label={<><CountUp to={Math.round(tnF)}/>g Fett</>}/>
         </div>
       </div>
 
       <div className="glass-card" style={{marginBottom:18}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h2 style={s.secTitle}>💧 Flüssigkeit</h2><div style={{fontFamily:"'DM Sans',sans-serif",fontSize: isMobile ? 16 : 18,fontWeight:800,color:"#2196F3"}}>{waterTotal}<span style={{fontSize:11,color:"#666",fontWeight:400}}> / {waterGoal} ml</span></div></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h2 style={s.secTitle}>💧 Flüssigkeit</h2><div style={{fontFamily:"'DM Sans',sans-serif",fontSize: isMobile ? 16 : 18,fontWeight:800,color:"#2196F3"}}><CountUp to={waterTotal} dur={900}/><span style={{fontSize:11,color:"#666",fontWeight:400}}> / {waterGoal} ml</span></div></div>
         <div style={{display:"flex", gap: isMobile ? 14 : 20, alignItems:"center"}}>
           <WaterGlass ml={waterTotal} goal={waterGoal}/>
           <div style={{flex:1, minWidth:0}}>
@@ -4937,7 +5012,7 @@ function Nutrition({nutrition,setNutrition,user,setUser,notify,favFoods,setFavFo
           </div>
 
           <div style={{...s.card,marginBottom:22, padding: isMobile ? 16 : 22}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><h3 style={s.cardTitle}>💧 Flüssigkeit</h3><div style={{fontFamily:"'DM Sans',sans-serif",fontSize: isMobile ? 16 : 18,fontWeight:800,color:"#2196F3"}}>{waterTotal}<span style={{fontSize:11,color:"#666",fontWeight:400}}> / {waterGoal} ml</span></div></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><h3 style={s.cardTitle}>💧 Flüssigkeit</h3><div style={{fontFamily:"'DM Sans',sans-serif",fontSize: isMobile ? 16 : 18,fontWeight:800,color:"#2196F3"}}><CountUp to={waterTotal} dur={900}/><span style={{fontSize:11,color:"#666",fontWeight:400}}> / {waterGoal} ml</span></div></div>
             <div style={{display:"flex", gap: isMobile ? 14 : 20, alignItems:"center"}}>
               <WaterGlass ml={waterTotal} goal={waterGoal}/>
               <div style={{flex:1, minWidth:0}}>
@@ -5140,6 +5215,68 @@ function Plans({data,setData,onNew,onEdit,notify}){
     <div style={{...s.newPlanCard,justifyContent:"center",minHeight:180,animationDelay:`${data.plans.length*0.08}s`}} onClick={onNew} className="planCard newPlanCard ffCardIn"><div className="newPlanIcon" style={{width:52,height:52,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,107,53,0.08)",border:"1px dashed rgba(255,107,53,0.35)",color:"#FF6B35",transition:"all 0.25s"}}>{IC.plus}</div><span style={{color:"#888",fontSize:13,fontWeight:700}}>Neuen Plan erstellen</span></div></div>
   </div>);}
 
+// ─── Level (auch für die Level-Up-Feier) ───
+const FF_LEVELS=[
+  {name:"Rookie",icon:"🔩",min:0,color:"#8D99AE"},
+  {name:"Bronze",icon:"🥉",min:250,color:"#CD7F32"},
+  {name:"Silber",icon:"🥈",min:750,color:"#C0C0C8"},
+  {name:"Gold",icon:"🥇",min:1500,color:"#FFD166"},
+  {name:"Platin",icon:"💠",min:3000,color:"#4CC9F0"},
+  {name:"Diamant",icon:"💎",min:6000,color:"#A78BFA"},
+  {name:"Meister",icon:"🔥",min:10000,color:"#FF6B35"},
+  {name:"Legende",icon:"⚡",min:20000,color:"#EF476F"},
+];
+const ffLevelIdx = pts => FF_LEVELS.reduce((acc, l, i) => (pts || 0) >= l.min ? i : acc, 0);
+// Zuletzt angetippte Stelle (für schwebende "+320 kcal" usw.)
+const ffTap = { x: 0, y: 0, t: 0 };
+// 16: kurzer Text, der von der Tipp-Stelle nach oben schwebt
+function ffFloat(text, color = "#FF8C60") {
+  try { if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return; } catch (e) {}
+  const recent = Date.now() - ffTap.t < 4000;
+  const el = document.createElement("div");
+  el.textContent = text;
+  Object.assign(el.style, { position: "fixed", left: (recent ? ffTap.x : window.innerWidth / 2) + "px", top: (recent ? ffTap.y - 20 : window.innerHeight * 0.45) + "px", zIndex: "10001", pointerEvents: "none", fontFamily: "'DM Sans',sans-serif", fontWeight: "900", fontSize: "20px", color, textShadow: `0 0 14px ${color}, 0 2px 8px rgba(0,0,0,0.6)`, whiteSpace: "nowrap", animation: "floatUp 1.5s cubic-bezier(0.16,1,0.3,1) forwards" });
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1600);
+}
+// 12: Runterziehen zum Aktualisieren (nur Handy, nur ganz oben auf der Seite)
+function PullToRefresh() {
+  const [pull, setPull] = useState(0);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let y0 = null, d = 0;
+    const st = e => { if (busy || window.scrollY > 0 || document.body.classList.contains("modal-open") || !e.target.closest?.(".pageEnter")) { y0 = null; return; } y0 = e.touches[0].clientY; d = 0; };
+    const mv = e => { if (y0 == null) return; d = e.touches[0].clientY - y0; if (d > 0 && window.scrollY <= 0) setPull(Math.min(140, d * 0.5)); else if (d < 0) { y0 = null; setPull(0); } };
+    const en = () => { if (y0 == null) return; y0 = null; if (d * 0.5 >= 80) { setBusy(true); setPull(80); ffVibrate(20); setTimeout(() => window.location.reload(), 650); } else setPull(0); };
+    window.addEventListener("touchstart", st, { passive: true }); window.addEventListener("touchmove", mv, { passive: true }); window.addEventListener("touchend", en, { passive: true });
+    return () => { window.removeEventListener("touchstart", st); window.removeEventListener("touchmove", mv); window.removeEventListener("touchend", en); };
+  }, [busy]);
+  if (!pull && !busy) return null;
+  const ready = pull >= 80;
+  return (<div style={{ position: "fixed", top: "calc(env(safe-area-inset-top) + 8px)", left: 0, right: 0, margin: "0 auto", width: 44, height: 44, zIndex: 9800, borderRadius: 22, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(16,16,22,0.92)", border: `1px solid ${ready ? "rgba(255,107,53,0.6)" : "rgba(255,255,255,0.12)"}`, boxShadow: ready ? "0 0 20px rgba(255,107,53,0.4)" : "0 6px 20px rgba(0,0,0,0.4)", transform: `translateY(${Math.min(pull, 90) - 20}px)`, opacity: Math.min(1, pull / 40), transition: busy ? "none" : "border-color 0.2s, box-shadow 0.2s" }}>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill={ready ? "#FF6B35" : "#aaa"} style={{ transform: busy ? undefined : `rotate(${pull * 3}deg)`, animation: busy ? "spin 0.6s linear infinite" : "none" }}>
+      <rect x="1" y="9" width="3" height="6" rx="1" /><rect x="4" y="7" width="3" height="10" rx="1" /><rect x="7" y="11" width="10" height="2" rx="1" /><rect x="17" y="7" width="3" height="10" rx="1" /><rect x="20" y="9" width="3" height="6" rx="1" />
+    </svg>
+  </div>);
+}
+// 15: Level-Up-Moment
+function LevelUpOverlay({ idx, onClose }) {
+  const L = FF_LEVELS[idx];
+  useEffect(() => { ffConfetti({ big: true, gold: true }); ffVibrate([100, 60, 100, 60, 220]); try { playBeep(660, 0.12, 0.15); setTimeout(() => playBeep(880, 0.12, 0.15), 140); setTimeout(() => playBeep(1320, 0.3, 0.2), 280); } catch (e) {} }, []);
+  return (<ToBody>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 9700, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: `radial-gradient(circle at 50% 40%, ${L.color}40, rgba(5,5,7,0.95) 60%)`, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", animation: "fadeIn 0.3s both", overflow: "hidden" }}>
+      <div style={{ position: "absolute", left: "50%", top: "40%", width: 620, height: 620, pointerEvents: "none", background: `repeating-conic-gradient(from 0deg, ${L.color}26 0deg 7deg, transparent 7deg 20deg)`, borderRadius: "50%", WebkitMaskImage: "radial-gradient(circle, #000 15%, transparent 65%)", maskImage: "radial-gradient(circle, #000 15%, transparent 65%)", animation: "raysSpin 18s linear infinite", transform: "translate(-50%,-50%)" }} />
+      <div onClick={e => e.stopPropagation()} style={{ position: "relative", textAlign: "center", maxWidth: 360, animation: "finishIn 0.7s cubic-bezier(0.16,1,0.3,1) both" }}>
+        <div className="heroFly" style={{ fontSize: 13, fontWeight: 900, letterSpacing: 5, color: L.color, textTransform: "uppercase" }}>Level Up!</div>
+        <div style={{ width: 150, height: 150, margin: "18px auto", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 76, background: `radial-gradient(circle, ${L.color}35, ${L.color}08 70%)`, border: `2px solid ${L.color}`, boxShadow: `0 0 50px ${L.color}70, inset 0 0 30px ${L.color}30`, animation: "lvlBadge 1s cubic-bezier(0.34,1.56,0.64,1) 0.2s both" }}>{L.icon}</div>
+        <div className="heroFly" style={{ animationDelay: "0.6s", fontSize: 34, fontWeight: 900, color: "#fff", letterSpacing: "-0.5px" }}>{L.name}</div>
+        <div className="heroFly" style={{ animationDelay: "0.75s", fontSize: 14, color: "#aaa", marginTop: 6 }}>Du hast {L.min.toLocaleString("de-DE")} Forge Points geknackt.{FF_LEVELS[idx + 1] ? ` Nächstes Ziel: ${FF_LEVELS[idx + 1].name} ${FF_LEVELS[idx + 1].icon}` : " Höchstes Level erreicht!"}</div>
+        <button className="heroFly" onClick={onClose} style={{ ...s.primaryBtn, animationDelay: "0.9s", width: "100%", justifyContent: "center", marginTop: 22, padding: 14, fontSize: 15, background: `linear-gradient(135deg,${L.color},${L.color}CC)`, color: idx === 2 || idx === 3 ? "#111" : "#fff" }}>Weiter so! 💪</button>
+      </div>
+    </div>
+  </ToBody>);
+}
+
 // ─── Feier-Effekte im Training ───
 const ffVibrate = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} };
 // Konfetti auf einem temporären Canvas – räumt sich nach 3 s selbst weg
@@ -5173,10 +5310,11 @@ function ffConfetti({ gold = false, big = false } = {}) {
 // Zahl zählt weich hoch (easeOutCubic)
 function CountUp({ to, dur = 1200, delay = 0, dec = 0 }) {
   const [v, setV] = useState(0);
+  const cur = useRef(0);
   useEffect(() => {
-    let raf, start;
+    let raf, start; const from = cur.current, target = +to || 0;
     const t0 = setTimeout(() => {
-      const step = (ts) => { if (!start) start = ts; const p = Math.min(1, (ts - start) / dur); setV((+to || 0) * (1 - Math.pow(1 - p, 3))); if (p < 1) raf = requestAnimationFrame(step); };
+      const step = (ts) => { if (!start) start = ts; const p = Math.min(1, (ts - start) / dur); const x = from + (target - from) * (1 - Math.pow(1 - p, 3)); cur.current = x; setV(x); if (p < 1) raf = requestAnimationFrame(step); };
       raf = requestAnimationFrame(step);
     }, delay);
     return () => { clearTimeout(t0); cancelAnimationFrame(raf); };
@@ -9466,8 +9604,9 @@ function BottomNav({ view, onNav }){
           );
           return (
             <button key={id} onClick={() => onNav(id)} aria-label={label} aria-current={on ? "page" : undefined} style={{ all: "unset", cursor: "pointer", flex: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, color: on ? "#FF6B35" : (id === "ai" ? "#A78BFA" : "#8a8793") }}>
-              <span style={{ display: "flex" }}>{icon}</span>
+              <span key={on ? "on-" + view : "off"} className={on ? "navBounce" : ""} style={{ display: "flex", filter: on ? "drop-shadow(0 0 6px rgba(255,107,53,0.6))" : "none", transition: "filter 0.3s" }}>{icon}</span>
               <span style={{ fontSize: 10, fontWeight: on ? 800 : 600 }}>{label}</span>
+              <span style={{ width: 4, height: 4, borderRadius: 2, background: "#FF6B35", boxShadow: "0 0 8px #FF6B35", transform: on ? "scale(1)" : "scale(0)", opacity: on ? 1 : 0, transition: "transform 0.35s cubic-bezier(0.34,1.56,0.64,1), opacity 0.25s", marginTop: -1 }} />
             </button>
           );
         })}
@@ -10763,16 +10902,7 @@ function ForgePointsPage({user, setUser, isMobile}){
   ];
 
   // ── Level-System (rein aus Punktestand abgeleitet) ──────────────────────
-  const LEVELS=[
-    {name:"Rookie",icon:"🔩",min:0,color:"#8D99AE"},
-    {name:"Bronze",icon:"🥉",min:250,color:"#CD7F32"},
-    {name:"Silber",icon:"🥈",min:750,color:"#C0C0C8"},
-    {name:"Gold",icon:"🥇",min:1500,color:"#FFD166"},
-    {name:"Platin",icon:"💠",min:3000,color:"#4CC9F0"},
-    {name:"Diamant",icon:"💎",min:6000,color:"#A78BFA"},
-    {name:"Meister",icon:"🔥",min:10000,color:"#FF6B35"},
-    {name:"Legende",icon:"⚡",min:20000,color:"#EF476F"},
-  ];
+  const LEVELS=FF_LEVELS;
   const lvlIdx=LEVELS.reduce((acc,l,i)=>pts>=l.min?i:acc,0);
   const lvl=LEVELS[lvlIdx];
   const nextLvl=LEVELS[lvlIdx+1]||null;
@@ -13592,8 +13722,8 @@ const s={
   dayToggle:{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,padding:"5px 10px",color:"#ccc",cursor:"pointer",fontSize:12,fontFamily:"'DM Sans',sans-serif",fontWeight:600,transition:"all 0.2s"},
 };
 
-const css=`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;margin:0;padding:0;}body{margin:0;background:#0D0D0F;}::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:#111114;}::-webkit-scrollbar-thumb{background:#2A2A30;border-radius:3px;}.pageEnter{animation:pageEnter 0.4s cubic-bezier(0.16,1,0.3,1) both;}body.modal-open{overflow:hidden!important;height:100%;}
-[data-modal-overlay]{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;overflow:hidden!important;-webkit-overflow-scrolling:touch;}@keyframes pageEnter{from{opacity:0;transform:translateY(12px);}to{opacity:1;}}.fadeIn{animation:fadeIn 0.3s ease both;}.dropIn{animation:dropIn 0.25s cubic-bezier(0.16,1,0.3,1) both;}@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}@keyframes dropIn{from{opacity:0;transform:scale(0.96) translateY(6px);}to{opacity:1;transform:scale(1) translateY(0);}}.statCard{transition:transform 0.2s,box-shadow 0.2s;}.statCard:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.4);}.planCard{transition:transform 0.3s cubic-bezier(0.16,1,0.3,1),box-shadow 0.3s,border-color 0.3s,background 0.3s;}.planCard:hover{transform:translateY(-5px);border-color:rgba(255,255,255,0.22)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,0.14),0 18px 48px rgba(0,0,0,0.6),0 6px 20px rgba(0,0,0,0.35)!important;background:linear-gradient(160deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 50%, rgba(15,15,20,0.65) 100%)!important;}.histCard{
+const css=`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;margin:0;padding:0;}body{margin:0;background:#0D0D0F;}::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:#111114;}::-webkit-scrollbar-thumb{background:#2A2A30;border-radius:3px;}.pageEnter{animation:pageEnter 0.5s cubic-bezier(0.16,1,0.3,1) both;}body.modal-open{overflow:hidden!important;height:100%;}
+[data-modal-overlay]{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;overflow:hidden!important;-webkit-overflow-scrolling:touch;}@keyframes pageEnter{from{opacity:0;transform:translateY(16px) scale(0.99);filter:blur(3px);}to{opacity:1;transform:none;filter:none;}}.fadeIn{animation:fadeIn 0.3s ease both;}.dropIn{animation:dropIn 0.25s cubic-bezier(0.16,1,0.3,1) both;}@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}@keyframes dropIn{from{opacity:0;transform:scale(0.96) translateY(6px);}to{opacity:1;transform:scale(1) translateY(0);}}.statCard{transition:transform 0.2s,box-shadow 0.2s;}.statCard:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.4);}.planCard{transition:transform 0.3s cubic-bezier(0.16,1,0.3,1),box-shadow 0.3s,border-color 0.3s,background 0.3s;}.planCard:hover{transform:translateY(-5px);border-color:rgba(255,255,255,0.22)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,0.14),0 18px 48px rgba(0,0,0,0.6),0 6px 20px rgba(0,0,0,0.35)!important;background:linear-gradient(160deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 50%, rgba(15,15,20,0.65) 100%)!important;}.histCard{
   transition: transform 0.3s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s, border-color 0.3s, background 0.3s !important;
 }
 .histCard:hover{
