@@ -66,13 +66,16 @@ async function geminiModelList() {
   return geminiWorking ? [geminiWorking, ...geminiListCache.filter(m => m !== geminiWorking)] : geminiListCache;
 }
 // Fehler, bei denen ein anderes Modell helfen kann (kein Freikontingent, nicht freigeschaltet, unbekannt)
-const modelUnusable = (e) => [403, 404, 500, 503].includes(e.status) || /high demand|overloaded|unavailable/i.test(e.message || "") || (e.status === 429 && /limit:\s*0|free.?tier|not.*available|quota.*model/i.test(e.message || "")) || (e.status === 400 && /model/i.test(e.message || ""));
+const modelUnusable = (e) => [403, 404, 500, 503, 504].includes(e.status) || /high demand|overloaded|unavailable/i.test(e.message || "") || (e.status === 429 && /limit:\s*0|free.?tier|not.*available|quota.*model/i.test(e.message || "")) || (e.status === 400 && /model/i.test(e.message || ""));
 async function callGemini({ system, messages }) {
   const models = await geminiModelList();
+  const deadline = Date.now() + 55000; // Gesamtbudget, damit die App nie endlos wartet
   let lastErr;
   for (const model of models) {
+    const left = deadline - Date.now();
+    if (left < 5000) break;
     try {
-      const out = await callOpenAICompatible({ system, messages, base: GEMINI_BASE, model });
+      const out = await callOpenAICompatible({ system, messages, base: GEMINI_BASE, model, timeoutMs: Math.min(25000, left) });
       if (!process.env.AI_MODEL) geminiWorking = model;
       return { ...out, model };
     } catch (e) {
@@ -134,16 +137,23 @@ async function callAnthropic({ system, messages }) {
   return parseModelJson(text);
 }
 
-async function callOpenAICompatible({ system, messages, base, model }) {
+async function callOpenAICompatible({ system, messages, base, model, timeoutMs }) {
   base = (base || process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   model = model || process.env.AI_MODEL;
   const send = (jsonMode) => fetch(`${base}/chat/completions`, {
+    signal: AbortSignal.timeout(timeoutMs || 25000), // hängende/überlastete Modelle nicht ewig abwarten
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.AI_API_KEY}` },
     body: JSON.stringify({ model, messages: [{ role: "system", content: system }, ...messages], ...(jsonMode ? { response_format: { type: "json_object" } } : {}) }),
   });
-  let r = await send(true);
-  if (r.status === 400) r = await send(false); // manche Modelle kennen den JSON-Modus nicht
+  let r;
+  try {
+    r = await send(true);
+    if (r.status === 400) r = await send(false); // manche Modelle kennen den JSON-Modus nicht
+  } catch (e) {
+    if (e.name === "TimeoutError" || e.name === "AbortError") throw Object.assign(new Error(`Zeitüberschreitung bei ${model}`), { status: 504 });
+    throw e;
+  }
   const j = await r.json().catch(() => ({}));
   const body = Array.isArray(j) ? j[0] : j; // Gemini liefert Fehler teils als Array
   if (!r.ok) throw Object.assign(new Error(body?.error?.message || `HTTP ${r.status}`), { status: r.status });

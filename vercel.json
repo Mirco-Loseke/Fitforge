@@ -2,6 +2,17 @@
   "buildCommand": "npx --yes vite build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/ai.js": {
+      "maxDuration": 60
+    },
+    "api/health.js": {
+      "maxDuration": 30
+    }
+  }
 }
