@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <meta name="theme-color" content="#0D0D0F"/>
 <title>FitForge</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
@@ -383,6 +383,7 @@ const fbSet = async (key, value) => {
         .then(b => { if (!b.exists) return bRef.set({ value: backupVal, createdAt: Date.now() }); })
         .catch(e => console.warn("Cloud-Backup nicht möglich:", e.message));
     }
+    window.dispatchEvent(new Event("ff-synced"));
     return "ok";
   } catch(e) { 
     console.error("fbSet error:", e);
@@ -2673,6 +2674,14 @@ function FitForge(){
   // Keys, deren letzter Upload nicht vom Server bestätigt wurde (offline/Timeout/blockiert).
   // Werden automatisch erneut versucht, bis die Cloud den Stand hat.
   const pendingSyncRef = useRef({});
+  const [hasPending, setHasPending] = useState(false);
+  useEffect(() => {
+    const refreshPending = () => setHasPending(Object.values(pendingSyncRef.current).some(Boolean));
+    const onSynced = () => { setLastSync(new Date()); setTimeout(refreshPending, 0); };
+    window.addEventListener("ff-synced", onSynced);
+    const iv2 = setInterval(refreshPending, 5000);
+    return () => { window.removeEventListener("ff-synced", onSynced); clearInterval(iv2); };
+  }, []);
   useEffect(() => {
     const retry = () => { if (Object.values(pendingSyncRef.current).some(Boolean)) setSyncTick(t => t + 1); };
     const onOnline = () => { showToast("🌐 Wieder online – Daten werden abgeglichen", "info"); retry(); };
@@ -3489,7 +3498,7 @@ function FitForge(){
         </nav>
         <div style={{paddingTop:20, display:"flex", flexDirection:"column", gap:10}}>
           <div style={s.streakCard}><span style={{color:"#FFD166",display:"flex"}}>{IC.fire}</span><div><div style={s.streakN}>{cwDays} {cwDays === 1 ? 'Tag' : 'Tage'}</div><div style={s.streakL}>{cwSessions} {cwSessions === 1 ? 'Einheit' : 'Einheiten'}</div></div></div>
-          {lastSync && <div style={{fontSize:10, color:"#444", textAlign:"center", padding:"0 10px"}}>Cloud Sync: {lastSync.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>}
+          {(lastSync||hasPending) && <div style={{fontSize:10, color: hasPending ? "#FFD166" : "#555", textAlign:"center", padding:"0 10px"}}>{hasPending ? "⏳ Änderungen warten auf Upload" : <>☁️ Gesichert · {lastSync.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</>}</div>}
           <div style={{fontSize:9, color:"#444", display:"flex", justifyContent:"center", gap:8, alignItems:"center"}}>
             <span onClick={()=>{const n=Date.now();const t=(window.__verTaps||[]).filter(x=>n-x<2500);t.push(n);window.__verTaps=t;if(t.length>=5){window.__verTaps=[];const on=document.getElementById('fb-debug-container')?.style.display==='none';window.setDebugVisible?.(on);showToast(on?'🛠️ Debug-Konsole an':'Debug-Konsole aus','info');}}} style={{cursor:'default',userSelect:'none'}}>Version: {APP_VERSION}</span>
             <button onClick={() => {
@@ -3612,7 +3621,15 @@ function FitForge(){
           {view==="nutrition"&&<Nutrition nutrition={nutrition} setNutrition={setNutrition} user={user} notify={showToast} favFoods={favFoods} setFavFoods={setFavFoods} isMobile={isMobile} autoOpenAdd={autoOpenAdd==="nutrition"} presetMealType={presetMealType}/>}
           {view==="goals"&&<ForgePointsPage user={user} setUser={setUser} isMobile={isMobile}/>}
           {view==="challenges"&&<ChallengesPage user={user} setUser={setUser} notify={showToast} isMobile={isMobile}/>}
-          {view==="profile"&&<ProfilePage user={user} setUser={setUser} notify={showToast} isMobile={isMobile} onRescue={rescueWorkouts} latestWeight={(()=>{const lw=[...(data.weightHistory||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];return lw?.value||parseFloat(user.weight)||null;})()}/>}
+          {view==="profile"&&<ProfilePage user={user} setUser={setUser} notify={showToast} isMobile={isMobile} onRescue={rescueWorkouts} onExport={()=>{
+            try{
+              const {photos,exercisePhotos,...dataNoPhotos}=data;
+              const dump={exportedAt:new Date().toISOString(),app:"FitForge",version:APP_VERSION,data:dataNoPhotos,user,prs,nutrition,weekPlans,favFoods,health};
+              const blob=new Blob([JSON.stringify(dump,null,2)],{type:"application/json"});
+              const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`fitforge-backup-${todayStr()}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+              showToast("Backup-Datei erstellt 💾");
+            }catch(e){showToast("Export fehlgeschlagen: "+e.message,"error");}
+          }} latestWeight={(()=>{const lw=[...(data.weightHistory||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];return lw?.value||parseFloat(user.weight)||null;})()}/>}
         </div>
       </main>
       <AssistantSheet open={aiOpen} onClose={()=>setAiOpen(false)} init={aiInit} data={data} user={user} prs={prs} nutrition={nutrition} view={view} notify={showToast} isMobile={isMobile}
@@ -6600,7 +6617,11 @@ function History({data,setData,selWO,setSelWO,notify,library,setWeeklyReport,isM
   };
 
   const sorted=[...data.workouts].sort((a,b)=>new Date(b.date)-new Date(a.date));
-  const del=id=>{setData(d=>({...d,workouts:d.workouts.filter(w=>w.id!==id),deletedWorkoutIds:[...(d.deletedWorkoutIds||[]),id]}));setSelWO(null);notify("Training gelöscht");};
+  const del=id=>{
+    // Ausgelagerte GPS-Strecken des Trainings mit entfernen (sonst verwaiste Dokumente)
+    const wo=data.workouts.find(w=>w.id===id);
+    (wo?.exercises||[]).forEach(ex=>{const ref=ex.sets?.[0]?.routeRef;if(ref&&window.firebaseDb)window.firebaseDoc(window.firebaseDb,"fitforge",ref).delete().catch(()=>{});});
+    setData(d=>({...d,workouts:d.workouts.filter(w=>w.id!==id),deletedWorkoutIds:[...(d.deletedWorkoutIds||[]),id]}));setSelWO(null);notify("Training gelöscht");};
   const [compMode, setCompMode] = useState(false);
   const [compSel, setCompSel] = useState([]);
   const [showComp, setShowComp] = useState(false);
@@ -9347,7 +9368,7 @@ function HealthPage({health,data,isMobile,notify}){
   );
 }
 
-function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
+function ProfilePage({user,setUser,notify,isMobile,onRescue,onExport,latestWeight}){
   const [form,setForm]=useState({...user,weight:latestWeight!=null?String(latestWeight):user.weight||""});
   const [uploading,setUploading]=useState(false);
   const fileRef=useRef();
@@ -9442,7 +9463,12 @@ function ProfilePage({user,setUser,notify,isMobile,onRescue,latestWeight}){
   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:22,gap:12}}>
     <button style={{...s.primaryBtn,flex:1}} onClick={save}>💾 Speichern</button>
   </div>
-  {onRescue&&<div style={{marginTop:28,padding:"14px 16px",borderRadius:14,border:"1px solid rgba(255,209,102,0.25)",background:"rgba(255,209,102,0.05)"}}>
+  {onExport&&<div style={{marginTop:28,padding:"14px 16px",borderRadius:14,border:"1px solid rgba(0,217,192,0.25)",background:"rgba(0,217,192,0.05)"}}>
+    <div style={{fontSize:13,fontWeight:700,color:"#00D9C0",marginBottom:4}}>💾 Eigene Sicherung</div>
+    <div style={{fontSize:12,color:"#999",lineHeight:1.5,marginBottom:10}}>Lädt alle Trainings, Pläne, PRs, Ernährung, Wochenpläne und Gesundheitsdaten als Datei herunter (ohne Fotos). Ab und zu an einem sicheren Ort ablegen.</div>
+    <button style={{...s.secBtn,width:"100%",justifyContent:"center",borderColor:"rgba(0,217,192,0.4)",color:"#00D9C0"}} onClick={onExport}>⬇️ Alle Daten herunterladen</button>
+  </div>}
+  {onRescue&&<div style={{marginTop:16,padding:"14px 16px",borderRadius:14,border:"1px solid rgba(255,209,102,0.25)",background:"rgba(255,209,102,0.05)"}}>
     <div style={{fontSize:13,fontWeight:700,color:"#FFD166",marginBottom:4}}>🛟 Datenrettung</div>
     <div style={{fontSize:12,color:"#999",lineHeight:1.5,marginBottom:10}}>Fehlen Workouts, Pläne oder Gewichtseinträge? Die Tiefensuche durchsucht den Speicher dieses Geräts (LocalStorage &amp; Offline-Cache) und stellt gefundene Daten wieder her.</div>
     <button style={{...s.secBtn,width:"100%",justifyContent:"center",borderColor:"rgba(255,209,102,0.4)",color:"#FFD166"}} onClick={onRescue}>🔍 Daten retten (Tiefensuche)</button>
@@ -12431,7 +12457,8 @@ const s={
     borderRight:"1px solid rgba(255,255,255,0.08)",
     display:"flex",
     flexDirection:"column",
-    padding:"26px 14px",
+    padding:"calc(26px + env(safe-area-inset-top)) 14px calc(26px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left))",
+    overflowY:"auto",
     position:"fixed",
     top:0,
     bottom:0,
@@ -12448,7 +12475,7 @@ const s={
   streakN:{fontWeight:800,fontSize:16,color:"#fff",fontFamily:"'DM Sans',sans-serif"},
   streakL:{fontSize:10,color:"rgba(255,255,255,0.8)"},
   main:{flex:1,minHeight:"100vh",position:"relative",zIndex:1},
-  topBar:{position:"sticky",top:0,zIndex:9,background:"rgba(0,0,0,0.2)",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderBottom:"1px solid rgba(255,255,255,0.12)",padding:"12px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 10px 30px rgba(0,0,0,0.1)"},
+  topBar:{position:"sticky",top:0,zIndex:9,background:"rgba(0,0,0,0.2)",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderBottom:"1px solid rgba(255,255,255,0.12)",padding:"calc(12px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) 12px calc(24px + env(safe-area-inset-left))",display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 10px 30px rgba(0,0,0,0.1)"},
   topGreet:{fontFamily:"'DM Sans',sans-serif",fontSize:15,fontWeight:700,color:"#888"},
   iconCircle:{width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#999",position:"relative",transition:"all 0.2s"},
   iconOn:{background:"rgba(255,255,255,0.12)",color:"#F0EDE8",borderColor:"rgba(255,255,255,0.2)"},
