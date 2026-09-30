@@ -2,7 +2,7 @@
 //
 // Einrichtung (Vercel → Settings → Environment Variables):
 //   AI_API_KEY    API-Schlüssel des Anbieters – das ist die EINZIGE Pflicht-Einstellung.
-//                 Google-Schlüssel (beginnt mit "AIza") → Gemini wird automatisch genutzt.
+//                 Google-Schlüssel (beginnt mit "AIza" oder "AQ.") → Gemini wird automatisch genutzt.
 //   AI_PROVIDER   optional: "gemini" | "anthropic" | "openai-compatible" (sonst automatisch erkannt)
 //   AI_MODEL      optional; Standard: anthropic → claude-opus-5, gemini → neuestes verfügbares Flash-Modell
 //   AI_BASE_URL   nur openai-compatible, z. B. https://api.openai.com/v1,
@@ -32,7 +32,7 @@ const providerName = () => {
   const p = (process.env.AI_PROVIDER || "").toLowerCase();
   if (p) return p;
   const k = process.env.AI_API_KEY || "";
-  if (k.startsWith("AIza")) return "gemini";
+  if (k.startsWith("AIza") || k.startsWith("AQ.")) return "gemini"; // Google AI Studio: altes und neues Schlüsselformat
   if (k.startsWith("sk-ant-")) return "anthropic";
   return "openai-compatible";
 };
@@ -177,7 +177,7 @@ export default async function handler(req, res) {
     if (e instanceof Anthropic.AuthenticationError) return res.status(500).json({ error: "KI-Schlüssel ungültig" });
     if (e instanceof Anthropic.APIError) return res.status(502).json({ error: `KI-Fehler ${e.status}` });
     if (e.status === 429) return res.status(429).json({ error: "KI-Limit erreicht – kurz warten und nochmal versuchen" });
-    if (e.status === 401 || e.status === 403) return res.status(500).json({ error: "KI-Schlüssel ungültig oder ohne Berechtigung", detail: String(e.message || "").slice(0, 400) });
+    if (e.status === 401 || e.status === 403) return res.status(500).json({ error: "KI-Schlüssel ungültig oder ohne Berechtigung", detail: String(e.message || "").replace(/(key[^:]*:\s*)\S+/gi, "$1[verborgen]").replace(/\b(AIza|AQ\.|sk-)[\w.*-]+/g, "[verborgen]").slice(0, 400) });
     return res.status(502).json({ error: "KI nicht erreichbar: " + e.message });
   }
 }
