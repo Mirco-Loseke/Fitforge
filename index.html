@@ -9109,7 +9109,16 @@ function buildTrainingAnalytics({ data, user, nutrition, health, library }) {
   // Ernährung letzte 7 Tage mit Einträgen
   const nd = Object.entries(nutrition || {}).filter(([d, v]) => v && (v.meals || []).length).sort().slice(-7);
   const avg = k => nd.length ? Math.round(nd.reduce((a, [, v]) => a + (+v[k] || 0), 0) / nd.length) : null;
-  const ernaehrung = nd.length ? { tageErfasst: nd.length, zeitraum: [nd[0][0], nd[nd.length - 1][0]], schnittKcal: avg("calories"), schnittProteinG: avg("protein"), zielKcal: user.calorieGoal || null, zielProteinG: user.proteinGoal || null } : null;
+  // Tage mit sehr wenig Einträgen sind meist nur lückenhaft geloggt → getrennt ausweisen, nicht als "zu wenig gegessen" werten
+  const goalK = parseFloat(user.calorieGoal) || 2500;
+  const complete = nd.filter(([, v]) => (v.meals || []).length >= 3 && (+v.calories || 0) >= goalK * 0.5);
+  const avgOf = (arr, k) => arr.length ? Math.round(arr.reduce((a, [, v]) => a + (+v[k] || 0), 0) / arr.length) : null;
+  const ernaehrung = nd.length ? {
+    tageMitEintraegen: nd.length, davonVollstaendig: complete.length, zeitraum: [nd[0][0], nd[nd.length - 1][0]],
+    schnittKcalVollstaendigeTage: avgOf(complete, "calories"), schnittProteinGVollstaendigeTage: avgOf(complete, "protein"),
+    schnittKcalAlleTage: avg("calories"), zielKcal: user.calorieGoal || null, zielProteinG: user.proteinGoal || null,
+    hinweis: complete.length < nd.length ? "Einige Tage sind offensichtlich nur teilweise erfasst (wenige Einträge). Daraus NICHT auf zu wenig Essen schließen, sondern ggf. vollständigeres Loggen empfehlen." : undefined,
+  } : null;
   // Schlaf/Erholung (Apple Watch)
   const sl = Object.values(health?.sleep || {}).sort((a, b) => a.date.localeCompare(b.date)).slice(-7);
   const dl = Object.values(health?.daily || {}).sort((a, b) => a.date.localeCompare(b.date)).slice(-7);
