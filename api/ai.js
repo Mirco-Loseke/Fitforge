@@ -1,9 +1,10 @@
 // KI-Assistent: anbieter-unabhängiger Proxy. Der API-Schlüssel bleibt auf dem Server.
 //
 // Einrichtung (Vercel → Settings → Environment Variables):
-//   AI_PROVIDER   "anthropic" (Standard) | "openai-compatible"
-//   AI_API_KEY    API-Schlüssel des Anbieters
-//   AI_MODEL      optional; Standard bei anthropic: claude-opus-5
+//   AI_API_KEY    API-Schlüssel des Anbieters – das ist die EINZIGE Pflicht-Einstellung.
+//                 Google-Schlüssel (beginnt mit "AIza") → Gemini wird automatisch genutzt.
+//   AI_PROVIDER   optional: "gemini" | "anthropic" | "openai-compatible" (sonst automatisch erkannt)
+//   AI_MODEL      optional; Standard: anthropic → claude-opus-5, gemini → neuestes verfügbares Flash-Modell
 //   AI_BASE_URL   nur openai-compatible, z. B. https://api.openai.com/v1,
 //                 https://generativelanguage.googleapis.com/v1beta/openai, https://openrouter.ai/api/v1
 //   AI_EFFORT     optional (anthropic): low | medium | high – Standard medium (schnelle Antworten)
@@ -13,7 +14,49 @@
 // Body: { messages:[{role:"user"|"assistant", content}], context:{...}, task?: "chat"|"plan"|"meal"|"analyze" }
 // Antwort: { reply: string, actions: [ {type, ...} ] }
 import Anthropic from "@anthropic-ai/sdk";
-import { getAdmin, cors } from "./_lib.js";
+import { cors } from "./_lib.js";
+
+// Öffentlicher Firebase-Web-API-Key (steht ohnehin in index.html) – prüft ID-Tokens ohne Admin-SDK.
+const FIREBASE_WEB_KEY = process.env.FIREBASE_WEB_API_KEY || "AIzaSyBHcrBR0fWYVDkdWWAoVfvMEaN0CeoB52M";
+async function verifyUser(idToken) {
+  if (!idToken) return null;
+  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_WEB_KEY}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken }),
+  });
+  if (!r.ok) return null;
+  const j = await r.json().catch(() => ({}));
+  return j.users?.[0]?.localId || null;
+}
+
+const providerName = () => {
+  const p = (process.env.AI_PROVIDER || "").toLowerCase();
+  if (p) return p;
+  const k = process.env.AI_API_KEY || "";
+  if (k.startsWith("AIza")) return "gemini";
+  if (k.startsWith("sk-ant-")) return "anthropic";
+  return "openai-compatible";
+};
+
+// Gemini: bestes verfügbares Flash-Modell automatisch wählen (einmal pro Server-Instanz)
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
+let geminiModelCache = null;
+const pickGeminiModel = (ids) => {
+  const clean = ids.map(id => String(id || "").replace(/^models\//, ""));
+  const flash = clean.filter(id => /^gemini-\d+(\.\d+)?-flash(-latest)?$/.test(id));
+  const ver = id => parseFloat((id.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]);
+  flash.sort((a, b) => ver(b) - ver(a) || (a.endsWith("latest") ? -1 : 1));
+  return flash[0] || (clean.includes("gemini-flash-latest") ? "gemini-flash-latest" : null);
+};
+async function geminiModel() {
+  if (process.env.AI_MODEL) return process.env.AI_MODEL;
+  if (geminiModelCache) return geminiModelCache;
+  try {
+    const r = await fetch(`${GEMINI_BASE}/models`, { headers: { Authorization: `Bearer ${process.env.AI_API_KEY}` } });
+    const j = await r.json();
+    geminiModelCache = pickGeminiModel((j.data || []).map(m => m.id)) || "gemini-flash-latest";
+  } catch { geminiModelCache = "gemini-flash-latest"; }
+  return geminiModelCache;
+}
 
 const ACTIONS_DOC = `Du kannst die App steuern. Antworte IMMER als reines JSON-Objekt (kein Markdown drumherum):
 {"reply": "<kurze Antwort auf Deutsch>", "actions": [ ... ]}
@@ -63,16 +106,20 @@ async function callAnthropic({ system, messages }) {
   return parseModelJson(text);
 }
 
-async function callOpenAICompatible({ system, messages }) {
-  const base = (process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-  const r = await fetch(`${base}/chat/completions`, {
+async function callOpenAICompatible({ system, messages, base, model }) {
+  base = (base || process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+  model = model || process.env.AI_MODEL;
+  const send = (jsonMode) => fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.AI_API_KEY}` },
-    body: JSON.stringify({ model: process.env.AI_MODEL, messages: [{ role: "system", content: system }, ...messages], response_format: { type: "json_object" } }),
+    body: JSON.stringify({ model, messages: [{ role: "system", content: system }, ...messages], ...(jsonMode ? { response_format: { type: "json_object" } } : {}) }),
   });
+  let r = await send(true);
+  if (r.status === 400) r = await send(false); // manche Modelle kennen den JSON-Modus nicht
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j?.error?.message || `HTTP ${r.status}`);
-  return parseModelJson(j?.choices?.[0]?.message?.content);
+  const body = Array.isArray(j) ? j[0] : j; // Gemini liefert Fehler teils als Array
+  if (!r.ok) throw Object.assign(new Error(body?.error?.message || `HTTP ${r.status}`), { status: r.status });
+  return parseModelJson(body?.choices?.[0]?.message?.content);
 }
 
 export default async function handler(req, res) {
@@ -82,9 +129,9 @@ export default async function handler(req, res) {
   if (!process.env.AI_API_KEY) return res.status(501).json({ error: "KI noch nicht eingerichtet" });
 
   try {
-    const idToken = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
-    await getAdmin().auth().verifyIdToken(idToken);
-  } catch { return res.status(401).json({ error: "Nicht eingeloggt" }); }
+    const uid = await verifyUser((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    if (!uid) return res.status(401).json({ error: "Nicht eingeloggt" });
+  } catch { return res.status(401).json({ error: "Anmeldung konnte nicht geprüft werden" }); }
 
   let body = req.body;
   if (typeof body === "string") { try { body = JSON.parse(body); } catch { body = {}; } }
@@ -98,15 +145,19 @@ export default async function handler(req, res) {
 
   try {
     const system = systemPrompt(body.task);
-    const provider = (process.env.AI_PROVIDER || "anthropic").toLowerCase();
-    const out = provider === "anthropic" ? await callAnthropic({ system, messages }) : await callOpenAICompatible({ system, messages });
+    const provider = providerName();
+    const out = provider === "anthropic" ? await callAnthropic({ system, messages })
+      : provider === "gemini" ? await callOpenAICompatible({ system, messages, base: GEMINI_BASE, model: await geminiModel() })
+      : await callOpenAICompatible({ system, messages });
     return res.status(200).json(out);
   } catch (e) {
     if (e instanceof Anthropic.RateLimitError) return res.status(429).json({ error: "Zu viele Anfragen – kurz warten" });
     if (e instanceof Anthropic.AuthenticationError) return res.status(500).json({ error: "KI-Schlüssel ungültig" });
     if (e instanceof Anthropic.APIError) return res.status(502).json({ error: `KI-Fehler ${e.status}` });
+    if (e.status === 429) return res.status(429).json({ error: "KI-Limit erreicht – kurz warten und nochmal versuchen" });
+    if (e.status === 401 || e.status === 403) return res.status(500).json({ error: "KI-Schlüssel ungültig oder ohne Berechtigung" });
     return res.status(502).json({ error: "KI nicht erreichbar: " + e.message });
   }
 }
 
-export const _test = { parseModelJson };
+export const _test = { parseModelJson, providerName, pickGeminiModel, verifyUser };
