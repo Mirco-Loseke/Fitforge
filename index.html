@@ -3632,7 +3632,7 @@ function FitForge(){
           }} latestWeight={(()=>{const lw=[...(data.weightHistory||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];return lw?.value||parseFloat(user.weight)||null;})()}/>}
         </div>
       </main>
-      <AssistantSheet open={aiOpen} onClose={()=>setAiOpen(false)} init={aiInit} data={data} user={user} prs={prs} nutrition={nutrition} view={view} notify={showToast} isMobile={isMobile}
+      <AssistantSheet open={aiOpen} onClose={()=>setAiOpen(false)} init={aiInit} data={data} user={user} prs={prs} nutrition={nutrition} view={view} health={health} library={library} notify={showToast} isMobile={isMobile}
         onAction={(a)=>{
           if(a.type==='navigate'&&a.view){setView(a.view);setPresetPlanId(null);setAutoOpenAdd(null);closeAll();}
           else if(a.type==='start_workout'){const p=(data.plans||[]).find(x=>String(x.id)===String(a.planId));if(!p)return showToast('Plan nicht gefunden','error');setActiveWorkout(null);setPresetPlanId(p.id);setView('log');closeAll();}
@@ -4312,6 +4312,7 @@ function Stats({data,prs,nutrition,user}){
   return(<div style={s.page}>
     <div style={s.pageHead}>
       <div><h1 style={s.pageTitle}>Statistiken</h1><p style={s.pageSub}>Training & Körper im Überblick</p></div>
+      <button onClick={()=>window.ffOpenAI?.({autoSend:true,task:"analyze",prompt:"Mach eine komplette Analyse meines Trainings: Fortschritt, Regelmäßigkeit, Balance, Erholung und nächste Schritte."})} style={{...s.secBtn,borderColor:"rgba(167,139,250,0.45)",color:"#A78BFA",background:"rgba(167,139,250,0.08)",whiteSpace:"nowrap",order:3,width:"100%",justifyContent:"center"}}>✨ KI-Auswertung meines Trainings</button>
       <div style={{display:"flex",gap:3,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:3}}>
         {[[7,"7T"],[30,"30T"],[90,"90T"],["all","Gesamt"]].map(([d,l])=>(
           <button key={d} onClick={()=>setRange(d)} style={{border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",padding:"7px 13px",fontSize:12,fontWeight:800,borderRadius:9,transition:"all 0.2s",
@@ -9047,7 +9048,76 @@ function localIntent(text, plans){
   }
   return null;
 }
-function buildAIContext({ data, user, prs, nutrition, view }){
+// ── Trainingsanalyse: alles vorab berechnet, damit die KI nur noch interpretiert ──
+const e1rm = (w, r) => (w > 0 && r > 0) ? Math.round(w * (1 + Math.min(r, 15) / 30) * 10) / 10 : 0; // Epley
+const isoWeek = (ds) => { const d = new Date(ds + "T12:00:00"); const day = (d.getDay() + 6) % 7; d.setDate(d.getDate() - day + 3); const w1 = new Date(d.getFullYear(), 0, 4); return `${d.getFullYear()}-KW${String(1 + Math.round(((d - w1) / 864e5 - 3 + ((w1.getDay() + 6) % 7)) / 7)).padStart(2, "0")}`; };
+function buildTrainingAnalytics({ data, user, nutrition, health, library }) {
+  const ws = [...(data.workouts || [])].filter(w => w && w.date).sort((a, b) => a.date.localeCompare(b.date));
+  const today = todayStr();
+  const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
+  // Muskelgruppen je Übung (Bibliothek + Pläne)
+  const muscleOf = {};
+  (library || []).forEach(ex => { if (ex?.name && ex.muscles?.length) muscleOf[ex.name.toLowerCase()] = ex.muscles; });
+  (data.plans || []).forEach(p => (p.exercises || []).forEach(e => { if (e && typeof e === "object" && e.name && e.muscles?.length && !muscleOf[e.name.toLowerCase()]) muscleOf[e.name.toLowerCase()] = e.muscles; }));
+  // Pro Übung
+  const ex = {};
+  ws.forEach(w => (w.exercises || []).forEach(e => {
+    if (!e?.name) return;
+    const sets = (e.sets || []).filter(s => s && s.done !== false);
+    const x = ex[e.name] = ex[e.name] || { einheiten: 0, verlauf: [], km: 0, kcal: 0 };
+    let bestW = 0, bestR = 0, best1 = 0, vol = 0, reps = 0, km = 0, kmh = 0;
+    sets.forEach(s => {
+      const wt = parseFloat(s.weight) || 0, r = parseInt(s.reps) || 0;
+      vol += wt * r; reps += r; km += parseFloat(s.km) || 0; x.kcal += parseFloat(s.kcal) || 0;
+      kmh = Math.max(kmh, parseFloat(s.tempo) || parseFloat(s.maxSpeed) || 0);
+      const one = e1rm(wt, r); if (one > best1 || (wt > bestW && !one)) { best1 = one; bestW = wt; bestR = r; }
+    });
+    x.einheiten++; x.km += km;
+    x.verlauf.push({ datum: w.date, saetze: sets.length, bestesGewicht: bestW || undefined, wdh: bestR || reps || undefined, e1rm: best1 || undefined, volumenKg: vol || undefined, km: km || undefined, kmh: kmh || undefined, min: e.duration || undefined });
+  }));
+  const uebungen = Object.entries(ex).map(([name, x]) => {
+    const v = x.verlauf, withE = v.filter(p => p.e1rm);
+    const first = withE[0], last = withE[withE.length - 1], best = withE.reduce((a, p) => (!a || p.e1rm > a.e1rm ? p : a), null);
+    return {
+      name, muskeln: muscleOf[name.toLowerCase()] || undefined, einheiten: x.einheiten, erstes: v[0].datum, letztes: v[v.length - 1].datum,
+      tageSeitLetztem: daysBetween(v[v.length - 1].datum, today),
+      ...(withE.length ? { e1rmStart: first.e1rm, e1rmAktuell: last.e1rm, e1rmBest: best.e1rm, e1rmBestDatum: best.datum, steigerungProzent: first.e1rm ? Math.round((last.e1rm / first.e1rm - 1) * 1000) / 10 : 0, volumenGesamtKg: Math.round(v.reduce((a, p) => a + (p.volumenKg || 0), 0)) } : {}),
+      ...(x.km ? { kmGesamt: Math.round(x.km * 10) / 10 } : {}), ...(x.kcal ? { kcalGesamt: Math.round(x.kcal) } : {}),
+      letzteEinheiten: v.slice(-5),
+    };
+  }).sort((a, b) => b.einheiten - a.einheiten).slice(0, 25);
+  // Pro Woche (letzte 8 mit Training)
+  const weeks = {};
+  ws.forEach(w => {
+    const k = isoWeek(w.date); const b = weeks[k] = weeks[k] || { trainings: 0, minuten: 0, volumenKg: 0, km: 0, tage: new Set() };
+    b.trainings++; b.minuten += w.duration || 0; b.tage.add(w.date);
+    (w.exercises || []).forEach(e => (e.sets || []).forEach(s => { b.volumenKg += (parseFloat(s.weight) || 0) * (parseInt(s.reps) || 0); b.km += parseFloat(s.km) || 0; }));
+  });
+  const wochen = Object.entries(weeks).sort().slice(-8).map(([k, b]) => ({ woche: k, trainings: b.trainings, trainingstage: b.tage.size, minuten: b.minuten, volumenKg: Math.round(b.volumenKg), km: Math.round(b.km * 10) / 10 }));
+  // Muskelgruppen letzte 28 Tage (Sätze)
+  const since28 = new Date(Date.now() - 28 * 864e5).toISOString().slice(0, 10);
+  const muskelSaetze = {};
+  ws.filter(w => w.date >= since28).forEach(w => (w.exercises || []).forEach(e => (muscleOf[(e.name || "").toLowerCase()] || []).forEach(m => { muskelSaetze[m] = (muskelSaetze[m] || 0) + (e.sets || []).length; })));
+  // Regelmäßigkeit
+  const days = [...new Set(ws.map(w => w.date))];
+  let laengstePause = 0; for (let i = 1; i < days.length; i++) laengstePause = Math.max(laengstePause, daysBetween(days[i - 1], days[i]));
+  const since30 = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  const regelmaessigkeit = { trainingstageGesamt: days.length, trainingstageLetzte30: days.filter(d => d >= since30).length, laengstePauseTage: laengstePause, tageSeitLetztemTraining: days.length ? daysBetween(days[days.length - 1], today) : null, ersterTrainingstag: days[0] || null, wochentage: ws.reduce((a, w) => { const n = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"][new Date(w.date + "T12:00:00").getDay()]; a[n] = (a[n] || 0) + 1; return a; }, {}), trainingsZeit: ws.reduce((a, w) => { const h = parseInt((w.startTime || "").slice(0, 2)); if (isNaN(h)) return a; const k = h < 10 ? "morgens" : h < 17 ? "tagsüber" : h < 22 ? "abends" : "nachts"; a[k] = (a[k] || 0) + 1; return a; }, {}) };
+  // Körpergewicht
+  const wh = [...(data.weightHistory || [])].filter(h => h?.date).sort((a, b) => a.date.localeCompare(b.date));
+  const gewicht = wh.length ? { start: wh[0], aktuell: wh[wh.length - 1], veraenderungKg: Math.round((wh[wh.length - 1].value - wh[0].value) * 10) / 10, eintraege: wh.length, letzte: wh.slice(-8) } : null;
+  // Ernährung letzte 7 Tage mit Einträgen
+  const nd = Object.entries(nutrition || {}).filter(([d, v]) => v && (v.meals || []).length).sort().slice(-7);
+  const avg = k => nd.length ? Math.round(nd.reduce((a, [, v]) => a + (+v[k] || 0), 0) / nd.length) : null;
+  const ernaehrung = nd.length ? { tageErfasst: nd.length, zeitraum: [nd[0][0], nd[nd.length - 1][0]], schnittKcal: avg("calories"), schnittProteinG: avg("protein"), zielKcal: user.calorieGoal || null, zielProteinG: user.proteinGoal || null } : null;
+  // Schlaf/Erholung (Apple Watch)
+  const sl = Object.values(health?.sleep || {}).sort((a, b) => a.date.localeCompare(b.date)).slice(-7);
+  const dl = Object.values(health?.daily || {}).sort((a, b) => a.date.localeCompare(b.date)).slice(-7);
+  const erholung = (sl.length || dl.length) ? { schlafSchnittMin: sl.length ? Math.round(sl.reduce((a, s) => a + (s.asleepMin || 0), 0) / sl.length) : null, naechte: sl.map(s => ({ datum: s.date, min: s.asleepMin, tief: s.deepMin })), ruhepuls: dl.map(d => d.restingHR).filter(Boolean), hrv: dl.map(d => d.hrv).filter(Boolean) } : null;
+  return { heute: today, uebungen, wochen, muskelSaetzeLetzte28Tage: muskelSaetze, regelmaessigkeit, gewicht, ernaehrung, erholung };
+}
+
+function buildAIContext({ data, user, prs, nutrition, view, health, library }){
   const today = todayStr();
   // Fertig berechnete Kennzahlen – kleine Modelle verzählen sich sonst in langen Listen
   const ws = data.workouts || [];
@@ -9055,6 +9125,7 @@ function buildAIContext({ data, user, prs, nutrition, view }){
   ws.forEach(w => { const m = (w.date || "").slice(0, 7); if (!m) return; const b = byMonth[m] = byMonth[m] || { trainings: 0, minuten: 0, laengstes: null }; b.trainings++; b.minuten += w.duration || 0; if (!b.laengstes || (w.duration || 0) > b.laengstes.min) b.laengstes = { name: w.name, datum: w.date, min: w.duration || 0 }; });
   const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   return {
+    analyse: buildTrainingAnalytics({ data, user, nutrition, health, library }),
     stats: { trainingsGesamt: ws.length, letzte7Tage: ws.filter(w => w.date >= weekAgo).length, proMonat: byMonth, letztesTraining: [...ws].sort((a, b) => b.date.localeCompare(a.date))[0]?.date || null },
     view,
     user: { name: user.firstName, weight: user.weight, height: user.height, goal: user.goal, age: user.age },
@@ -9069,7 +9140,19 @@ function buildAIContext({ data, user, prs, nutrition, view }){
   };
 }
 
-function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view, onAction, notify, isMobile }){
+// Einfache Formatierung für Coach-Antworten: "## Überschrift", "• / - Stichpunkt", **fett**
+function CoachText({ text }) {
+  const inline = (s, k) => s.split(/(\*\*[^*]+\*\*)/g).map((p, i) => p.startsWith("**") && p.endsWith("**") ? <b key={k + "-" + i} style={{ color: "#fff" }}>{p.slice(2, -2)}</b> : p);
+  return <>{String(text || "").split("\n").map((line, i) => {
+    const t = line.trim();
+    if (!t) return <div key={i} style={{ height: 6 }} />;
+    if (/^#{1,3}\s/.test(t)) return <div key={i} style={{ fontWeight: 800, color: "#FF8C60", fontSize: 13, textTransform: "uppercase", letterSpacing: "0.4px", margin: i ? "10px 0 4px" : "0 0 4px" }}>{inline(t.replace(/^#+\s*/, ""), i)}</div>;
+    if (/^[•*-]\s/.test(t)) return <div key={i} style={{ display: "flex", gap: 7, margin: "3px 0" }}><span style={{ color: "#FF8C60" }}>•</span><span>{inline(t.replace(/^[•*-]\s*/, ""), i)}</span></div>;
+    return <div key={i}>{inline(t, i)}</div>;
+  })}</>;
+}
+
+function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view, health, library, onAction, notify, isMobile }){
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -9106,7 +9189,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
     try {
       const idt = await firebase.auth().currentUser.getIdToken();
       const r = await fetch("/api/ai", { signal: AbortSignal.timeout ? AbortSignal.timeout(70000) : undefined, method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + idt },
-        body: JSON.stringify({ task, messages: next.map(m => ({ role: m.role, content: m.content })), context: buildAIContext({ data, user, prs, nutrition, view }) }) });
+        body: JSON.stringify({ task, messages: next.map(m => ({ role: m.role, content: m.content })), context: buildAIContext({ data, user, prs, nutrition, view, health, library }) }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 501 || r.status === 404) { setAiState("off"); setMsgs(m => [...m, { role: "assistant", content: "🔌 Die KI ist noch nicht verbunden. Sobald ein Modell eingerichtet ist, kann ich Pläne erstellen, Gerichte vorschlagen und Trainings analysieren. Sprachbefehle wie „öffne Verlauf“ oder „starte <Planname>“ funktionieren schon jetzt." }]); }
       else if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
@@ -9140,11 +9223,14 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
   const quick = [
     ["🏋️ Plan erstellen", "Erstelle mir einen Trainingsplan passend zu meinen bisherigen Trainings.", "plan"],
     ["🍽️ Gericht vorschlagen", "Schlag mir ein Gericht passend zu meinen heutigen Makros vor.", "meal"],
-    ["📈 Letzte Woche analysieren", "Analysiere meine Trainings der letzten 7 Tage.", "analyze"],
+    ["📊 Komplette Trainingsanalyse", "Mach eine komplette Analyse meines Trainings: Fortschritt, Regelmäßigkeit, Balance, Erholung und nächste Schritte.", "analyze"],
+    ["💪 Wo mache ich Fortschritte?", "Bei welchen Übungen werde ich stärker, wo stagniere ich? Mit Zahlen.", "analyze"],
+    ["⚖️ Was trainiere ich zu wenig?", "Welche Muskelgruppen trainiere ich zu wenig und wie gleiche ich das aus?", "analyze"],
+    ["📅 Was soll ich als Nächstes trainieren?", "Was sollte ich heute bzw. als nächstes trainieren, basierend auf meinen letzten Einheiten und meiner Erholung?", "analyze"],
   ];
   const bubble = (m, i) => (
     <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%" }}>
-      <div style={{ padding: "10px 13px", borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", background: m.role === "user" ? "linear-gradient(135deg,#FF6B35,#FF8C60)" : "rgba(255,255,255,0.06)", color: m.role === "user" ? "#fff" : "#E8E5E0", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.content}</div>
+      <div style={{ padding: "10px 13px", borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", background: m.role === "user" ? "linear-gradient(135deg,#FF6B35,#FF8C60)" : "rgba(255,255,255,0.06)", color: m.role === "user" ? "#fff" : "#E8E5E0", fontSize: 14, lineHeight: 1.5, wordBreak: "break-word" }}>{m.role === "assistant" ? <CoachText text={m.content} /> : m.content}</div>
       {(m.actions||[]).map((a, j) => a.type === "create_plan" && a.plan ? (
         <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.08)" }}>
           <div style={{ fontWeight: 800, color: "#F0EDE8", marginBottom: 6 }}>📋 {a.plan.name}</div>

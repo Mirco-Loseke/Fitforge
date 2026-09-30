@@ -102,11 +102,21 @@ Halte "reply" knapp (Sprachsteuerung auf dem Handy), ausführliche Analysen dür
 const TASK_HINTS = {
   plan: "Aufgabe: Erstelle einen passenden Trainingsplan als create_plan-Aktion.",
   meal: "Aufgabe: Schlage ein Gericht passend zu Ziel und heutigen Makros vor (suggest_meal).",
-  analyze: "Aufgabe: Analysiere die genannten Trainingseinheiten: Fortschritt, Auffälligkeiten, konkrete Tipps.",
+  analyze: `Aufgabe: Gründliche Trainingsanalyse wie ein erfahrener Coach. Grundlage ist context.analyse (alles bereits berechnet – nicht selbst nachzählen).
+Gliedere die Antwort mit kurzen Überschriften (Zeilen, die mit "## " beginnen) und Stichpunkten ("• "), wichtige Zahlen **fett**:
+## Kurzfazit – 2 Sätze: Wo stehst du, Trend insgesamt.
+## Fortschritt – pro wichtiger Übung: e1RM/Gewicht Start → aktuell, Steigerung in %, Stagnation oder Rückschritt klar benennen.
+## Umfang & Regelmäßigkeit – Trainings/Woche, Trend der letzten Wochen, längste Pause, Tage seit letztem Training, bevorzugte Tage/Zeiten.
+## Balance – welche Muskelgruppen viel/wenig trainiert werden (muskelSaetzeLetzte28Tage); fehlende Gruppen nennen.
+## Erholung & Ernährung – nur wenn Daten da sind: Schlaf, Protein/kcal vs. Ziel, Körpergewicht-Trend passend zum Ziel (context.user.goal).
+## Nächste Schritte – 3 bis 5 konkrete, messbare Empfehlungen für die nächste Woche (z. B. "Curls: 4×10 mit 10 kg statt 7,5 kg").
+Fehlen Daten für einen Abschnitt, lass ihn weg statt zu raten. Wenig Daten ehrlich ansprechen.`,
 };
+const GENERAL_HINT = `Für Fragen zu Training, Fortschritt oder Gewohnheiten nutze context.analyse (Übungen mit e1RM-Verlauf, Wochen, Muskelgruppen, Regelmäßigkeit, Gewicht, Ernährung, Erholung).
+e1RM = geschätztes Maximalgewicht für 1 Wiederholung (Epley). Nenne konkrete Zahlen und Daten. Längere Antworten mit "## "-Überschriften und "• "-Stichpunkten gliedern.`;
 
 const systemPrompt = (task) =>
-  `Du bist der Fitness-Coach und Sprachassistent in der App FitForge. Heute ist ${new Date().toLocaleDateString("de-DE", { timeZone: "Europe/Berlin" })}.\n${ACTIONS_DOC}\n${TASK_HINTS[task] || ""}`;
+  `Du bist der Fitness-Coach und Sprachassistent in der App FitForge. Heute ist ${new Date().toLocaleDateString("de-DE", { timeZone: "Europe/Berlin" })}.\n${ACTIONS_DOC}\n${GENERAL_HINT}\n${TASK_HINTS[task] || ""}`;
 
 function parseModelJson(text) {
   const t = String(text || "").trim();
