@@ -97,7 +97,8 @@ Mögliche actions (nur wenn passend, sonst leeres Array):
 Regeln: Nutze nur planIds aus dem Kontext. Erfinde keine Trainingsdaten – analysiere nur, was im Kontext steht.
 Für Anzahlen, Summen und Rekorde nutze IMMER die fertigen Werte aus context.stats (nicht selbst zählen).
 navigate/start_workout NUR, wenn der Nutzer ausdrücklich darum bittet (z. B. "öffne…", "zeig mir…", "starte…") – bei Fragen keine Aktion.
-Halte "reply" knapp (Sprachsteuerung auf dem Handy), ausführliche Analysen dürfen länger sein.`;
+Bei Befehlen und kurzen Fragen halte "reply" knapp (Sprachsteuerung auf dem Handy).
+Bei Analysen/Auswertungen gehört die KOMPLETTE Auswertung mit allen Abschnitten in "reply" (Zeilenumbrüche als \\n) – keine Einleitung wie "Hier ist deine Analyse" ohne Inhalt, keine weiteren JSON-Felder.`;
 
 const TASK_HINTS = {
   plan: "Aufgabe: Erstelle einen passenden Trainingsplan als create_plan-Aktion.",
@@ -118,11 +119,28 @@ e1RM = geschätztes Maximalgewicht für 1 Wiederholung (Epley). Nenne konkrete Z
 const systemPrompt = (task) =>
   `Du bist der Fitness-Coach und Sprachassistent in der App FitForge. Heute ist ${new Date().toLocaleDateString("de-DE", { timeZone: "Europe/Berlin" })}.\n${ACTIONS_DOC}\n${GENERAL_HINT}\n${TASK_HINTS[task] || ""}`;
 
+// Beliebige verschachtelte Antwortstruktur in lesbaren Text mit "## "-Überschriften und "• "-Punkten umwandeln
+function flattenText(v, title) {
+  const head = title && !/^\d+$/.test(title) ? `## ${String(title).replace(/[_-]/g, " ")}\n` : "";
+  if (v == null || v === "") return "";
+  if (typeof v === "string" || typeof v === "number") return head + String(v);
+  if (Array.isArray(v)) return head + v.map(x => typeof x === "object" && x ? flattenText(x) : `• ${x}`).join("\n");
+  if (typeof v === "object") return head + Object.entries(v).map(([k, x]) => typeof x === "object" ? flattenText(x, k) : `• **${k}:** ${x}`).join("\n");
+  return "";
+}
+
 function parseModelJson(text) {
   const t = String(text || "").trim();
   const candidates = [t, t.replace(/^```(?:json)?\s*|\s*```$/g, ""), (t.match(/\{[\s\S]*\}/) || [""])[0]];
   for (const c of candidates) {
-    try { const j = JSON.parse(c); if (j && typeof j === "object") return { reply: String(j.reply || ""), actions: Array.isArray(j.actions) ? j.actions : [] }; } catch {}
+    try {
+      const j = JSON.parse(c);
+      if (j && typeof j === "object") {
+        // Manche Modelle legen die eigentliche Auswertung in zusätzliche Felder ("analysis", "sections" …) – mitnehmen
+        const extra = Object.entries(j).filter(([k]) => !["reply", "actions"].includes(k)).map(([k, v]) => flattenText(v, k)).filter(Boolean).join("\n\n");
+        return { reply: [String(j.reply || ""), extra].filter(Boolean).join("\n\n"), actions: Array.isArray(j.actions) ? j.actions : [] };
+      }
+    } catch {}
   }
   return { reply: t, actions: [] };
 }
