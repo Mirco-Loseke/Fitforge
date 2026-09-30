@@ -144,6 +144,29 @@ input[type="date"] { text-align: center; justify-content: center; align-items: c
 .statCard:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.4);}
 .planCard{transition:transform 0.2s,box-shadow 0.2s;}
 .planCard:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,0.5);}
+/* ── Einflug-Animationen (fill-mode backwards → Hover-Transforms bleiben danach frei) ── */
+@keyframes ffFlyIn{from{opacity:0;transform:translateY(26px) scale(0.97);filter:blur(4px);}to{opacity:1;transform:none;filter:none;}}
+@keyframes ffRowIn{from{opacity:0;transform:translateX(-14px);}to{opacity:1;transform:none;}}
+@keyframes heroKen{from{transform:scale(1.14) translate(1.5%,1%);}to{transform:scale(1.02) translate(0,0);}}
+@keyframes heroTag{from{opacity:0;transform:translateX(40px) skewX(-8deg);letter-spacing:14px;}to{opacity:1;transform:none;letter-spacing:4px;}}
+@keyframes heroFly{from{opacity:0;transform:translateY(18px);}to{opacity:1;transform:none;}}
+@keyframes heroBar{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+@keyframes musclePop{from{opacity:0;transform:scale(0.6);}to{opacity:1;transform:none;}}
+@keyframes musclePulse{0%,100%{opacity:1;}50%{opacity:0.55;}}
+@keyframes bodyFlip{from{opacity:0;transform:perspective(700px) rotateY(80deg);}to{opacity:1;transform:perspective(700px) rotateY(0);}}
+@keyframes panelUp{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:none;}}
+.ffDash > *{animation:ffFlyIn 0.75s cubic-bezier(0.16,1,0.3,1) backwards;}
+.ffDash > *:nth-child(2){animation-delay:0.08s}.ffDash > *:nth-child(3){animation-delay:0.16s}.ffDash > *:nth-child(4){animation-delay:0.24s}
+.ffDash > *:nth-child(5){animation-delay:0.32s}.ffDash > *:nth-child(6){animation-delay:0.4s}.ffDash > *:nth-child(n+7){animation-delay:0.48s}
+.ffCardIn{animation:ffFlyIn 0.7s cubic-bezier(0.16,1,0.3,1) backwards;}
+.ffRowIn{animation:ffRowIn 0.5s cubic-bezier(0.16,1,0.3,1) backwards;}
+.heroKen{animation:heroKen 7s ease-out both;}
+.heroTag{animation:heroTag 0.9s cubic-bezier(0.16,1,0.3,1) both;}
+.heroFly{animation:heroFly 0.8s cubic-bezier(0.16,1,0.3,1) backwards;}
+.muscleShape{cursor:pointer;transform-box:fill-box;transform-origin:center;animation:musclePop 0.6s cubic-bezier(0.34,1.56,0.64,1) backwards;transition:fill 0.5s,filter 0.3s;}
+.muscleShape:hover{filter:brightness(1.35);}
+.muscleSel{animation:musclePulse 1.4s ease-in-out infinite;}
+@media (prefers-reduced-motion: reduce){.ffDash > *,.ffCardIn,.ffRowIn,.heroKen,.heroTag,.heroFly,.muscleShape,.muscleSel{animation:none!important;}}
 .newPlanCard:hover{border-color:rgba(255,107,53,0.5)!important;background:rgba(255,107,53,0.04)!important;}
 .newPlanCard:hover .newPlanIcon{background:rgba(255,107,53,0.18)!important;box-shadow:0 0 24px rgba(255,107,53,0.35);transform:scale(1.08);}
 .libMedia img,.libMedia video{transition:transform 0.35s cubic-bezier(0.16,1,0.3,1);}
@@ -3609,7 +3632,7 @@ function FitForge(){
         {undoConfirmItem&&<UndoConfirmModal item={undoConfirmItem} onConfirm={()=>undoChecklistItem(undoConfirmItem)} onCancel={()=>setUndoConfirmItem(null)}/>}
         {shareModalItem&&<ShareWithFriendsModal item={shareModalItem} user={user} notify={showToast} onClose={()=>setShareModalItem(null)}/>}
         <div key={animK} className="pageEnter">
-          {view==="dashboard"&&<Dashboard data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday} challenges={challenges}/>}
+          {view==="dashboard"&&<Dashboard library={library} data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday} challenges={challenges}/>}
           {view==="plans"&&<Plans data={data} setData={setData} onNew={()=>setPlanModal(true)} onEdit={p=>{setEditPlan(p);setPlanModal(true);}} notify={showToast} library={library}/>}
           {view==="library"&&<LibraryPage library={library} setLibrary={setLibrary} notify={showToast}/>}
           {view==="wochenplan"&&<WochenplanPage weekPlans={weekPlans} setWeekPlans={setWeekPlans} data={data} user={user} library={library} notify={showToast} favFoods={favFoods} nutrition={nutrition}/>}
@@ -3698,7 +3721,229 @@ function FitForge(){
     </div>
   );
 }
-function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick,waterGoal,waterTotal,waterLog,onAddWater,onDelWater,challenges}){
+// ─── Hero-Slider: Trainingsbilder mit Ken-Burns-Zoom, Überblendung, Wischen ───
+const HERO_SLIDES = [
+  { id: "photo-1517836357463-d25dfeac3438", tag: "Kraft" },
+  { id: "photo-1534438327276-14e5300c3a48", tag: "Disziplin" },
+  { id: "photo-1571019613454-1cb2f99b2d8b", tag: "Energie" },
+  { id: "photo-1581009146145-b5ef050c2e1e", tag: "Fokus" },
+  { id: "photo-1549060279-7e168fcee0c2", tag: "Fortschritt" },
+];
+const HERO_MS = 6000;
+function HeroSlides({ isMobile }) {
+  const [bad, setBad] = useState([]);
+  const slides = HERO_SLIDES.filter(x => !bad.includes(x.id));
+  const [i, setI] = useState(0);
+  const [tick, setTick] = useState(0); // Neustart des Timers nach manuellem Wechsel
+  const ref = useRef(null);
+  const n = slides.length || 1;
+  const go = (d) => { setI(x => (x + d + n) % n); setTick(t => t + 1); };
+  useEffect(() => {
+    const t = setInterval(() => { if (!document.hidden) setI(x => (x + 1) % n); }, HERO_MS);
+    return () => clearInterval(t);
+  }, [n, tick]);
+  useEffect(() => { // Wischen auf der ganzen Hero-Fläche
+    const el = ref.current?.parentElement; if (!el) return;
+    let x0 = null;
+    const st = e => { x0 = e.touches[0].clientX; };
+    const en = e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 45) go(dx < 0 ? 1 : -1); };
+    el.addEventListener("touchstart", st, { passive: true }); el.addEventListener("touchend", en, { passive: true });
+    return () => { el.removeEventListener("touchstart", st); el.removeEventListener("touchend", en); };
+  }, [n]);
+  const cur = Math.min(i, n - 1);
+  return (<>
+    <div ref={ref} style={{ position: "absolute", inset: 0, background: "#0A0A0E" }}>
+      {slides.map((sl, k) => (
+        <div key={sl.id} style={{ position: "absolute", inset: 0, opacity: k === cur ? 1 : 0, transition: "opacity 1.3s ease" }}>
+          <img src={`https://images.unsplash.com/${sl.id}?w=${isMobile ? 900 : 1400}&q=75&auto=format&fit=crop`} alt="" loading={k ? "lazy" : "eager"}
+            onError={() => setBad(b => [...b, sl.id])} className={k === cur ? "heroKen" : ""}
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        </div>
+      ))}
+    </div>
+    {slides[cur] && <div style={{ position: "absolute", right: isMobile ? 16 : 32, bottom: isMobile ? 18 : 30, zIndex: 5, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, pointerEvents: "none" }}>
+      <div key={slides[cur].id} className="heroTag" style={{ fontSize: isMobile ? 20 : 44, fontWeight: 900, fontStyle: "italic", textTransform: "uppercase", letterSpacing: 4, color: "transparent", WebkitTextStroke: "1.5px rgba(255,255,255,0.85)", textShadow: "0 0 30px rgba(255,107,53,0.35)", lineHeight: 1 }}>{slides[cur].tag}</div>
+      <div style={{ display: "flex", gap: 6, pointerEvents: "auto" }}>
+        {slides.map((sl, k) => (
+          <button key={sl.id} aria-label={`Bild ${k + 1}`} onClick={() => { setI(k); setTick(t => t + 1); }} style={{ width: k === cur ? 28 : 10, height: 4, borderRadius: 2, border: "none", padding: 0, cursor: "pointer", background: "rgba(255,255,255,0.3)", overflow: "hidden", transition: "width 0.4s cubic-bezier(0.16,1,0.3,1)" }}>
+            {k === cur && <span key={cur + "-" + tick} style={{ display: "block", width: "100%", height: "100%", background: "#FF6B35", transformOrigin: "left", animation: `heroBar ${HERO_MS}ms linear both` }} />}
+          </button>
+        ))}
+      </div>
+    </div>}
+  </>);
+}
+
+// ─── Muskel-Heatmap: animierter Körper (vorne/hinten), Muskel antippen → Details ───
+const MUSCLE_GUESS = [
+  ["Brust", /bank|brust|bench|fly|butterfly|liegestütz|push.?up|dips|chest|pec/],
+  ["Rücken", /rudern|row|lat|klimm|pull.?up|chin|kreuzheben|deadlift|rücken|hyperext|face.?pull|shrug|reverse fly/],
+  ["Schultern", /schulter|shoulder|military|overhead|seitheben|lateral|front.?raise|arnold|ohp|face.?pull/],
+  ["Arme", /curl|bizeps|trizeps|tricep|bicep|dips|french|skull|pushdown|hammer|unterarm|kickback/],
+  ["Bauch", /bauch|crunch|plank|sit.?up|abs?|leg raise|beinheben|russian|core|mountain/],
+  ["Oberschenkel", /kniebeuge|squat|beinpresse|leg press|ausfall|lunge|beinstrecker|leg ext|beinbeuger|leg curl|kreuzheben|deadlift|bulgarian|step.?up|lauf|run|jogg|rad|bike|cycl|rudergerät/],
+  ["Unterschenkel", /wade|calf|seilspring|jump.?rope|lauf|run|jogg/],
+  ["Gesäß", /hip.?thrust|glute|gesäß|kickback|brücke|bridge|kreuzheben|deadlift|ausfall|lunge|squat|kniebeuge|bulgarian/],
+];
+// Linke Körperhälfte; die rechte wird gespiegelt. [Muskelgruppe, Pfad]
+const BODY_FRONT = [
+  ["Schultern", "M62 74 C54 76 47 86 47 100 C52 96 58 92 66 90 C69 84 68 78 62 74 Z"],
+  ["Brust", "M98 76 L70 80 C65 86 65 95 68 105 C76 113 88 115 98 111 Z"],
+  ["Arme", "M50 105 C48 118 48 132 50 144 C54 146 58 144 60 140 C62 128 64 114 64 101 C58 99 52 101 50 105 Z"],
+  ["Arme", "M45 152 C41 170 41 190 42 208 C45 210 48 210 50 208 C52 190 56 172 58 152 C54 148 48 148 45 152 Z"],
+  ["Bauch", "M98 116 L87 118 C85 140 85 168 87 190 L98 194 Z"],
+  ["Bauch", "M84 121 L72 131 C72 150 74 170 77 182 L84 186 C82 164 82 140 84 121 Z"],
+  ["Oberschenkel", "M73 198 C68 222 70 256 76 284 C82 290 90 290 96 284 C98 256 98 226 96 205 C88 201 80 199 73 198 Z"],
+  ["Unterschenkel", "M77 312 C74 332 76 356 80 376 C84 378 88 378 90 374 C92 352 94 332 94 312 C88 306 81 306 77 312 Z"],
+];
+const BODY_BACK = [
+  ["Schultern", "M62 74 C54 76 47 86 47 100 C52 96 58 92 66 90 C69 84 68 78 62 74 Z"],
+  ["Rücken", "M100 58 L92 62 C84 68 75 70 67 74 C77 80 89 87 100 101 Z"],
+  ["Rücken", "M69 85 C66 101 68 117 74 136 C82 146 92 150 98 150 L98 105 C88 97 79 89 69 85 Z"],
+  ["Rücken", "M98 154 C90 154 83 152 77 150 C77 162 78 172 81 180 L98 182 Z"],
+  ["Arme", "M50 105 C48 118 48 132 50 144 C54 146 58 144 60 140 C62 128 64 114 64 101 C58 99 52 101 50 105 Z"],
+  ["Arme", "M45 152 C41 170 41 190 42 208 C45 210 48 210 50 208 C52 190 56 172 58 152 C54 148 48 148 45 152 Z"],
+  ["Gesäß", "M98 186 C86 184 75 186 71 196 C68 210 72 222 82 226 C90 228 96 224 98 218 Z"],
+  ["Oberschenkel", "M73 231 C70 250 72 270 76 286 C82 292 90 292 96 286 C98 266 98 246 96 231 C88 235 80 235 73 231 Z"],
+  ["Unterschenkel", "M77 306 C72 322 74 340 80 352 C86 356 92 354 94 346 C96 332 96 318 94 306 C88 300 81 300 77 306 Z"],
+];
+const BODY_SIL = [
+  "M100 64 L92 64 C84 68 72 70 64 74 C57 78 57 87 60 97 L66 130 C68 142 72 152 72 162 C70 172 68 180 68 192 L100 200 Z",
+  "M60 76 C50 78 46 90 46 104 L44 146 C40 160 38 180 38 212 C38 222 40 236 46 238 C52 238 54 226 54 214 C56 190 60 168 62 150 L66 108 C66 92 66 80 60 76 Z",
+  "M68 190 C66 210 68 250 72 288 C72 300 74 312 74 330 C76 356 78 376 80 388 C80 396 84 400 94 400 C96 392 96 384 95 372 C96 340 98 316 97 300 C98 270 100 230 100 200 Z",
+];
+function MuscleHeatmap({ data, library, isMobile }) {
+  const [range, setRange] = useState(28);
+  const [side, setSide] = useState("front");
+  const [sel, setSel] = useState(null);
+  const stats = React.useMemo(() => {
+    const muscleOf = {};
+    (library || []).forEach(ex => { if (ex?.name && ex.muscles?.length) muscleOf[ex.name.toLowerCase().trim()] = ex.muscles; });
+    (data.plans || []).forEach(p => (p.exercises || []).forEach(e => { if (e && typeof e === "object" && e.name && e.muscles?.length && !muscleOf[e.name.toLowerCase().trim()]) muscleOf[e.name.toLowerCase().trim()] = e.muscles; }));
+    const musclesFor = name => { const k = String(name || "").toLowerCase().trim(); return muscleOf[k] || MUSCLE_GUESS.filter(([, re]) => re.test(k)).map(([m]) => m); };
+    const from = new Date(Date.now() - range * 864e5).toISOString().slice(0, 10);
+    const out = {}; Object.keys(MUSCLE_COLORS).forEach(m => out[m] = { sets: 0, vol: 0, days: new Set(), last: null, ex: {} });
+    (data.workouts || []).filter(w => (w.date || "") >= from).forEach(w => (w.exercises || []).forEach(e => {
+      const ms = musclesFor(e.name).filter(m => out[m]); if (!ms.length) return;
+      const sets = (e.sets || []).filter(x => x && x.done !== false);
+      const n = sets.length || (e.duration ? 1 : 0); if (!n) return;
+      const vol = sets.reduce((a, x) => a + (parseFloat(x.weight) || 0) * (parseInt(x.reps) || 0), 0);
+      const best = sets.reduce((a, x) => Math.max(a, parseFloat(x.weight) || 0), 0);
+      ms.forEach(m => {
+        const o = out[m]; o.sets += n; o.vol += vol; o.days.add(w.date); if (!o.last || w.date > o.last) o.last = w.date;
+        const x = o.ex[e.name] = o.ex[e.name] || { name: e.name, sets: 0, best: 0, last: null };
+        x.sets += n; x.best = Math.max(x.best, best); if (!x.last || w.date > x.last) x.last = w.date;
+      });
+    }));
+    return out;
+  }, [data.workouts, data.plans, library, range]);
+  const max = Math.max(1, ...Object.values(stats).map(o => o.sets));
+  const heat = m => { const t = (stats[m]?.sets || 0) / max; return t <= 0 ? null : t; };
+  const fillOf = m => { const t = heat(m); return t == null ? "rgba(255,255,255,0.055)" : `hsla(${Math.round(45 - 42 * t)},100%,${Math.round(62 - 10 * t)}%,${(0.4 + 0.6 * t).toFixed(2)})`; };
+  const daysAgo = d => { if (!d) return "–"; const n = Math.round((new Date(todayStr()) - new Date(d)) / 864e5); return n <= 0 ? "heute" : n === 1 ? "gestern" : `vor ${n} Tagen`; };
+  const untrained = Object.keys(MUSCLE_COLORS).filter(m => !stats[m].sets);
+  const shapes = side === "front" ? BODY_FRONT : BODY_BACK;
+  const renderMuscles = () => shapes.map(([m, d], k) => {
+    const t = heat(m);
+    return <path key={k} d={d} className={"muscleShape" + (sel === m ? " muscleSel" : "")} fill={fillOf(m)}
+      stroke={sel === m ? "#fff" : "rgba(255,255,255,0.12)"} strokeWidth={sel === m ? 1.6 : 0.6}
+      style={{ animationDelay: (0.25 + k * 0.06) + "s", filter: t > 0.55 ? `drop-shadow(0 0 ${4 + 6 * t}px hsla(${Math.round(45 - 42 * t)},100%,55%,0.7))` : undefined }}
+      onClick={() => setSel(x => x === m ? null : m)}><title>{m}</title></path>;
+  });
+  const o = sel && stats[sel];
+  const exList = o ? Object.values(o.ex).sort((a, b) => b.sets - a.sets) : [];
+  return (
+    <div className="glass-card" style={{ marginBottom: 18, overflow: "hidden" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+        <h2 style={{ ...s.secTitle, margin: 0 }}>🔥 Muskel-Heatmap</h2>
+        <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 3 }}>
+          {[[7, "7 T"], [28, "4 W"], [90, "3 M"]].map(([v, l]) => <button key={v} onClick={() => setRange(v)} style={{ border: "none", cursor: "pointer", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 800, background: range === v ? "#FF6B35" : "transparent", color: range === v ? "#fff" : "#888", transition: "all 0.2s" }}>{l}</button>)}
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: "#666", marginBottom: 10 }}>Tippe auf einen Muskel, um zu sehen, was du dafür trainiert hast.</div>
+      <div style={{ display: "flex", gap: isMobile ? 10 : 22, alignItems: "flex-start", flexDirection: isMobile ? "column" : "row" }}>
+        <div style={{ flex: isMobile ? "none" : "0 0 230px", width: isMobile ? "100%" : 230, display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <div style={{ position: "relative", width: "100%", maxWidth: 210 }}>
+            <div style={{ position: "absolute", inset: "12% 10%", background: "radial-gradient(ellipse at center, rgba(255,107,53,0.16), transparent 70%)", filter: "blur(18px)", pointerEvents: "none" }} />
+            <svg key={side} viewBox="0 0 200 410" style={{ width: "100%", height: "auto", display: "block", position: "relative", animation: "bodyFlip 0.7s cubic-bezier(0.16,1,0.3,1) both" }}>
+              <defs><linearGradient id="bodyG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#23232C" /><stop offset="1" stopColor="#15151B" /></linearGradient></defs>
+              <ellipse cx="100" cy="34" rx="16" ry="20" fill="url(#bodyG)" stroke="rgba(255,255,255,0.14)" strokeWidth="0.8" pathLength="1" strokeDasharray="1" style={{ animation: "lineDraw 1s ease-out both" }} />
+              <path d="M91 50 L109 50 L111 66 L89 66 Z" fill="url(#bodyG)" />
+              {[false, true].map(mirror => (
+                <g key={String(mirror)} transform={mirror ? "translate(200 0) scale(-1 1)" : undefined}>
+                  {BODY_SIL.map((d, k) => <path key={k} d={d} fill="url(#bodyG)" stroke="rgba(255,255,255,0.14)" strokeWidth="0.8" pathLength="1" strokeDasharray="1" style={{ animation: `lineDraw 1.1s ${k * 0.12}s ease-out both` }} />)}
+                  {renderMuscles()}
+                </g>
+              ))}
+              {side === "back" && <path d="M100 60 L100 184" stroke="rgba(0,0,0,0.35)" strokeWidth="1" />}
+            </svg>
+          </div>
+          <div style={{ display: "flex", gap: 4, marginTop: 8, background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 3 }}>
+            {[["front", "Vorne"], ["back", "Hinten"]].map(([v, l]) => <button key={v} onClick={() => setSide(v)} style={{ border: "none", cursor: "pointer", borderRadius: 8, padding: "6px 16px", fontSize: 12, fontWeight: 800, background: side === v ? "rgba(255,255,255,0.12)" : "transparent", color: side === v ? "#fff" : "#777", transition: "all 0.2s" }}>{l}</button>)}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 10, color: "#666", fontWeight: 700 }}>
+            wenig <span style={{ width: 90, height: 6, borderRadius: 3, background: "linear-gradient(90deg,hsla(45,100%,62%,0.45),hsla(24,100%,57%,0.8),hsla(3,100%,52%,1))" }} /> viel
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 0, width: "100%" }}>
+          {!sel ? (
+            <div key="all" style={{ animation: "panelUp 0.5s cubic-bezier(0.16,1,0.3,1) both" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {Object.keys(MUSCLE_COLORS).sort((a, b) => stats[b].sets - stats[a].sets).map((m, k) => (
+                  <button key={m} onClick={() => { setSel(m); if (/Rücken|Gesäß/.test(m)) setSide("back"); else if (/Brust|Bauch/.test(m)) setSide("front"); }} className="ffRowIn" style={{ animationDelay: (0.3 + k * 0.05) + "s", display: "flex", alignItems: "center", gap: 10, background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}>
+                    <span style={{ width: 88, fontSize: 12, fontWeight: 700, color: stats[m].sets ? "#E8E5E0" : "#555" }}>{m}</span>
+                    <span style={{ flex: 1, height: 8, borderRadius: 4, background: "rgba(255,255,255,0.05)", overflow: "hidden" }}>
+                      <span style={{ display: "block", height: "100%", width: `${(stats[m].sets / max) * 100}%`, background: fillOf(m), borderRadius: 4, animation: `barIn 0.9s ${0.35 + k * 0.05}s cubic-bezier(0.16,1,0.3,1) backwards` }} />
+                    </span>
+                    <span style={{ width: 46, textAlign: "right", fontSize: 11, fontWeight: 800, color: stats[m].sets ? "#FF8C60" : "#444" }}>{stats[m].sets} S.</span>
+                  </button>
+                ))}
+              </div>
+              {untrained.length > 0 && <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 12, background: "rgba(255,209,102,0.06)", border: "1px solid rgba(255,209,102,0.2)", fontSize: 12, color: "#bbb" }}>
+                ⚠️ Nicht trainiert: <b style={{ color: "#FFD166" }}>{untrained.join(", ")}</b>
+              </div>}
+            </div>
+          ) : (
+            <div key={sel} style={{ animation: "panelUp 0.45s cubic-bezier(0.16,1,0.3,1) both" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 12, height: 12, borderRadius: "50%", background: fillOf(sel) === "rgba(255,255,255,0.055)" ? "#444" : fillOf(sel), boxShadow: `0 0 10px ${fillOf(sel)}` }} />
+                  <span style={{ fontSize: 18, fontWeight: 900, color: "#F0EDE8" }}>{sel}</span>
+                </div>
+                <button onClick={() => setSel(null)} style={{ ...s.secBtn, padding: "5px 10px", fontSize: 11 }}>Alle</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>
+                {[["Sätze", o.sets], ["Tage", o.days.size], ["Zuletzt", daysAgo(o.last)]].map(([l, v], k) => (
+                  <div key={l} className="ffCardIn" style={{ animationDelay: k * 0.07 + "s", padding: "10px 8px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", textAlign: "center" }}>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: "#FF8C60" }}>{v}</div>
+                    <div style={{ fontSize: 9, fontWeight: 800, color: "#666", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 2 }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+              {exList.length ? <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {exList.map((x, k) => (
+                  <div key={x.name} className="ffRowIn" style={{ animationDelay: (0.15 + k * 0.05) + "s", display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 11, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#E8E5E0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name}</div>
+                      <div style={{ fontSize: 11, color: "#777" }}>{daysAgo(x.last)}{x.best ? ` · bestes Gewicht ${x.best} kg` : ""}</div>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: "#FF8C60" }}>{x.sets}×</span>
+                  </div>
+                ))}
+                {o.vol > 0 && <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>Bewegtes Gewicht gesamt: <b style={{ color: "#aaa" }}>{Math.round(o.vol).toLocaleString("de-DE")} kg</b></div>}
+              </div> : <div style={{ fontSize: 13, color: "#888", lineHeight: 1.5 }}>
+                In diesem Zeitraum nicht trainiert.
+                <button onClick={() => window.ffOpenAI?.({ autoSend: true, task: "chat", prompt: `Ich habe ${sel} seit längerem nicht trainiert. Welche 3 Übungen passen in meine bestehenden Pläne und wie baue ich sie ein?` })} style={{ ...s.secBtn, marginTop: 10, width: "100%", justifyContent: "center", borderColor: "rgba(167,139,250,0.45)", color: "#A78BFA", background: "rgba(167,139,250,0.08)" }}>✨ Übungen für {sel} vorschlagen</button>
+              </div>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick,waterGoal,waterTotal,waterLog,onAddWater,onDelWater,challenges,library}){
   const cwDays = new Set(thisWeek.map(w => new Date(w.date).toDateString())).size;
   const cwSessions = thisWeek.length;
   const last3=[...data.workouts].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,3);
@@ -3711,10 +3956,10 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
     ...s.page,
     padding: isMobile ? "10px 10px 80px" : s.page.padding
   }}>
-    <div style={{position: "relative", zIndex: 1}}>
+    <div className="ffDash" style={{position: "relative", zIndex: 1}}>
       <div style={{...s.hero, height: isMobile ? 250 : 300, borderRadius: isMobile ? 16 : 20, boxShadow: "0 10px 30px rgba(0,0,0,0.5)"}}>
-        <img src="https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800&q=80" alt="gym" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-        <div style={{position:"absolute",inset:0,background:"linear-gradient(120deg,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.3) 100%)"}}/>
+        <HeroSlides isMobile={isMobile}/>
+        <div style={{position:"absolute",inset:0,background:"linear-gradient(120deg,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.25) 70%,rgba(0,0,0,0.45) 100%)"}}/>
         <div style={{position:"absolute",inset:0,padding: isMobile ? 24 : 40,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
           {(()=>{
             const hour=today.getHours();
@@ -3728,8 +3973,8 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
             return(<>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
                 <div style={{minWidth:0}}>
-                  <h1 style={{fontFamily:"'DM Sans',sans-serif",fontSize: isMobile ? 26 : 38,fontWeight:800,margin:0,lineHeight:1.1,color:"#fff"}}>{user.firstName?`${greet}, ${user.firstName}!`:`${greet} 👋`}</h1>
-                  <div style={{fontSize:isMobile?12:15,fontWeight:600,color:"rgba(255,255,255,0.75)",marginTop:8,textShadow:"0 1px 6px rgba(0,0,0,0.5)"}}>{sub}</div>
+                  <h1 className="heroFly" style={{animationDelay:"0.15s",fontFamily:"'DM Sans',sans-serif",fontSize: isMobile ? 26 : 38,fontWeight:800,margin:0,lineHeight:1.1,color:"#fff"}}>{user.firstName?`${greet}, ${user.firstName}!`:`${greet} 👋`}</h1>
+                  <div className="heroFly" style={{animationDelay:"0.3s",fontSize:isMobile?12:15,fontWeight:600,color:"rgba(255,255,255,0.75)",marginTop:8,textShadow:"0 1px 6px rgba(0,0,0,0.5)"}}>{sub}</div>
                 </div>
                 <div title={`Wochenziel: ${cwDays} von ${weeklyGoal} Trainingstagen`} style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",border:`1px solid ${ringDone?"rgba(6,214,160,0.4)":"rgba(255,255,255,0.15)"}`,borderRadius:18,padding:isMobile?"8px 10px":"10px 14px",boxShadow:ringDone?"0 0 24px rgba(6,214,160,0.25)":"0 4px 16px rgba(0,0,0,0.3)"}}>
                   <svg width={ringSize} height={ringSize} viewBox="0 0 64 64">
@@ -3741,7 +3986,7 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
                   <span style={{fontSize:8.5,fontWeight:800,color:ringDone?"#06D6A0":"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:0.5}}>Wochenziel</span>
                 </div>
               </div>
-              <div style={{display:"flex", flexDirection:"column", alignItems:"flex-start"}}>
+              <div className="heroFly" style={{animationDelay:"0.45s",display:"flex", flexDirection:"column", alignItems:"flex-start",position:"relative",zIndex:6}}>
                 {todayPlan&&<div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.12)",backdropFilter:"blur(12px)",borderRadius:20,padding:"6px 14px",fontSize: isMobile ? 11 : 13,color:"#fff",marginBottom:18,width:"fit-content"}}><span style={{width:8,height:8,borderRadius:"50%",background:todayPlan.color,display:"inline-block"}}/> Heute: {todayPlan.name}</div>}
                 <button style={{...s.primaryBtn, width: "fit-content", padding: isMobile ? "7px 14px" : "8px 16px", fontSize: isMobile ? 13 : 14}} onClick={onLog}>{IC.plus} Training starten</button>
               </div>
@@ -3862,6 +4107,7 @@ function Dashboard({data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,c
           </div>
         </div>
       </div>
+      <MuscleHeatmap data={data} library={library} isMobile={isMobile}/>
       {last3.length>0&&(<div><h2 style={s.secTitle}>Letzte Trainings</h2>{last3.map(w=>(<div key={w.id} className="glass-recent" onClick={()=>onView("history")}><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}><div style={{fontFamily:"'DM Sans',sans-serif",fontSize:16,fontWeight:700}}>{w.name}</div>{w.hiitMode && <div style={{display:"flex",color:"#FFD166"}} className="hiit-glow">{IC.bolt}</div>}</div><div style={{display:"flex",gap:4,color:"rgba(255,255,255,0.5)",fontSize:12,alignItems:"center", flexWrap:"wrap"}}>{IC.clock} {w.duration} Min · {w.exercises.length} Übungen · {fmtDate(w.date)}</div>{w.note&&<div style={{marginTop:8,color:"rgba(255,255,255,0.7)",fontSize:12,fontStyle:"italic"}}>„{w.note}"</div>}</div><div style={{fontSize:20,color:"rgba(255,255,255,0.3)", marginLeft: 10}}>→</div></div>))}</div>)}
     </div>
   </div>);}
@@ -4850,9 +5096,9 @@ function Nutrition({nutrition,setNutrition,user,setUser,notify,favFoods,setFavFo
 function Plans({data,setData,onNew,onEdit,notify}){
   const del=id=>{setData(d=>({...d,plans:d.plans.filter(p=>p.id!==id),deletedPlanIds:[...(d.deletedPlanIds||[]),id]}));notify("Plan gelöscht");};
   return(<div style={s.page}><div style={s.pageHead}><div><h1 style={s.pageTitle}>Trainingspläne</h1><p style={s.pageSub}>{data.plans.length} aktive Pläne</p></div><div style={{display:"flex",gap:8}}><button style={{...s.secBtn,borderColor:"rgba(167,139,250,0.45)",color:"#A78BFA",background:"rgba(167,139,250,0.08)",whiteSpace:"nowrap"}} onClick={()=>window.ffOpenAI?.({prompt:"Erstelle mir einen neuen Trainingsplan. Ziel: ",task:"plan"})}>✨ KI-Plan</button><button className="mobile-small-btn" style={s.primaryBtn} onClick={onNew}>{IC.plus} <span className="mobile-hide">Neuer Plan</span></button></div></div>
-    <div style={s.plansGrid}>{data.plans.map(plan=>{
+    <div style={s.plansGrid}>{data.plans.map((plan,pi)=>{
       const exs=plan.exercises.map(e=>typeof e==="string"?{name:e,photo:null}:e);
-      return(<div key={plan.id} style={{...s.planCard,borderTopColor:plan.color,overflow:"hidden"}} className="planCard">
+      return(<div key={plan.id} style={{...s.planCard,borderTopColor:plan.color,overflow:"hidden",animationDelay:`${pi*0.08}s`}} className="planCard ffCardIn">
       <div style={{position:"absolute",top:-50,left:-30,width:160,height:120,borderRadius:"50%",background:plan.color,opacity:0.09,filter:"blur(30px)",pointerEvents:"none"}}/>
       <div style={{width:46,height:46,borderRadius:13,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,background:`linear-gradient(135deg,${plan.color}30,${plan.color}10)`,border:`1px solid ${plan.color}40`,color:plan.color,boxShadow:`0 0 20px ${plan.color}25, inset 0 1px 0 ${plan.color}30`}}>{IC.dumbbell}</div>
       <h3 style={{fontFamily:"'DM Sans',sans-serif",fontSize:19,fontWeight:800,margin:"0 0 14px",letterSpacing:"-0.5px"}}>{plan.name}</h3>
@@ -4871,7 +5117,7 @@ function Plans({data,setData,onNew,onEdit,notify}){
       <div style={{display:"flex",gap:5,marginBottom:14}}>{WEEKDAYS.map((d,i)=><span key={d} style={{...s.dayChip,...(plan.days.includes(FULL_WEEKDAYS[i])?{background:`linear-gradient(135deg,${plan.color},${plan.color}CC)`,color:"#fff",border:`1px solid ${plan.color}`,boxShadow:`0 0 12px ${plan.color}50`,fontWeight:900}:{})}}>{d}</span>)}</div>
       <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:12}}>{exs.slice(0,4).map((ex,i)=>{
         const photoToShow = ex.photo ? (ex.photo.startsWith("ex_") ? data.exercisePhotos?.[ex.photo] : ex.photo) : null;
-        return (<div key={i} style={{display:"flex",alignItems:"center",gap:7}}>{photoToShow?<img src={photoToShow} alt={ex.name} style={{width:36,height:36,borderRadius:7,objectFit:"contain",flexShrink:0,background:"#1A1A1F"}}/>:<div style={{width:36,height:36,borderRadius:7,background:"#1A1A1F",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#444"}}>{IC.image}</div>}<span style={{fontSize:11,color:"#aaa"}}>{ex.name}</span></div>)
+        return (<div key={i} className="ffRowIn" style={{animationDelay:`${0.25+pi*0.08+i*0.07}s`,display:"flex",alignItems:"center",gap:7}}>{photoToShow?<img src={photoToShow} alt={ex.name} style={{width:36,height:36,borderRadius:7,objectFit:"contain",flexShrink:0,background:"#1A1A1F"}}/>:<div style={{width:36,height:36,borderRadius:7,background:"#1A1A1F",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#444"}}>{IC.image}</div>}<span style={{fontSize:11,color:"#aaa"}}>{ex.name}</span></div>)
       })}{exs.length>4&&<span style={{fontSize:11,color:"#555",paddingLeft:31}}>+{exs.length-4} weitere</span>}</div>
       {(()=>{const n=data.workouts.filter(w=>w.planId===plan.id).length;return(
       <div style={{display:"flex",gap:6,alignItems:"center",marginTop:2,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
@@ -4880,7 +5126,7 @@ function Plans({data,setData,onNew,onEdit,notify}){
       </div>);})()}
       <div style={{position:"absolute",top:13,right:13,display:"flex",gap:5}}><button className="cardIconBtn" title="Mit Freunden teilen" style={{...s.cardIconBtn, color:"#4CC9F0", filter:"drop-shadow(0 0 6px rgba(76,201,240,0.6))"}} onClick={()=>window.ffShareItem&&window.ffShareItem({type:"plan",name:plan.name,payload:{...plan,exercises:exs}})}>{IC.share}</button><button className="cardIconBtn" style={{...s.cardIconBtn, color:"#ccc", filter:"drop-shadow(0 0 6px rgba(255,255,255,0.5))"}} onClick={()=>onEdit({...plan,exercises:exs})}>{IC.edit}</button><button className="cardIconBtn" style={{...s.cardIconBtn, color:"#EF476F", filter:"drop-shadow(0 0 6px rgba(239,71,111,0.8))"}} onClick={()=>del(plan.id)}>{IC.trash}</button></div>
     </div>);})}
-    <div style={{...s.newPlanCard,justifyContent:"center",minHeight:180}} onClick={onNew} className="planCard newPlanCard"><div className="newPlanIcon" style={{width:52,height:52,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,107,53,0.08)",border:"1px dashed rgba(255,107,53,0.35)",color:"#FF6B35",transition:"all 0.25s"}}>{IC.plus}</div><span style={{color:"#888",fontSize:13,fontWeight:700}}>Neuen Plan erstellen</span></div></div>
+    <div style={{...s.newPlanCard,justifyContent:"center",minHeight:180,animationDelay:`${data.plans.length*0.08}s`}} onClick={onNew} className="planCard newPlanCard ffCardIn"><div className="newPlanIcon" style={{width:52,height:52,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,107,53,0.08)",border:"1px dashed rgba(255,107,53,0.35)",color:"#FF6B35",transition:"all 0.25s"}}>{IC.plus}</div><span style={{color:"#888",fontSize:13,fontWeight:700}}>Neuen Plan erstellen</span></div></div>
   </div>);}
 
 const formatPace = (kmh) => {
