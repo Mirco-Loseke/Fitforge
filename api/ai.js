@@ -107,14 +107,16 @@ const TASK_HINTS = {
   plan: "Aufgabe: Erstelle einen passenden Trainingsplan als create_plan-Aktion.",
   meal: "Aufgabe: Schlage ein Gericht passend zu Ziel und heutigen Makros vor (suggest_meal).",
   analyze: `Aufgabe: Gründliche Trainingsanalyse wie ein erfahrener Coach. Grundlage ist context.analyse (alles bereits berechnet – nicht selbst nachzählen).
-Gliedere die Antwort mit kurzen Überschriften (Zeilen, die mit "## " beginnen) und Stichpunkten ("• "), wichtige Zahlen **fett**:
-## Kurzfazit – 2 Sätze: Wo stehst du, Trend insgesamt.
-## Fortschritt – pro wichtiger Übung: e1RM/Gewicht Start → aktuell, Steigerung in %, Stagnation oder Rückschritt klar benennen.
-## Umfang & Regelmäßigkeit – Trainings/Woche, Trend der letzten Wochen, längste Pause, Tage seit letztem Training, bevorzugte Tage/Zeiten.
-## Balance – welche Muskelgruppen viel/wenig trainiert werden (muskelSaetzeLetzte28Tage); fehlende Gruppen nennen.
-## Erholung & Ernährung – nur wenn Daten da sind: Schlaf, Protein/kcal vs. Ziel, Körpergewicht-Trend passend zum Ziel (context.user.goal).
-## Nächste Schritte – 3 bis 5 konkrete, messbare Empfehlungen für die nächste Woche (z. B. "Curls: 4×10 mit 10 kg statt 7,5 kg").
-Fehlen Daten für einen Abschnitt, lass ihn weg statt zu raten. Wenig Daten ehrlich ansprechen.`,
+Gliedere mit diesen Überschriften – schreibe NUR das Wort nach "## ", ohne die Erklärung in Klammern: "## Kurzfazit", "## Fortschritt", "## Umfang & Regelmäßigkeit", "## Balance", "## Erholung & Ernährung", "## Nächste Schritte".
+Darunter Stichpunkte mit "• ", wichtige Zahlen **fett**. Inhalt der Abschnitte:
+- Kurzfazit (2 Sätze: wo stehst du, Trend insgesamt)
+- Fortschritt (pro wichtiger Übung e1RM/Gewicht Start → aktuell, Steigerung in %, Stagnation/Rückschritt klar benennen)
+- Umfang & Regelmäßigkeit (Trainings/Woche, Trend, längste Pause, Tage seit letztem Training, bevorzugte Tage/Zeiten)
+- Balance (Muskelgruppen viel/wenig trainiert laut muskelSaetzeLetzte28Tage; fehlende Gruppen nennen)
+- Erholung & Ernährung (nur mit Daten: Schlaf, Protein/kcal vs. Ziel, Gewichtstrend passend zu context.user.goal)
+- Nächste Schritte (3–5 konkrete, messbare Empfehlungen für die nächste Woche, z. B. "Curls: 4×10 mit 10 kg statt 7,5 kg")
+Fehlen Daten für einen Abschnitt, lass ihn weg statt zu raten. Wenig Daten ehrlich ansprechen.
+Ist analyse.ernaehrung.hinweis gesetzt, sind die Tage nur lückenhaft erfasst: dann KEINE Aussagen wie "zu wenig Kalorien/Protein gegessen" – nur vollständigeres Loggen empfehlen.`,
 };
 const GENERAL_HINT = `Für Fragen zu Training, Fortschritt oder Gewohnheiten nutze context.analyse (Übungen mit e1RM-Verlauf, Wochen, Muskelgruppen, Regelmäßigkeit, Gewicht, Ernährung, Erholung).
 e1RM = geschätztes Maximalgewicht für 1 Wiederholung (Epley). Nenne konkrete Zahlen und Daten. Längere Antworten mit "## "-Überschriften und "• "-Stichpunkten gliedern.`;
