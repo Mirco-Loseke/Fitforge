@@ -5,3 +5,4 @@ search_output.txt
 pageHeads.txt
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+backups/

@@ -1,0 +1,82 @@
+rules_version = '2';
+// FitForge – Firestore-Regeln
+// Grundsatz: private Daten nur für den Besitzer, geteilte Daten nur für Beteiligte.
+// KEIN Catch-All mehr: was hier nicht erlaubt ist, ist verboten.
+// Hinweis: Die Server-API (api/*.js, Admin SDK) umgeht diese Regeln bewusst.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+
+    // ── Private App-Daten: fitforge/<uid>_<key> ────────────────────────────
+    // data, photos, user, prs, nutrition, weekPlans, favFoods, library,
+    // health, backup_*, route_* …  → ausschließlich der Besitzer.
+    match /fitforge/{docId} {
+      function isOwnDoc() { return signedIn() && docId.matches(me() + '_.+'); }
+      allow read, write: if isOwnDoc();
+    }
+
+    // ── Gemeinsame Übungsbibliothek (ein Dokument für alle) ───────────────
+    // Lesen/Ergänzen für alle Eingeloggten; nie löschen, nie leerräumen.
+    match /fitforge/shared_library {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.value is list;
+      allow update: if signedIn()
+        && request.resource.data.value is list
+        && request.resource.data.value.size() >= resource.data.value.size() - 20;
+      allow delete: if false;
+    }
+
+    // ── Öffentliche Profile (Freundessuche) ───────────────────────────────
+    match /userProfiles/{uid} {
+      allow read: if signedIn();
+      allow write: if signedIn() && me() == uid;
+    }
+
+    // ── Freundschaftsanfragen: ID = <from>_<to> ───────────────────────────
+    match /friendRequests/{reqId} {
+      function party(d) { return d.from == me() || d.to == me(); }
+      // Einzelabruf: ID ist <from>_<to> – Beteiligte dürfen auch prüfen, ob eine Anfrage
+      // (noch) nicht existiert, ohne dass resource ausgewertet werden muss.
+      allow get: if signedIn() && (reqId.matches(me() + '_.+') || reqId.matches('.+_' + me()));
+      // Listen (where from==me / to==me): über die Felder.
+      allow list: if signedIn() && party(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.from == me()
+        && reqId == request.resource.data.from + '_' + request.resource.data.to;
+      // Empfänger nimmt an; Absender darf seine offene Anfrage erneuern.
+      allow update: if signedIn() && (
+        (resource.data.to == me() && request.resource.data.status == 'accepted'
+          && request.resource.data.from == resource.data.from && request.resource.data.to == resource.data.to)
+        || (resource.data.from == me() && resource.data.status == 'pending'
+          && request.resource.data.from == me() && request.resource.data.to == resource.data.to
+          && request.resource.data.status == 'pending'));
+      allow delete: if signedIn() && party(resource.data);
+    }
+
+    // ── Geteilte Pläne/Wochenpläne/Challenge-Einladungen ─────────────────
+    match /sharedItems/{id} {
+      allow read: if signedIn() && (resource.data.to == me() || resource.data.from == me());
+      allow create: if signedIn() && request.resource.data.from == me();
+      allow update: if false;
+      allow delete: if signedIn() && (resource.data.to == me() || resource.data.from == me());
+    }
+
+    // ── Challenges ────────────────────────────────────────────────────────
+    match /challenges/{cid} {
+      function isParticipant(d) { return me() in d.get('participants', []); }
+      // Lesen: Eingeladene müssen die Challenge vor dem Beitritt laden können (per ID aus der Einladung).
+      allow read: if signedIn();
+      allow create: if signedIn() && isParticipant(request.resource.data);
+      // Teilnehmer aktualisieren Fortschritt/Status/Einladungen;
+      // Nicht-Teilnehmer dürfen nur sich selbst hinzufügen (Beitritt).
+      allow update: if signedIn() && (
+        isParticipant(resource.data)
+        || (isParticipant(request.resource.data)
+            && request.resource.data.participants.toSet().difference(resource.data.get('participants', []).toSet()) == [me()].toSet()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants', 'progress', 'penaltyApplied'])));
+      allow delete: if signedIn() && isParticipant(resource.data);
+    }
+  }
+}
