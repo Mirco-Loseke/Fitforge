@@ -3632,11 +3632,15 @@ function FitForge(){
           }} latestWeight={(()=>{const lw=[...(data.weightHistory||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];return lw?.value||parseFloat(user.weight)||null;})()}/>}
         </div>
       </main>
-      <AssistantSheet open={aiOpen} onClose={()=>setAiOpen(false)} init={aiInit} data={data} user={user} prs={prs} nutrition={nutrition} view={view} health={health} library={library} notify={showToast} isMobile={isMobile}
+      <AssistantSheet open={aiOpen} onClose={()=>setAiOpen(false)} init={aiInit} data={data} user={user} prs={prs} nutrition={nutrition} view={view} health={health} library={library} activeWorkout={activeWorkout} notify={showToast} isMobile={isMobile}
         onAction={(a)=>{
           if(a.type==='navigate'&&a.view){setView(a.view);setPresetPlanId(null);setAutoOpenAdd(null);closeAll();}
           else if(a.type==='start_workout'){const p=(data.plans||[]).find(x=>String(x.id)===String(a.planId));if(!p)return showToast('Plan nicht gefunden','error');setActiveWorkout(null);setPresetPlanId(p.id);setView('log');closeAll();}
           else if(a.type==='save_plan'&&a.plan){setData(d=>({...d,plans:[...(d.plans||[]),a.plan]}));}
+          else if(a.type==='set_targets'){const t={};(a.targets||[]).forEach(x=>{if(x?.name)t[x.name.toLowerCase().trim()]={name:x.name,weight:x.weight??"",reps:x.reps??"",sets:x.sets||null,note:x.note||"",date:todayStr()};});setUser(u=>({...u,aiTargets:{...(u.aiTargets||{}),...t},updatedAt:Date.now()}));}
+          else if(a.type==='swap_exercise'){if(!window.ffSwapExercise||!window.ffSwapExercise(a.from,a.to))showToast('Kein laufendes Training gefunden','error');}
+          else if(a.type==='log_meal'&&a.meal){const m=a.meal,day=todayStr(),rd=v=>Math.round((+v||0)*10)/10;const e={id:Date.now(),name:m.name||'Mahlzeit',calories:Math.round(+m.kcal||+m.calories||0),protein:rd(m.protein),carbs:rd(m.carbs),fat:rd(m.fat),mealType:CHECKIN_MEAL_TYPES.includes(m.mealType)?m.mealType:'Snack',aiEstimated:true};
+            setNutrition(n=>{const d=n[day]||{calories:0,protein:0,carbs:0,fat:0,meals:[]};const meals=[...(d.meals||[]),e];return{...n,[day]:{...d,meals,calories:Math.round(meals.reduce((x,y)=>x+(+y.calories||0),0)),protein:rd(meals.reduce((x,y)=>x+(+y.protein||0),0)),carbs:rd(meals.reduce((x,y)=>x+(+y.carbs||0),0)),fat:rd(meals.reduce((x,y)=>x+(+y.fat||0),0))}};});}
         }}/>
       {isMobile && <BottomNav view={view} onNav={(id)=>{if(id==='ai'){window.ffOpenAI();return;}setView(id);setPresetPlanId(null);setAutoOpenAdd(null);setPresetMealType(null);setStretchFilter(false);closeAll();setSidebarOpen(false);}}/>}
       {logModal&&<QuickLogModal data={data} setData={setData} onClose={()=>setLogModal(false)} notify={showToast}/>}
@@ -5218,6 +5222,11 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
 
         }
         return exObj;
+      }).map(ex => {
+        // Von der KI gesetzte Ziele (📈 Steigerung) haben Vorrang vor den Plan-Standardwerten
+        const t = user.aiTargets?.[String(ex.name || "").toLowerCase().trim()];
+        if (!t) return ex;
+        return { ...ex, ...(t.weight !== "" && t.weight != null ? { weight: String(t.weight) } : {}), ...(t.reps ? { reps: String(t.reps).match(/\d+/)?.[0] || ex.reps } : {}), ...(t.sets ? { sets: t.sets } : {}), aiTarget: t };
       });
       setExercises(exs);
       const initSets={};
@@ -5251,6 +5260,31 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
   };
 
   const fmtTimer=t=>{const m=Math.floor(t/60),s=t%60;return`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;};
+  // KI-Coach: Übung im laufenden Training ersetzen
+  useEffect(() => {
+    if (step !== 2) return;
+    window.ffSwapExercise = (from, to) => {
+      const key = String(from || "").toLowerCase().trim();
+      let idx = exercises.findIndex(e => String(e.name || "").toLowerCase().trim() === key);
+      if (idx < 0) idx = curEx;
+      if (!exercises[idx] || !to?.name) return false;
+      const lib = library.find(l => l.name?.toLowerCase() === to.name.toLowerCase());
+      const old = exercises[idx];
+      const ex = { ...old, name: to.name, libId: lib?.id, photo: lib?.thumbnail || null, description: lib?.description || to.note || "", note: to.note || old.note,
+        sets: to.sets || old.sets, reps: to.reps != null ? String(to.reps).match(/\d+/)?.[0] || "" : old.reps, weight: to.weight != null && to.weight !== "" ? String(to.weight) : "", swappedFrom: old.name };
+      setExercises(xs => xs.map((e, i) => i === idx ? ex : e));
+      setSets(prev => {
+        const n = JSON.parse(JSON.stringify(prev || {}));
+        const count = Math.max(parseInt(ex.sets) || 1, (n[idx] || []).length);
+        n[idx] = Array.from({ length: count }, () => ({ preset: true, done: false, ...(ex.trackReps !== false ? { reps: ex.reps || "" } : {}), ...(ex.trackWeight !== false ? { weight: ex.weight || "" } : {}) }));
+        return n;
+      });
+      setCurEx(idx);
+      return true;
+    };
+    return () => { delete window.ffSwapExercise; };
+  }, [step, exercises, curEx, library]);
+
   const updSet=(ei,si,k,v)=>setSets(s=>{
     const n = JSON.parse(JSON.stringify(s));
     if(!n[ei]) n[ei] = [];
@@ -5324,6 +5358,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
     }).filter(Boolean);
     
     if(parsed.length === 0) return notify("Keine Fortschritte zum Speichern!", "error");
+    if (user.aiTargets && setUser) { const used = parsed.map(p => String(p.name || "").toLowerCase().trim()); if (used.some(k => user.aiTargets[k])) setUser(u => { const t = { ...(u.aiTargets || {}) }; used.forEach(k => delete t[k]); return { ...u, aiTargets: t, updatedAt: Date.now() }; }); }
     
     // Config-Werte robust zu Zahlen machen: 0 ist ein gültiger Wert und darf
     // NICHT auf den Standard zurückfallen (deshalb kein "||" bei der Nutzung).
@@ -9126,7 +9161,7 @@ function buildTrainingAnalytics({ data, user, nutrition, health, library }) {
   return { heute: today, uebungen, wochen, muskelSaetzeLetzte28Tage: muskelSaetze, regelmaessigkeit, gewicht, ernaehrung, erholung };
 }
 
-function buildAIContext({ data, user, prs, nutrition, view, health, library }){
+function buildAIContext({ data, user, prs, nutrition, view, health, library, activeWorkout }){
   const today = todayStr();
   // Fertig berechnete Kennzahlen – kleine Modelle verzählen sich sonst in langen Listen
   const ws = data.workouts || [];
@@ -9137,6 +9172,14 @@ function buildAIContext({ data, user, prs, nutrition, view, health, library }){
     analyse: buildTrainingAnalytics({ data, user, nutrition, health, library }),
     stats: { trainingsGesamt: ws.length, letzte7Tage: ws.filter(w => w.date >= weekAgo).length, proMonat: byMonth, letztesTraining: [...ws].sort((a, b) => b.date.localeCompare(a.date))[0]?.date || null },
     view,
+    uhrzeit: new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
+    laufendesTraining: activeWorkout && activeWorkout.step === 2 ? {
+      plan: (data.plans||[]).find(p => String(p.id) === String(activeWorkout.planId))?.name,
+      aktuelleUebung: activeWorkout.exercises?.[activeWorkout.curEx]?.name,
+      uebungen: (activeWorkout.exercises||[]).map((e, i) => ({ name: e.name, saetze: e.sets, wdh: e.reps, gewicht: e.weight, erledigt: (activeWorkout.sets?.[i]||[]).filter(x => x.done).length })),
+    } : null,
+    bibliothek: (library||[]).filter(l => l?.name).slice(0, 200).map(l => l.muscles?.length ? l.name + " (" + l.muscles.join(", ") + ")" : l.name),
+    kiZiele: user.aiTargets || undefined,
     user: { name: user.firstName, weight: user.weight, height: user.height, goal: user.goal, age: user.age },
     plans: (data.plans||[]).map(p => ({ id: p.id, name: p.name, types: p.types, exercises: (p.exercises||[]).map(e => typeof e === "string" ? e : e.name) })),
     recentWorkouts: [...(data.workouts||[])].sort((a,b)=>b.date.localeCompare(a.date)).slice(0, 15).map(w => ({
@@ -9161,12 +9204,14 @@ function CoachText({ text }) {
   })}</>;
 }
 
-function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view, health, library, onAction, notify, isMobile }){
+function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view, health, library, activeWorkout, onAction, notify, isMobile }){
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [aiState, setAiState] = useState("unknown"); // unknown | ready | off
+  const [pendingTask, setPendingTask] = useState(null);
+  const [doneCards, setDoneCards] = useState({});
   const recRef = useRef(null);
   const endRef = useRef(null);
   const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -9183,10 +9228,11 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
     if (a.type === "navigate" || a.type === "start_workout") { onAction(a); onClose(); }
   });
 
-  const send = async (text, task = "chat") => {
+  const send = async (text, task) => {
+    task = task || pendingTask || "chat";
     const q = (text ?? input).trim();
     if (!q || busy) return;
-    setInput("");
+    setInput(""); setPendingTask(null);
     const next = [...msgs, { role: "user", content: q }];
     setMsgs(next);
     // 1) Einfache Sprachbefehle sofort lokal – funktioniert auch offline und ohne KI
@@ -9198,7 +9244,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
     try {
       const idt = await firebase.auth().currentUser.getIdToken();
       const r = await fetch("/api/ai", { signal: AbortSignal.timeout ? AbortSignal.timeout(70000) : undefined, method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + idt },
-        body: JSON.stringify({ task, messages: next.map(m => ({ role: m.role, content: m.content })), context: buildAIContext({ data, user, prs, nutrition, view, health, library }), preferModel: (()=>{try{return localStorage.getItem("ff_ai_model");}catch(e){return null;}})() }) });
+        body: JSON.stringify({ task, messages: next.map(m => ({ role: m.role, content: m.content })), context: buildAIContext({ data, user, prs, nutrition, view, health, library, activeWorkout }), preferModel: (()=>{try{return localStorage.getItem("ff_ai_model");}catch(e){return null;}})() }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 501 || r.status === 404) { setAiState("off"); setMsgs(m => [...m, { role: "assistant", content: "🔌 Die KI ist noch nicht verbunden. Sobald ein Modell eingerichtet ist, kann ich Pläne erstellen, Gerichte vorschlagen und Trainings analysieren. Sprachbefehle wie „öffne Verlauf“ oder „starte <Planname>“ funktionieren schon jetzt." }]); }
       else if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
@@ -9227,9 +9273,16 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
     onAction({ type: "save_plan", plan: p });
     notify(`Plan „${p.name}“ gespeichert ✅`);
   };
+  // Einmal-Bestätigung pro Karte (Nachricht i, Aktion j)
+  const confirmCard = (key, a, msg) => { onAction(a); setDoneCards(d => ({ ...d, [key]: true })); notify(msg); };
+  const inWorkout = activeWorkout && activeWorkout.step === 2;
 
   if (!open) return null;
   const quick = [
+    ...(inWorkout ? [["🔁 Aktuelle Übung tauschen", `Tausche meine aktuelle Übung „${activeWorkout.exercises?.[activeWorkout.curEx]?.name || ""}“ gegen eine Alternative. Grund: `, "swap", true]] : []),
+    ["📈 Steigerung fürs nächste Training", "Welche Gewichte und Wiederholungen soll ich beim nächsten Training nehmen? Setz mir konkrete Ziele.", "progress"],
+    ["🍳 Mahlzeit per Text eintragen", "Ich habe gegessen: ", "food", true],
+    ["🗓️ Wochenrückblick", "Mach mir einen Wochenrückblick der letzten 7 Tage mit einem Ziel für nächste Woche.", "week"],
     ["🏋️ Plan erstellen", "Erstelle mir einen Trainingsplan passend zu meinen bisherigen Trainings.", "plan"],
     ["🍽️ Gericht vorschlagen", "Schlag mir ein Gericht passend zu meinen heutigen Makros vor.", "meal"],
     ["📊 Komplette Trainingsanalyse", "Mach eine komplette Analyse meines Trainings: Fortschritt, Regelmäßigkeit, Balance, Erholung und nächste Schritte.", "analyze"],
@@ -9245,6 +9298,27 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
           <div style={{ fontWeight: 800, color: "#F0EDE8", marginBottom: 6 }}>📋 {a.plan.name}</div>
           {(a.plan.exercises||[]).map((e, k) => <div key={k} style={{ fontSize: 12, color: "#bbb", padding: "2px 0" }}>• {e.name}{e.sets ? ` – ${e.sets}×${e.reps||""}` : ""}</div>)}
           <button style={{ ...s.primaryBtn, marginTop: 10, width: "100%", justifyContent: "center" }} onClick={() => acceptPlan(a.plan)}>✅ Plan übernehmen</button>
+        </div>
+      ) : a.type === "set_targets" && (a.targets||[]).length ? (
+        <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(255,209,102,0.3)", background: "rgba(255,209,102,0.07)" }}>
+          <div style={{ fontWeight: 800, color: "#F0EDE8", marginBottom: 6 }}>🎯 Ziele fürs nächste Training</div>
+          {a.targets.map((t, k) => <div key={k} style={{ fontSize: 12, color: "#bbb", padding: "2px 0" }}>• <b style={{ color: "#F0EDE8" }}>{t.name}</b>: {[t.sets && `${t.sets}×`, t.reps, (t.weight || t.weight === 0) && `@ ${t.weight} kg`].filter(Boolean).join(" ")}{t.note ? <span style={{ color: "#888" }}> – {t.note}</span> : null}</div>)}
+          <button disabled={doneCards[i+"-"+j]} style={{ ...s.primaryBtn, marginTop: 10, width: "100%", justifyContent: "center", opacity: doneCards[i+"-"+j] ? 0.5 : 1 }} onClick={() => confirmCard(i+"-"+j, a, "🎯 Ziele gespeichert – werden beim nächsten Start vorausgefüllt")}>{doneCards[i+"-"+j] ? "✓ Übernommen" : "✅ Ziele übernehmen"}</button>
+        </div>
+      ) : a.type === "swap_exercise" && a.to?.name ? (
+        <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(76,201,240,0.3)", background: "rgba(76,201,240,0.07)" }}>
+          <div style={{ fontWeight: 800, color: "#F0EDE8" }}>🔁 {a.from || "Übung"} → {a.to.name}</div>
+          <div style={{ fontSize: 12, color: "#4CC9F0", marginTop: 4 }}>{[a.to.sets && `${a.to.sets} Sätze`, a.to.reps && `${a.to.reps} Wdh.`, a.to.weight && `${a.to.weight} kg`].filter(Boolean).join(" · ")}</div>
+          {a.to.note && <div style={{ fontSize: 12, color: "#999", marginTop: 3 }}>{a.to.note}</div>}
+          {inWorkout
+            ? <button disabled={doneCards[i+"-"+j]} style={{ ...s.primaryBtn, marginTop: 10, width: "100%", justifyContent: "center", opacity: doneCards[i+"-"+j] ? 0.5 : 1 }} onClick={() => confirmCard(i+"-"+j, a, `🔁 ${a.to.name} eingewechselt`)}>{doneCards[i+"-"+j] ? "✓ Getauscht" : "🔁 Im Training tauschen"}</button>
+            : <div style={{ fontSize: 11, color: "#777", marginTop: 8 }}>Kein Training aktiv – tauschen geht während eines laufenden Trainings.</div>}
+        </div>
+      ) : a.type === "log_meal" && a.meal ? (
+        <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(0,217,192,0.3)", background: "rgba(0,217,192,0.07)" }}>
+          <div style={{ fontWeight: 800, color: "#F0EDE8" }}>🍳 {a.meal.name}</div>
+          <div style={{ fontSize: 12, color: "#00D9C0", margin: "4px 0 0" }}>{[a.meal.mealType, `${Math.round(+a.meal.kcal||0)} kcal`, `${+a.meal.protein||0} g Protein`, `${+a.meal.carbs||0} g KH`, `${+a.meal.fat||0} g Fett`].filter(Boolean).join(" · ")}</div>
+          <button disabled={doneCards[i+"-"+j]} style={{ ...s.primaryBtn, marginTop: 10, width: "100%", justifyContent: "center", opacity: doneCards[i+"-"+j] ? 0.5 : 1 }} onClick={() => confirmCard(i+"-"+j, a, `🍳 ${a.meal.name} eingetragen`)}>{doneCards[i+"-"+j] ? "✓ Eingetragen" : "➕ Ins Tagebuch eintragen"}</button>
         </div>
       ) : a.type === "suggest_meal" && a.meal ? (
         <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(0,217,192,0.3)", background: "rgba(0,217,192,0.07)" }}>
@@ -9267,7 +9341,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
         <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           {!msgs.length && <>
             <div style={{ color: "#888", fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>Zum Beispiel: <i>„Starte Push Pull Legs“</i>, <i>„Öffne Ernährung“</i>, <i>„Wie war mein Training diese Woche?“</i></div>
-            {quick.map(([l, p, t]) => <button key={l} onClick={() => send(p, t)} style={{ ...s.secBtn, justifyContent: "flex-start", textAlign: "left" }}>{l}</button>)}
+            {quick.map(([l, p, t, edit]) => <button key={l} onClick={() => edit ? (setInput(p), setPendingTask(t)) : send(p, t)} style={{ ...s.secBtn, justifyContent: "flex-start", textAlign: "left" }}>{l}</button>)}
           </>}
           {msgs.map(bubble)}
           {busy && <div style={{ alignSelf: "flex-start", color: "#888", fontSize: 13 }}>✨ denkt nach…</div>}

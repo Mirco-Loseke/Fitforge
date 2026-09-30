@@ -11,7 +11,7 @@
 // Ohne AI_API_KEY antwortet der Endpunkt mit 501 → die App nutzt dann ihre lokale Befehlserkennung.
 //
 // POST /api/ai  Authorization: Bearer <Firebase-ID-Token>
-// Body: { messages:[{role:"user"|"assistant", content}], context:{...}, task?: "chat"|"plan"|"meal"|"analyze" }
+// Body: { messages:[{role:"user"|"assistant", content}], context:{...}, task?: "chat"|"plan"|"meal"|"analyze"|"progress"|"swap"|"food"|"week"|"progress"|"swap"|"food"|"week" }
 // Antwort: { reply: string, actions: [ {type, ...} ] }
 import Anthropic from "@anthropic-ai/sdk";
 import { cors } from "./_lib.js";
@@ -97,6 +97,9 @@ Mögliche actions (nur wenn passend, sonst leeres Array):
 - {"type":"start_workout","planId":<id aus context.plans>}   – startet das Training sofort
 - {"type":"create_plan","plan":{"name":"…","color":"#FF6B35","types":["…"],"exercises":[{"name":"…","sets":3,"reps":"8-10","note":"…"}]}}   – Nutzer bestätigt vor dem Speichern
 - {"type":"suggest_meal","meal":{"name":"…","kcal":0,"protein":0,"carbs":0,"fat":0,"ingredients":["…"],"steps":["…"]}}
+- {"type":"set_targets","targets":[{"name":"<exakter Übungsname>","weight":82.5,"reps":"8","sets":3,"note":"kurze Begründung"}]}   – Ziele fürs nächste Training (Progression); werden beim nächsten Start vorausgefüllt, Nutzer bestätigt
+- {"type":"swap_exercise","from":"<Name aus context.laufendesTraining.uebungen>","to":{"name":"…","sets":3,"reps":"8-10","weight":"","note":"…"}}   – tauscht eine Übung im laufenden Training, Nutzer bestätigt
+- {"type":"log_meal","meal":{"name":"…","kcal":0,"protein":0,"carbs":0,"fat":0,"mealType":"Frühstück|Mittagessen|Abendessen|Snack"}}   – trägt Gegessenes ins heutige Ernährungstagebuch ein, Nutzer bestätigt
 Regeln: Nutze nur planIds aus dem Kontext. Erfinde keine Trainingsdaten – analysiere nur, was im Kontext steht.
 Für Anzahlen, Summen und Rekorde nutze IMMER die fertigen Werte aus context.stats (nicht selbst zählen).
 navigate/start_workout NUR, wenn der Nutzer ausdrücklich darum bittet (z. B. "öffne…", "zeig mir…", "starte…") – bei Fragen keine Aktion.
@@ -106,6 +109,17 @@ Bei Analysen/Auswertungen gehört die KOMPLETTE Auswertung mit allen Abschnitten
 const TASK_HINTS = {
   plan: "Aufgabe: Erstelle einen passenden Trainingsplan als create_plan-Aktion.",
   meal: "Aufgabe: Schlage ein Gericht passend zu Ziel und heutigen Makros vor (suggest_meal).",
+  progress: `Aufgabe: Progression fürs nächste Training. Nutze context.analyse.uebungen (e1RM-Verlauf), recentWorkouts und prs.
+Pro Kraftübung des gewählten bzw. zuletzt trainierten Plans ein konkretes Ziel (Gewicht in 2,5-kg- bzw. bei Kurzhanteln 1–2-kg-Schritten, Wiederholungen, Sätze).
+Doppelte Progression: erst Wiederholungen bis zum oberen Ende, dann Gewicht erhöhen und Wdh. zurücksetzen. Bei Stagnation/Rückschritt halten oder leicht reduzieren.
+Antworte mit set_targets (exakte Übungsnamen aus den Trainings) und in "reply" kurz pro Übung "Übung: alt → neu (Grund)".`,
+  swap: `Aufgabe: Übung im laufenden Training tauschen (context.laufendesTraining). Wähle eine Alternative mit gleicher Zielmuskulatur, bevorzugt aus context.bibliothek,
+berücksichtige den genannten Grund (Gerät besetzt, Schmerzen, kein Equipment). Antworte mit swap_exercise und in "reply" 1–2 Sätze warum. Bei Schmerzen: schonende Alternative und Hinweis, nicht in den Schmerz hinein zu trainieren.
+Ist kein Training aktiv, sag das kurz und schlage nur Alternativen vor (ohne Aktion).`,
+  food: `Aufgabe: Der Nutzer beschreibt, was er gegessen hat. Schätze realistische Nährwerte (übliche Portionsgrößen, deutsche Lebensmittel) und antworte mit EINER log_meal-Aktion für alles zusammen
+(mealType passend zur Uhrzeit context.uhrzeit, falls nicht genannt). In "reply" kurz die Aufschlüsselung pro Lebensmittel mit kcal/Protein.`,
+  week: `Aufgabe: Wochenrückblick der letzten 7 Tage (context.analyse, context.stats, recentWorkouts). Überschriften: "## Diese Woche", "## Highlights", "## Ernährung & Gewicht", "## Ziel nächste Woche".
+Stichpunkte mit "• ", Zahlen **fett**, Vergleich zur Vorwoche wo möglich. Kurz und motivierend, genau ein messbares Ziel für nächste Woche. Fehlende Daten weglassen.`,
   analyze: `Aufgabe: Gründliche Trainingsanalyse wie ein erfahrener Coach. Grundlage ist context.analyse (alles bereits berechnet – nicht selbst nachzählen).
 Gliedere mit diesen Überschriften – schreibe NUR das Wort nach "## ", ohne die Erklärung in Klammern: "## Kurzfazit", "## Fortschritt", "## Umfang & Regelmäßigkeit", "## Balance", "## Erholung & Ernährung", "## Nächste Schritte".
 Darunter Stichpunkte mit "• ", wichtige Zahlen **fett**. Inhalt der Abschnitte:
