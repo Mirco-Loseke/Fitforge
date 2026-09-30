@@ -177,7 +177,7 @@ export default async function handler(req, res) {
     if (e instanceof Anthropic.AuthenticationError) return res.status(500).json({ error: "KI-Schlüssel ungültig" });
     if (e instanceof Anthropic.APIError) return res.status(502).json({ error: `KI-Fehler ${e.status}` });
     if (e.status === 429) return res.status(429).json({ error: "KI-Limit erreicht – kurz warten und nochmal versuchen" });
-    if (e.status === 401 || e.status === 403) return res.status(500).json({ error: "KI-Schlüssel ungültig oder ohne Berechtigung" });
+    if (e.status === 401 || e.status === 403) return res.status(500).json({ error: "KI-Schlüssel ungültig oder ohne Berechtigung", detail: String(e.message || "").slice(0, 400) });
     return res.status(502).json({ error: "KI nicht erreichbar: " + e.message });
   }
 }
