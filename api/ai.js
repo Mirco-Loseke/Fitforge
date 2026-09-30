@@ -67,15 +67,17 @@ async function geminiModelList() {
 }
 // Fehler, bei denen ein anderes Modell helfen kann (kein Freikontingent, nicht freigeschaltet, unbekannt)
 const modelUnusable = (e) => [403, 404, 500, 503, 504].includes(e.status) || /high demand|overloaded|unavailable/i.test(e.message || "") || (e.status === 429 && /limit:\s*0|free.?tier|not.*available|quota.*model/i.test(e.message || "")) || (e.status === 400 && /model/i.test(e.message || ""));
-async function callGemini({ system, messages }) {
-  const models = await geminiModelList();
+async function callGemini({ system, messages, prefer }) {
+  let models = await geminiModelList();
+  // Von der App gemerktes, zuletzt funktionierendes Modell zuerst (überlebt Neustarts der Server-Instanz)
+  if (prefer && /^gemini-[\w.-]+$/.test(prefer) && !process.env.AI_MODEL) models = [prefer, ...models.filter(m => m !== prefer)];
   const deadline = Date.now() + 55000; // Gesamtbudget, damit die App nie endlos wartet
   let lastErr;
   for (const model of models) {
     const left = deadline - Date.now();
     if (left < 5000) break;
     try {
-      const out = await callOpenAICompatible({ system, messages, base: GEMINI_BASE, model, timeoutMs: Math.min(25000, left) });
+      const out = await callOpenAICompatible({ system, messages, base: GEMINI_BASE, model, timeoutMs: Math.min(40000, left) });
       if (!process.env.AI_MODEL) geminiWorking = model;
       return { ...out, model };
     } catch (e) {
@@ -84,7 +86,8 @@ async function callGemini({ system, messages }) {
       if (geminiWorking === model) geminiWorking = null;
     }
   }
-  throw Object.assign(new Error(`Kein Gemini-Modell mit diesem Schlüssel nutzbar (probiert: ${models.join(", ")}). Letzter Fehler: ${lastErr?.message || "?"}`), { status: lastErr?.status || 502 });
+  console.warn(`Gemini: kein Modell nutzbar (probiert: ${models.join(", ")}). Letzter Fehler: ${lastErr?.message || "?"}`);
+  throw Object.assign(new Error("Gemini ist gerade überlastet. Bitte in einer Minute nochmal versuchen."), { status: 503, friendly: true });
 }
 
 const ACTIONS_DOC = `Du kannst die App steuern. Antworte IMMER als reines JSON-Objekt (kein Markdown drumherum):
@@ -213,7 +216,7 @@ export default async function handler(req, res) {
     const system = systemPrompt(body.task);
     const provider = providerName();
     const out = provider === "anthropic" ? await callAnthropic({ system, messages })
-      : provider === "gemini" ? await callGemini({ system, messages })
+      : provider === "gemini" ? await callGemini({ system, messages, prefer: typeof body.preferModel === "string" ? body.preferModel : null })
       : await callOpenAICompatible({ system, messages });
     return res.status(200).json(out);
   } catch (e) {
@@ -222,6 +225,7 @@ export default async function handler(req, res) {
     if (e instanceof Anthropic.APIError) return res.status(502).json({ error: `KI-Fehler ${e.status}` });
     if (e.status === 429) return res.status(429).json({ error: "KI-Limit erreicht – kurz warten und nochmal versuchen" });
     if (e.status === 401 || e.status === 403) return res.status(500).json({ error: "KI-Schlüssel ungültig oder ohne Berechtigung", detail: String(e.message || "").replace(/(key[^:]*:\s*)\S+/gi, "$1[verborgen]").replace(/\b(AIza|AQ\.|sk-)[\w.*-]+/g, "[verborgen]").slice(0, 400) });
+    if (e.friendly) return res.status(e.status || 503).json({ error: e.message });
     return res.status(502).json({ error: "KI nicht erreichbar: " + e.message });
   }
 }
