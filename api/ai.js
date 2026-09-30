@@ -37,25 +37,47 @@ const providerName = () => {
   return "openai-compatible";
 };
 
-// Gemini: bestes verfügbares Flash-Modell automatisch wählen (einmal pro Server-Instanz)
+// Gemini: Modelle der Reihe nach probieren, das erste funktionierende merken.
+// Nicht jedes Modell ist mit jedem Schlüssel/Tarif nutzbar (z. B. 2.5-Flash nicht im kostenlosen Plan),
+// deshalb wird bei "kein Kontingent / nicht erlaubt / unbekannt" automatisch das nächste versucht.
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
-let geminiModelCache = null;
-const pickGeminiModel = (ids) => {
-  const clean = ids.map(id => String(id || "").replace(/^models\//, ""));
-  const flash = clean.filter(id => /^gemini-\d+(\.\d+)?-flash(-latest)?$/.test(id));
+let geminiWorking = null;
+const geminiCandidates = (ids) => {
+  const clean = [...new Set(ids.map(id => String(id || "").replace(/^models\//, "")))];
+  const ok = clean.filter(id => /^gemini-/.test(id) && /flash/.test(id) && !/(image|tts|audio|live|thinking|exp|preview|embedding|native)/.test(id));
   const ver = id => parseFloat((id.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]);
-  flash.sort((a, b) => ver(b) - ver(a) || (a.endsWith("latest") ? -1 : 1));
-  return flash[0] || (clean.includes("gemini-flash-latest") ? "gemini-flash-latest" : null);
+  // neueste Version zuerst; innerhalb einer Version: normales Flash vor Lite, "latest"-Aliase zuerst
+  ok.sort((a, b) => ver(b) - ver(a) || (/lite/.test(a) - /lite/.test(b)) || (b.endsWith("latest") - a.endsWith("latest")));
+  for (const alias of ["gemini-flash-latest", "gemini-flash-lite-latest"]) if (!ok.includes(alias)) ok.push(alias);
+  return ok;
 };
-async function geminiModel() {
-  if (process.env.AI_MODEL) return process.env.AI_MODEL;
-  if (geminiModelCache) return geminiModelCache;
+const pickGeminiModel = (ids) => geminiCandidates(ids)[0] || null;
+async function geminiModelList() {
+  if (process.env.AI_MODEL) return [process.env.AI_MODEL];
+  if (geminiWorking) return [geminiWorking];
   try {
     const r = await fetch(`${GEMINI_BASE}/models`, { headers: { Authorization: `Bearer ${process.env.AI_API_KEY}` } });
     const j = await r.json();
-    geminiModelCache = pickGeminiModel((j.data || []).map(m => m.id)) || "gemini-flash-latest";
-  } catch { geminiModelCache = "gemini-flash-latest"; }
-  return geminiModelCache;
+    return geminiCandidates((j.data || []).map(m => m.id)).slice(0, 8);
+  } catch { return ["gemini-flash-latest", "gemini-flash-lite-latest"]; }
+}
+// Fehler, bei denen ein anderes Modell helfen kann (kein Freikontingent, nicht freigeschaltet, unbekannt)
+const modelUnusable = (e) => [403, 404].includes(e.status) || (e.status === 429 && /limit:\s*0|free.?tier|not.*available|quota.*model/i.test(e.message || "")) || (e.status === 400 && /model/i.test(e.message || ""));
+async function callGemini({ system, messages }) {
+  const models = await geminiModelList();
+  let lastErr;
+  for (const model of models) {
+    try {
+      const out = await callOpenAICompatible({ system, messages, base: GEMINI_BASE, model });
+      if (!process.env.AI_MODEL) geminiWorking = model;
+      return { ...out, model };
+    } catch (e) {
+      lastErr = e;
+      if (!modelUnusable(e)) throw e;   // z. B. echtes Rate-Limit → nicht weiterprobieren
+      if (geminiWorking === model) geminiWorking = null;
+    }
+  }
+  throw Object.assign(new Error(`Kein Gemini-Modell mit diesem Schlüssel nutzbar (probiert: ${models.join(", ")}). Letzter Fehler: ${lastErr?.message || "?"}`), { status: lastErr?.status || 502 });
 }
 
 const ACTIONS_DOC = `Du kannst die App steuern. Antworte IMMER als reines JSON-Objekt (kein Markdown drumherum):
@@ -147,7 +169,7 @@ export default async function handler(req, res) {
     const system = systemPrompt(body.task);
     const provider = providerName();
     const out = provider === "anthropic" ? await callAnthropic({ system, messages })
-      : provider === "gemini" ? await callOpenAICompatible({ system, messages, base: GEMINI_BASE, model: await geminiModel() })
+      : provider === "gemini" ? await callGemini({ system, messages })
       : await callOpenAICompatible({ system, messages });
     return res.status(200).json(out);
   } catch (e) {
@@ -160,4 +182,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const _test = { parseModelJson, providerName, pickGeminiModel, verifyUser };
+export const _test = { parseModelJson, providerName, pickGeminiModel, geminiCandidates, modelUnusable, verifyUser };
