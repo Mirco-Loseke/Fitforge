@@ -9230,6 +9230,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
     im.src = url;
   };
   const [doneCards, setDoneCards] = useState({});
+  const [showQuick, setShowQuick] = useState(false);
   const recRef = useRef(null);
   const endRef = useRef(null);
   const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -9369,7 +9370,10 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
       <div className="dropIn" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, height: isMobile ? "88vh" : "78vh", background: "linear-gradient(170deg,#17171E,#0D0D0F)", border: "1px solid rgba(255,255,255,0.08)", borderBottom: "none", borderRadius: "24px 24px 0 0", display: "flex", flexDirection: "column", paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <div><div style={{ fontWeight: 800, fontSize: 16, color: "#F0EDE8" }}>✨ FitForge Coach</div><div style={{ fontSize: 11, color: aiState === "off" ? "#FFD166" : "#666" }}>{aiState === "off" ? "KI noch nicht verbunden · Sprachbefehle aktiv" : "Frag mich oder sag, was ich tun soll"}</div></div>
-          <button onClick={onClose} aria-label="Schließen" style={{ ...s.iconCircle, border: "none", background: "rgba(255,255,255,0.06)", color: "#aaa" }}>{IC.x}</button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {msgs.length > 0 && <button onClick={() => { setShowQuick(v => !v); setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 50); }} aria-label="Vorschläge" style={{ ...s.secBtn, padding: "7px 12px", fontSize: 12, borderColor: "rgba(167,139,250,0.45)", color: "#A78BFA", background: showQuick ? "rgba(167,139,250,0.18)" : "rgba(167,139,250,0.08)" }}>✨ Vorschläge</button>}
+            <button onClick={onClose} aria-label="Schließen" style={{ ...s.iconCircle, border: "none", background: "rgba(255,255,255,0.06)", color: "#aaa" }}>{IC.x}</button>
+          </div>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           {!msgs.length && <>
@@ -9377,6 +9381,10 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
             {quick.map(([l, p, t, edit]) => <button key={l} onClick={() => edit === "photo" ? fileRef.current?.click() : edit ? (setInput(p), setPendingTask(t)) : send(p, t)} style={{ ...s.secBtn, justifyContent: "flex-start", textAlign: "left" }}>{l}</button>)}
           </>}
           {msgs.map(bubble)}
+          {msgs.length > 0 && showQuick && <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, borderRadius: 14, background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.2)" }}>
+            <div style={{ fontSize: 11, color: "#A78BFA", fontWeight: 700 }}>Was soll ich für dich tun?</div>
+            {quick.map(([l, p, t, edit]) => <button key={l} onClick={() => { setShowQuick(false); edit === "photo" ? fileRef.current?.click() : edit ? (setInput(p), setPendingTask(t)) : send(p, t); }} style={{ ...s.secBtn, justifyContent: "flex-start", textAlign: "left" }}>{l}</button>)}
+          </div>}
           {busy && <div style={{ alignSelf: "flex-start", color: "#888", fontSize: 13 }}>✨ denkt nach…</div>}
           <div ref={endRef} />
         </div>
