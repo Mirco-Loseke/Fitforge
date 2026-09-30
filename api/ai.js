@@ -11,7 +11,8 @@
 // Ohne AI_API_KEY antwortet der Endpunkt mit 501 → die App nutzt dann ihre lokale Befehlserkennung.
 //
 // POST /api/ai  Authorization: Bearer <Firebase-ID-Token>
-// Body: { messages:[{role:"user"|"assistant", content}], context:{...}, task?: "chat"|"plan"|"meal"|"analyze"|"progress"|"swap"|"food"|"week"|"progress"|"swap"|"food"|"week" }
+// Body: { messages:[{role:"user"|"assistant", content}], context:{...}, task?: "chat"|"plan"|"meal"|"analyze"|"progress"|"swap"|"food"|"week"|"photo"|"mealplan"
+// Optional: image: "data:image/jpeg;base64,…" – wird an die letzte Nutzer-Nachricht angehängt (Essensfoto)|"progress"|"swap"|"food"|"week" }
 // Antwort: { reply: string, actions: [ {type, ...} ] }
 import Anthropic from "@anthropic-ai/sdk";
 import { cors } from "./_lib.js";
@@ -99,6 +100,7 @@ Mögliche actions (nur wenn passend, sonst leeres Array):
 - {"type":"suggest_meal","meal":{"name":"…","kcal":0,"protein":0,"carbs":0,"fat":0,"ingredients":["…"],"steps":["…"]}}
 - {"type":"set_targets","targets":[{"name":"<exakter Übungsname>","weight":82.5,"reps":"8","sets":3,"note":"kurze Begründung"}]}   – Ziele fürs nächste Training (Progression); werden beim nächsten Start vorausgefüllt, Nutzer bestätigt
 - {"type":"swap_exercise","from":"<Name aus context.laufendesTraining.uebungen>","to":{"name":"…","sets":3,"reps":"8-10","weight":"","note":"…"}}   – tauscht eine Übung im laufenden Training, Nutzer bestätigt
+- {"type":"meal_plan","plan":{"days":[{"day":"Montag","meals":[{"mealType":"Frühstück","name":"…","kcal":0,"protein":0}]}],"shopping":[{"name":"Haferflocken","amount":"500 g"}]}}   – Essensplan mit Einkaufsliste, Nutzer bestätigt die Liste
 - {"type":"log_meal","meal":{"name":"…","kcal":0,"protein":0,"carbs":0,"fat":0,"mealType":"Frühstück|Mittagessen|Abendessen|Snack"}}   – trägt Gegessenes ins heutige Ernährungstagebuch ein, Nutzer bestätigt
 Regeln: Nutze nur planIds aus dem Kontext. Erfinde keine Trainingsdaten – analysiere nur, was im Kontext steht.
 Für Anzahlen, Summen und Rekorde nutze IMMER die fertigen Werte aus context.stats (nicht selbst zählen).
@@ -120,6 +122,13 @@ Ist kein Training aktiv, sag das kurz und schlage nur Alternativen vor (ohne Akt
 (mealType passend zur Uhrzeit context.uhrzeit, falls nicht genannt). In "reply" kurz die Aufschlüsselung pro Lebensmittel mit kcal/Protein.`,
   week: `Aufgabe: Wochenrückblick der letzten 7 Tage (context.analyse, context.stats, recentWorkouts). Überschriften: "## Diese Woche", "## Highlights", "## Ernährung & Gewicht", "## Ziel nächste Woche".
 Stichpunkte mit "• ", Zahlen **fett**, Vergleich zur Vorwoche wo möglich. Kurz und motivierend, genau ein messbares Ziel für nächste Woche. Fehlende Daten weglassen.`,
+  photo: `Aufgabe: Auf dem Foto ist eine Mahlzeit (oder eine Verpackung/Nährwerttabelle). Erkenne die Lebensmittel, schätze die Portionsgrößen anhand von Teller/Besteck
+und die Nährwerte realistisch. Antworte mit EINER log_meal-Aktion (mealType passend zu context.uhrzeit, falls nicht genannt). In "reply" kurz: erkannte Bestandteile mit geschätzter Menge und kcal,
+und ehrlich, wie sicher die Schätzung ist. Ist kein Essen zu sehen, sag das und gib keine Aktion zurück.`,
+  mealplan: `Aufgabe: Essensplan (Standard: 7 Tage ab morgen, sonst wie gewünscht) passend zu context.user.goal, Gewicht und dem Protein-/kcal-Ziel aus context.analyse.ernaehrung.
+Alltagstauglich, günstig, deutsche Supermarkt-Zutaten, Reste clever wiederverwenden (z. B. doppelt kochen), pro Tag Frühstück, Mittagessen, Abendessen und ggf. Snack mit kcal und Protein.
+Antworte mit EINER meal_plan-Aktion. "shopping" enthält die zusammengefasste Einkaufsliste für den ganzen Zeitraum mit Mengen ("500 g", "6 Stück", "1 l").
+In "reply" nur 2–3 Sätze: Tagesschnitt kcal/Protein und die Idee des Plans (die Details stehen in der Aktion).`,
   analyze: `Aufgabe: Gründliche Trainingsanalyse wie ein erfahrener Coach. Grundlage ist context.analyse (alles bereits berechnet – nicht selbst nachzählen).
 Gliedere mit diesen Überschriften – schreibe NUR das Wort nach "## ", ohne die Erklärung in Klammern: "## Kurzfazit", "## Fortschritt", "## Umfang & Regelmäßigkeit", "## Balance", "## Erholung & Ernährung", "## Nächste Schritte".
 Darunter Stichpunkte mit "• ", wichtige Zahlen **fett**. Inhalt der Abschnitte:
@@ -171,7 +180,11 @@ async function callAnthropic({ system, messages }) {
     model,
     max_tokens: 16000,
     system,
-    messages,
+    messages: messages.map(m => Array.isArray(m.content) ? { ...m, content: m.content.map(c => {
+      if (c.type !== "image_url") return c;
+      const [, media_type, data] = String(c.image_url?.url || "").match(/^data:([^;]+);base64,(.*)$/) || [];
+      return { type: "image", source: { type: "base64", media_type, data } };
+    }) } : m),
     output_config: { effort: process.env.AI_EFFORT || "medium" },
   };
   // Server-seitige Fallbacks bei Ablehnungen (Opus 5 / Fable 5.1)
@@ -227,6 +240,12 @@ export default async function handler(req, res) {
   // Kontext (Pläne, letzte Trainings, Ernährung …) als erste Nutzer-Nachricht voranstellen
   const ctx = JSON.stringify(body.context || {}).slice(0, 60000);
   const messages = [{ role: "user", content: `App-Kontext (JSON):\n${ctx}` }, { role: "assistant", content: '{"reply":"Kontext erhalten.","actions":[]}' }, ...history];
+  // Essensfoto an die aktuelle Frage hängen (OpenAI-/Gemini-Format; Anthropic wird in callAnthropic umgewandelt)
+  if (typeof body.image === "string") {
+    if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(body.image) || body.image.length > 3_500_000) return res.status(400).json({ error: "Bild ungültig oder zu groß" });
+    const last = messages[messages.length - 1];
+    messages[messages.length - 1] = { role: "user", content: [{ type: "text", text: last.content }, { type: "image_url", image_url: { url: body.image } }] };
+  }
 
   try {
     const system = systemPrompt(body.task);

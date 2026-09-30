@@ -3638,6 +3638,7 @@ function FitForge(){
           else if(a.type==='start_workout'){const p=(data.plans||[]).find(x=>String(x.id)===String(a.planId));if(!p)return showToast('Plan nicht gefunden','error');setActiveWorkout(null);setPresetPlanId(p.id);setView('log');closeAll();}
           else if(a.type==='save_plan'&&a.plan){setData(d=>({...d,plans:[...(d.plans||[]),a.plan]}));}
           else if(a.type==='set_targets'){const t={};(a.targets||[]).forEach(x=>{if(x?.name)t[x.name.toLowerCase().trim()]={name:x.name,weight:x.weight??"",reps:x.reps??"",sets:x.sets||null,note:x.note||"",date:todayStr()};});setUser(u=>({...u,aiTargets:{...(u.aiTargets||{}),...t},updatedAt:Date.now()}));}
+          else if(a.type==='shopping_add'&&(a.items||[]).length){setUser(u=>({...u,shoppingList:addRecipeToShopping(u.shoppingList||[],{name:'KI-Essensplan',ingredients:a.items.filter(x=>x?.name).map(x=>({name:String(x.name),amount:String(x.amount||'')}))},1),updatedAt:Date.now()}));}
           else if(a.type==='swap_exercise'){if(!window.ffSwapExercise||!window.ffSwapExercise(a.from,a.to))showToast('Kein laufendes Training gefunden','error');}
           else if(a.type==='log_meal'&&a.meal){const m=a.meal,day=todayStr(),rd=v=>Math.round((+v||0)*10)/10;const e={id:Date.now(),name:m.name||'Mahlzeit',calories:Math.round(+m.kcal||+m.calories||0),protein:rd(m.protein),carbs:rd(m.carbs),fat:rd(m.fat),mealType:CHECKIN_MEAL_TYPES.includes(m.mealType)?m.mealType:'Snack',aiEstimated:true};
             setNutrition(n=>{const d=n[day]||{calories:0,protein:0,carbs:0,fat:0,meals:[]};const meals=[...(d.meals||[]),e];return{...n,[day]:{...d,meals,calories:Math.round(meals.reduce((x,y)=>x+(+y.calories||0),0)),protein:rd(meals.reduce((x,y)=>x+(+y.protein||0),0)),carbs:rd(meals.reduce((x,y)=>x+(+y.carbs||0),0)),fat:rd(meals.reduce((x,y)=>x+(+y.fat||0),0))}};});}
@@ -9211,6 +9212,23 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
   const [listening, setListening] = useState(false);
   const [aiState, setAiState] = useState("unknown"); // unknown | ready | off
   const [pendingTask, setPendingTask] = useState(null);
+  const [photo, setPhoto] = useState(null); // verkleinertes Essensfoto als data-URL
+  const fileRef = useRef(null);
+  // Foto auf max. 1024 px verkleinern → kleiner Upload, schnellere Antwort
+  const pickPhoto = (file) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      const k = Math.min(1, 1024 / Math.max(im.width, im.height));
+      const c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      setPhoto(c.toDataURL("image/jpeg", 0.8));
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); notify("Foto konnte nicht geladen werden", "error"); };
+    im.src = url;
+  };
   const [doneCards, setDoneCards] = useState({});
   const recRef = useRef(null);
   const endRef = useRef(null);
@@ -9229,11 +9247,12 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
   });
 
   const send = async (text, task) => {
-    task = task || pendingTask || "chat";
-    const q = (text ?? input).trim();
+    const img = photo;
+    task = task || pendingTask || (img ? "photo" : "chat");
+    const q = ((text ?? input).trim()) || (img ? "Was habe ich hier gegessen? Bitte eintragen." : "");
     if (!q || busy) return;
-    setInput(""); setPendingTask(null);
-    const next = [...msgs, { role: "user", content: q }];
+    setInput(""); setPendingTask(null); setPhoto(null);
+    const next = [...msgs, { role: "user", content: q, image: img }];
     setMsgs(next);
     // 1) Einfache Sprachbefehle sofort lokal – funktioniert auch offline und ohne KI
     const loc = task === "chat" ? localIntent(q, data.plans) : null;
@@ -9244,7 +9263,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
     try {
       const idt = await firebase.auth().currentUser.getIdToken();
       const r = await fetch("/api/ai", { signal: AbortSignal.timeout ? AbortSignal.timeout(70000) : undefined, method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + idt },
-        body: JSON.stringify({ task, messages: next.map(m => ({ role: m.role, content: m.content })), context: buildAIContext({ data, user, prs, nutrition, view, health, library, activeWorkout }), preferModel: (()=>{try{return localStorage.getItem("ff_ai_model");}catch(e){return null;}})() }) });
+        body: JSON.stringify({ task, ...(img ? { image: img } : {}), messages: next.map(m => ({ role: m.role, content: m.content })), context: buildAIContext({ data, user, prs, nutrition, view, health, library, activeWorkout }), preferModel: (()=>{try{return localStorage.getItem("ff_ai_model");}catch(e){return null;}})() }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 501 || r.status === 404) { setAiState("off"); setMsgs(m => [...m, { role: "assistant", content: "🔌 Die KI ist noch nicht verbunden. Sobald ein Modell eingerichtet ist, kann ich Pläne erstellen, Gerichte vorschlagen und Trainings analysieren. Sprachbefehle wie „öffne Verlauf“ oder „starte <Planname>“ funktionieren schon jetzt." }]); }
       else if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
@@ -9282,6 +9301,8 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
     ...(inWorkout ? [["🔁 Aktuelle Übung tauschen", `Tausche meine aktuelle Übung „${activeWorkout.exercises?.[activeWorkout.curEx]?.name || ""}“ gegen eine Alternative. Grund: `, "swap", true]] : []),
     ["📈 Steigerung fürs nächste Training", "Welche Gewichte und Wiederholungen soll ich beim nächsten Training nehmen? Setz mir konkrete Ziele.", "progress"],
     ["🍳 Mahlzeit per Text eintragen", "Ich habe gegessen: ", "food", true],
+    ["📷 Essen fotografieren", null, "photo", "photo"],
+    ["🥗 Essensplan + Einkaufsliste", "Erstelle mir einen Essensplan für die nächsten 7 Tage passend zu meinem Ziel, mit Einkaufsliste.", "mealplan"],
     ["🗓️ Wochenrückblick", "Mach mir einen Wochenrückblick der letzten 7 Tage mit einem Ziel für nächste Woche.", "week"],
     ["🏋️ Plan erstellen", "Erstelle mir einen Trainingsplan passend zu meinen bisherigen Trainings.", "plan"],
     ["🍽️ Gericht vorschlagen", "Schlag mir ein Gericht passend zu meinen heutigen Makros vor.", "meal"],
@@ -9292,7 +9313,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
   ];
   const bubble = (m, i) => (
     <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%" }}>
-      <div style={{ padding: "10px 13px", borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", background: m.role === "user" ? "linear-gradient(135deg,#FF6B35,#FF8C60)" : "rgba(255,255,255,0.06)", color: m.role === "user" ? "#fff" : "#E8E5E0", fontSize: 14, lineHeight: 1.5, wordBreak: "break-word" }}>{m.role === "assistant" ? <CoachText text={m.content} /> : m.content}</div>
+      <div style={{ padding: "10px 13px", borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", background: m.role === "user" ? "linear-gradient(135deg,#FF6B35,#FF8C60)" : "rgba(255,255,255,0.06)", color: m.role === "user" ? "#fff" : "#E8E5E0", fontSize: 14, lineHeight: 1.5, wordBreak: "break-word" }}>{m.image && <img src={m.image} alt="" style={{ display: "block", maxWidth: "100%", maxHeight: 200, borderRadius: 10, marginBottom: 6 }} />}{m.role === "assistant" ? <CoachText text={m.content} /> : m.content}</div>
       {(m.actions||[]).map((a, j) => a.type === "create_plan" && a.plan ? (
         <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.08)" }}>
           <div style={{ fontWeight: 800, color: "#F0EDE8", marginBottom: 6 }}>📋 {a.plan.name}</div>
@@ -9313,6 +9334,18 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
           {inWorkout
             ? <button disabled={doneCards[i+"-"+j]} style={{ ...s.primaryBtn, marginTop: 10, width: "100%", justifyContent: "center", opacity: doneCards[i+"-"+j] ? 0.5 : 1 }} onClick={() => confirmCard(i+"-"+j, a, `🔁 ${a.to.name} eingewechselt`)}>{doneCards[i+"-"+j] ? "✓ Getauscht" : "🔁 Im Training tauschen"}</button>
             : <div style={{ fontSize: 11, color: "#777", marginTop: 8 }}>Kein Training aktiv – tauschen geht während eines laufenden Trainings.</div>}
+        </div>
+      ) : a.type === "meal_plan" && a.plan ? (
+        <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(0,217,192,0.3)", background: "rgba(0,217,192,0.07)" }}>
+          <div style={{ fontWeight: 800, color: "#F0EDE8", marginBottom: 6 }}>🥗 Essensplan</div>
+          {(a.plan.days||[]).map((d, k) => <details key={k} style={{ fontSize: 12, color: "#bbb", padding: "3px 0" }}>
+            <summary style={{ cursor: "pointer", color: "#F0EDE8", fontWeight: 700 }}>{d.day} <span style={{ color: "#00D9C0", fontWeight: 400 }}>· {Math.round((d.meals||[]).reduce((x, m) => x + (+m.kcal||0), 0))} kcal · {Math.round((d.meals||[]).reduce((x, m) => x + (+m.protein||0), 0))} g P</span></summary>
+            {(d.meals||[]).map((m, q) => <div key={q} style={{ padding: "2px 0 2px 10px" }}><span style={{ color: "#888" }}>{m.mealType}:</span> {m.name} <span style={{ color: "#777" }}>({[m.kcal && `${m.kcal} kcal`, m.protein && `${m.protein} g P`].filter(Boolean).join(", ")})</span></div>)}
+          </details>)}
+          {(a.plan.shopping||[]).length > 0 && <>
+            <div style={{ fontSize: 12, color: "#888", marginTop: 8 }}>🛒 {a.plan.shopping.length} Zutaten: {a.plan.shopping.slice(0, 8).map(x => x.name).join(", ")}{a.plan.shopping.length > 8 ? " …" : ""}</div>
+            <button disabled={doneCards[i+"-"+j]} style={{ ...s.primaryBtn, marginTop: 10, width: "100%", justifyContent: "center", opacity: doneCards[i+"-"+j] ? 0.5 : 1 }} onClick={() => confirmCard(i+"-"+j, { type: "shopping_add", items: a.plan.shopping }, `🛒 ${a.plan.shopping.length} Zutaten auf der Einkaufsliste`)}>{doneCards[i+"-"+j] ? "✓ Auf der Liste" : "🛒 Auf die Einkaufsliste"}</button>
+          </>}
         </div>
       ) : a.type === "log_meal" && a.meal ? (
         <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(0,217,192,0.3)", background: "rgba(0,217,192,0.07)" }}>
@@ -9341,16 +9374,23 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
         <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           {!msgs.length && <>
             <div style={{ color: "#888", fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>Zum Beispiel: <i>„Starte Push Pull Legs“</i>, <i>„Öffne Ernährung“</i>, <i>„Wie war mein Training diese Woche?“</i></div>
-            {quick.map(([l, p, t, edit]) => <button key={l} onClick={() => edit ? (setInput(p), setPendingTask(t)) : send(p, t)} style={{ ...s.secBtn, justifyContent: "flex-start", textAlign: "left" }}>{l}</button>)}
+            {quick.map(([l, p, t, edit]) => <button key={l} onClick={() => edit === "photo" ? fileRef.current?.click() : edit ? (setInput(p), setPendingTask(t)) : send(p, t)} style={{ ...s.secBtn, justifyContent: "flex-start", textAlign: "left" }}>{l}</button>)}
           </>}
           {msgs.map(bubble)}
           {busy && <div style={{ alignSelf: "flex-start", color: "#888", fontSize: 13 }}>✨ denkt nach…</div>}
           <div ref={endRef} />
         </div>
-        <form onSubmit={e => { e.preventDefault(); send(); }} style={{ display: "flex", gap: 8, padding: 12, borderTop: "1px solid rgba(255,255,255,0.06)", alignItems: "center", margin: 0 }}>
+        {photo && <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px 0" }}>
+          <img src={photo} alt="Essensfoto" style={{ width: 54, height: 54, objectFit: "cover", borderRadius: 10 }} />
+          <div style={{ flex: 1, fontSize: 12, color: "#888" }}>Foto bereit – optional etwas dazuschreiben (z. B. „halbe Portion“) und senden.</div>
+          <button type="button" onClick={() => setPhoto(null)} aria-label="Foto entfernen" style={{ ...s.iconCircle, border: "none", background: "rgba(255,255,255,0.06)", color: "#aaa" }}>{IC.x}</button>
+        </div>}
+        <form onSubmit={e => { e.preventDefault(); send(); }} style={{ display: "flex", gap: 8, padding: 12, borderTop: photo ? "none" : "1px solid rgba(255,255,255,0.06)", alignItems: "center", margin: 0 }}>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+          <button type="button" onClick={() => fileRef.current?.click()} aria-label="Essensfoto" style={{ flexShrink: 0, width: 46, height: 46, borderRadius: 23, border: "none", cursor: "pointer", fontSize: 20, background: photo ? "rgba(0,217,192,0.25)" : "rgba(255,255,255,0.08)", color: "#fff" }}>📷</button>
           <button type="button" onClick={toggleMic} aria-label="Spracheingabe" style={{ flexShrink: 0, width: 46, height: 46, borderRadius: 23, border: "none", cursor: "pointer", fontSize: 20, background: listening ? "#EF476F" : "rgba(255,255,255,0.08)", color: "#fff", boxShadow: listening ? "0 0 0 6px rgba(239,71,111,0.25)" : "none", transition: "all .2s" }}>🎤</button>
           <input value={input} onChange={e => setInput(e.target.value)} enterKeyHint="send" placeholder={listening ? "Ich höre zu…" : "Nachricht oder Befehl…"} style={{ ...s.inp, flex: 1, minWidth: 0, margin: 0, fontSize: 16 }} />
-          <button type="submit" disabled={busy || !input.trim()} style={{ ...s.primaryBtn, flexShrink: 0, padding: "12px 16px", opacity: busy || !input.trim() ? 0.5 : 1 }}>➤</button>
+          <button type="submit" disabled={busy || (!input.trim() && !photo)} style={{ ...s.primaryBtn, flexShrink: 0, padding: "12px 16px", opacity: busy || (!input.trim() && !photo) ? 0.5 : 1 }}>➤</button>
         </form>
       </div>
     </div>
