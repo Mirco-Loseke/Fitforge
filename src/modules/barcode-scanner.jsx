@@ -70,9 +70,27 @@ function BarcodeScanner({ onDetect, onClose }) {
         const hints = new Map();
         hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]);
         hints.set(Z.DecodeHintType.TRY_HARDER, true);
-        const reader = new Z.BrowserMultiFormatReader(hints, 150);
-        readerRef.current = reader;
-        reader.decodeFromVideoElementContinuously(v, (res) => { if (res && !doneRef.current) handle(res.getText()); });
+        // Eigene Schleife statt decodeFromVideoElementContinuously (wartet auf iOS ewig auf "canplay"):
+        // Ausschnitt um den Rahmen ins Canvas zeichnen und dekodieren; abwechselnd Ausschnitt und ganzes Bild.
+        const reader = new Z.MultiFormatReader(); reader.setHints(hints);
+        const cv = document.createElement("canvas"), cx = cv.getContext("2d", { willReadFrequently: true });
+        let n = 0;
+        const tick = () => {
+          if (cancelled || doneRef.current) return;
+          const vw = v.videoWidth, vh = v.videoHeight;
+          if (vw && vh) {
+            const full = n++ % 3 === 2;
+            const sw = full ? vw : vw * 0.9, sh = full ? vh : vh * 0.45;
+            const sx = (vw - sw) / 2, sy = full ? 0 : Math.max(0, vh * 0.42 - sh / 2);
+            const scale = Math.min(1, 1100 / sw);
+            cv.width = Math.round(sw * scale); cv.height = Math.round(sh * scale);
+            cx.drawImage(v, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+            try { const bmp = new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(cv))); handle(reader.decode(bmp).getText()); } catch (e) {}
+            try { reader.reset(); } catch (e) {}
+          }
+          loopRef.current = setTimeout(tick, 90);
+        };
+        tick();
       } catch (e) {
         setStatus(/NotAllowed|Permission/i.test(String(e?.name || e)) ? "Kamerazugriff verweigert – in den Einstellungen erlauben oder Nummer eintippen" : "Kamera nicht verfügbar – Nummer eintippen");
         setShowManual(true);
