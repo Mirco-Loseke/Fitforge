@@ -116,6 +116,9 @@ else __ffInitFirebase();
 .stepBtn:active{background:rgba(255,255,255,.14);}
 .gpsHud{position:absolute;top:10px;left:10px;right:10px;z-index:1000;display:flex;gap:6px;pointer-events:none;}
 .gpsHud>div{flex:1;background:rgba(10,10,14,.78);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:7px 6px;text-align:center;}
+body.ff-scanning #ff-a2hs{display:none!important;}
+.ffScanLine{position:absolute;left:8%;right:8%;height:2px;top:50%;background:linear-gradient(90deg,transparent,#FF6B35,transparent);box-shadow:0 0 12px #FF6B35;animation:ffScan 1.8s ease-in-out infinite;}
+@keyframes ffScan{0%,100%{top:12%}50%{top:88%}}
 .ff-dark-tiles{filter:invert(1) hue-rotate(180deg) brightness(.95) contrast(.9) saturate(.6);}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:#0D0D0F;color:#F0EDE8;font-family:'DM Sans',sans-serif;}
@@ -10678,63 +10681,107 @@ const validEAN = (code) => {
 };
 function BarcodeScanner({ onDetect, onClose }) {
   const [manual, setManual] = useState("");
+  const [showManual, setShowManual] = useState(false);
   const [torch, setTorch] = useState(null); // null = nicht verfügbar
   const [status, setStatus] = useState("Kamera startet…");
-  const scRef = useRef(null), lastRef = useRef({ code: null, n: 0 }), doneRef = useRef(false);
-  const stop = async () => { try { if (scRef.current) { await scRef.current.stop(); scRef.current.clear(); } } catch (e) {} scRef.current = null; };
-  const finish = async (code) => {
+  const [hit, setHit] = useState(false);
+  const videoRef = useRef(null), streamRef = useRef(null), loopRef = useRef(null), readerRef = useRef(null), doneRef = useRef(false);
+  const stop = () => {
+    clearTimeout(loopRef.current); loopRef.current = null;
+    try { readerRef.current?.reset?.(); } catch (e) {} readerRef.current = null;
+    try { streamRef.current?.getTracks().forEach(t => t.stop()); } catch (e) {} streamRef.current = null;
+  };
+  const finish = (code) => {
     if (doneRef.current) return; doneRef.current = true;
-    try { navigator.vibrate?.(60); } catch (e) {}
-    await stop(); onDetect(code);
+    setHit(true); ffVibrate(80);
+    setTimeout(() => { stop(); onDetect(code); }, 250);
+  };
+  const handle = (text) => {
+    const code = String(text || "").replace(/\D/g, "");
+    if (validEAN(code) || code.length === 8) finish(code);
   };
   useEffect(() => {
     let cancelled = false;
+    document.body.classList.add("ff-scanning");
     (async () => {
-      if (!window.Html5Qrcode) { setStatus("Scanner lädt noch – kurz warten oder Nummer eintippen"); return; }
-      const F = window.Html5QrcodeSupportedFormats || {};
-      const formats = [F.EAN_13 ?? 9, F.EAN_8 ?? 10, F.UPC_A ?? 14, F.UPC_E ?? 15];
-      const sc = new window.Html5Qrcode("ff-reader", { formatsToSupport: formats, experimentalFeatures: { useBarCodeDetectorIfSupported: true }, verbose: false });
-      scRef.current = sc;
       try {
-        await sc.start({ facingMode: "environment" }, {
-          fps: 12,
-          qrbox: (w, h) => ({ width: Math.floor(Math.min(w * 0.85, 340)), height: Math.floor(Math.min(h * 0.4, 160)) }),
-          aspectRatio: 1.333,
-          videoConstraints: { facingMode: "environment", focusMode: "continuous", width: { ideal: 1280 }, height: { ideal: 720 } },
-        }, (text) => {
-          const code = String(text).replace(/\D/g, "");
-          if (!validEAN(code)) return;
-          // Zweimal hintereinander gleich gelesen → sicher
-          if (lastRef.current.code === code) { if (++lastRef.current.n >= 2) finish(code); }
-          else lastRef.current = { code, n: 1 };
-        }, () => {});
-        if (cancelled) return stop();
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        const v = videoRef.current; v.srcObject = stream; v.setAttribute("playsinline", ""); v.muted = true;
+        await v.play().catch(() => {});
+        const track = stream.getVideoTracks()[0];
+        try { const caps = track.getCapabilities?.(); if (caps?.torch) setTorch(false); if (caps?.focusMode?.includes?.("continuous")) track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}); } catch (e) {}
         setStatus("Barcode in den Rahmen halten");
-        try { const caps = sc.getRunningTrackCapabilities?.(); if (caps && caps.torch) setTorch(false); } catch (e) {}
+        // 1) Native Erkennung (Android/Chrome) – schnell & zuverlässig
+        let det = null;
+        if ("BarcodeDetector" in window) {
+          try {
+            const sup = await window.BarcodeDetector.getSupportedFormats();
+            const want = ["ean_13", "ean_8", "upc_a", "upc_e"].filter(f => sup.includes(f));
+            if (want.length) det = new window.BarcodeDetector({ formats: want });
+          } catch (e) {}
+        }
+        if (det) {
+          const tick = async () => {
+            if (cancelled || doneRef.current) return;
+            try { if (v.readyState >= 2) { const r = await det.detect(v); if (r && r[0]) handle(r[0].rawValue); } } catch (e) {}
+            loopRef.current = setTimeout(tick, 120);
+          };
+          tick();
+          return;
+        }
+        // 2) Fallback (iPhone/Safari): ZXing
+        if (!window.ZXing) {
+          await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+        }
+        if (cancelled) return;
+        const Z = window.ZXing;
+        const hints = new Map();
+        hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]);
+        hints.set(Z.DecodeHintType.TRY_HARDER, true);
+        const reader = new Z.BrowserMultiFormatReader(hints, 150);
+        readerRef.current = reader;
+        reader.decodeFromVideoElementContinuously(v, (res) => { if (res && !doneRef.current) handle(res.getText()); });
       } catch (e) {
-        setStatus(/NotAllowed|Permission/i.test(String(e)) ? "Kamerazugriff verweigert – in den Einstellungen erlauben oder Nummer eintippen" : "Kamera nicht verfügbar – Nummer eintippen");
+        setStatus(/NotAllowed|Permission/i.test(String(e?.name || e)) ? "Kamerazugriff verweigert – in den Einstellungen erlauben oder Nummer eintippen" : "Kamera nicht verfügbar – Nummer eintippen");
+        setShowManual(true);
       }
     })();
-    return () => { cancelled = true; stop(); };
+    return () => { cancelled = true; stop(); document.body.classList.remove("ff-scanning"); };
   }, []);
   const toggleTorch = async () => {
-    try { await scRef.current.applyVideoConstraints({ advanced: [{ torch: !torch }] }); setTorch(!torch); } catch (e) {}
+    try { await streamRef.current.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: !torch }] }); setTorch(!torch); } catch (e) {}
   };
+  const close = () => { stop(); onClose(); };
+  const ctrl = (active) => ({ flex: 1, height: 54, borderRadius: 16, border: `1px solid ${active ? "rgba(255,209,102,0.6)" : "rgba(255,255,255,0.14)"}`, background: active ? "rgba(255,209,102,0.18)" : "rgba(255,255,255,0.08)", color: active ? "#FFD166" : "#F0EDE8", fontSize: 14, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" });
   return (<ToBody>
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.94)", zIndex: 10000, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom))" }}>
-      <div style={{ width: "100%", maxWidth: 440, background: "#111", borderRadius: 20, overflow: "hidden", position: "relative" }}>
-        <div id="ff-reader" style={{ width: "100%", minHeight: 240, background: "#000" }} />
-        <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, zIndex: 2 }}>
-          {torch !== null && <button onClick={toggleTorch} aria-label="Taschenlampe" style={{ background: torch ? "#FFD166" : "rgba(0,0,0,0.55)", border: "none", color: torch ? "#000" : "#fff", borderRadius: "50%", width: 40, height: 40, cursor: "pointer", fontSize: 18 }}>🔦</button>}
-          <button onClick={async () => { await stop(); onClose(); }} aria-label="Schließen" style={{ background: "rgba(0,0,0,0.55)", border: "none", color: "#fff", borderRadius: "50%", width: 40, height: 40, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{IC.x}</button>
-        </div>
-        <div style={{ padding: "14px 16px 4px", textAlign: "center", color: "#aaa", fontSize: 13 }}>{status}</div>
-        <form onSubmit={e => { e.preventDefault(); const c = manual.replace(/\D/g, ""); if (c.length >= 8) finish(c); }} style={{ padding: "8px 16px 16px", display: "flex", gap: 8, margin: 0 }}>
-          <input style={{ ...s.inp, flex: 1, margin: 0, fontSize: 16 }} inputMode="numeric" placeholder="…oder Barcode-Nummer eintippen" value={manual} onChange={e => setManual(e.target.value)} />
-          <button type="submit" style={{ ...s.primaryBtn, padding: "0 18px" }} disabled={manual.replace(/\D/g, "").length < 8}>OK</button>
-        </form>
+    <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 100001, overflow: "hidden" }}>
+      <video ref={videoRef} playsInline muted autoPlay style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+      {/* Rahmen mit abgedunkeltem Rest */}
+      <div style={{ position: "absolute", left: "50%", top: "42%", transform: "translate(-50%,-50%)", width: "min(82vw, 360px)", height: "min(42vw, 180px)", borderRadius: 20, boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)", border: `3px solid ${hit ? "#06D6A0" : "rgba(255,255,255,0.9)"}`, transition: "border-color .2s", pointerEvents: "none" }}>
+        {!hit && <div className="ffScanLine" />}
       </div>
-      <div style={{ color: "#666", fontSize: 11, marginTop: 12, textAlign: "center", maxWidth: 340 }}>Tipp: Barcode waagerecht und nicht zu nah halten. Bei wenig Licht die Taschenlampe nutzen.</div>
+      {/* Kopfzeile */}
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "calc(14px + env(safe-area-inset-top)) 16px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "linear-gradient(180deg,rgba(0,0,0,0.6),transparent)" }}>
+        <div style={{ color: "#fff", fontSize: 17, fontWeight: 900 }}>Barcode scannen</div>
+        <button onClick={close} aria-label="Schließen" style={{ width: 42, height: 42, borderRadius: "50%", border: "1px solid rgba(255,255,255,0.18)", background: "rgba(0,0,0,0.45)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>{IC.x}</button>
+      </div>
+      {/* Unterer Bereich */}
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "40px 16px calc(18px + env(safe-area-inset-bottom))", background: "linear-gradient(0deg,rgba(0,0,0,0.85) 60%,transparent)", display: "flex", flexDirection: "column", gap: 12, maxWidth: 480, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", color: hit ? "#06D6A0" : "#ddd", fontSize: 14, fontWeight: 700 }}>{hit ? "✓ Erkannt!" : status}</div>
+        {showManual && (
+          <form onSubmit={e => { e.preventDefault(); const c = manual.replace(/\D/g, ""); if (c.length >= 8) finish(c); }} style={{ display: "flex", gap: 8, margin: 0 }}>
+            <input autoFocus style={{ ...s.inp, flex: 1, margin: 0, fontSize: 16, height: 50 }} inputMode="numeric" placeholder="Barcode-Nummer (8–13 Ziffern)" value={manual} onChange={e => setManual(e.target.value)} />
+            <button type="submit" className="wkBtn wkBtn-next" style={{ height: 50, padding: "0 20px", opacity: manual.replace(/\D/g, "").length < 8 ? 0.5 : 1 }} disabled={manual.replace(/\D/g, "").length < 8}>Suchen</button>
+          </form>
+        )}
+        <div style={{ display: "flex", gap: 10 }}>
+          {torch !== null && <button onClick={toggleTorch} style={ctrl(torch)}>🔦 {torch ? "Licht aus" : "Licht an"}</button>}
+          <button onClick={() => setShowManual(m => !m)} style={ctrl(showManual)}>⌨️ Nummer eintippen</button>
+        </div>
+        <div style={{ color: "#777", fontSize: 11.5, textAlign: "center" }}>Barcode waagerecht halten, ca. 15–20 cm Abstand</div>
+      </div>
     </div>
   </ToBody>);
 }
