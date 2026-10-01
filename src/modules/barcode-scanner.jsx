@@ -79,16 +79,31 @@ function BarcodeScanner({ onDetect, onClose }) {
           if (cancelled || doneRef.current) return;
           const vw = v.videoWidth, vh = v.videoHeight;
           if (vw && vh) {
-            const full = n++ % 3 === 2;
+            // Strategien im Wechsel – hilft bei Spiegelungen (Taschenlampe, Glas, Dosen):
+            // 0/1 Ausschnitt lokal/global binarisiert, 2 Ausschnitt kontrastverstärkt, 3 ganzes Bild
+            const mode = n++ % 4, full = mode === 3;
             const sw = full ? vw : vw * 0.9, sh = full ? vh : vh * 0.45;
             const sx = (vw - sw) / 2, sy = full ? 0 : Math.max(0, vh * 0.42 - sh / 2);
             const scale = Math.min(1, 1100 / sw);
             cv.width = Math.round(sw * scale); cv.height = Math.round(sh * scale);
             cx.drawImage(v, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
-            try { const bmp = new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(cv))); handle(reader.decode(bmp).getText()); } catch (e) {}
+            if (mode === 2) {
+              // Glanzstellen kappen + Kontrast strecken (helle Spiegelung wird nicht mehr als "weiß" zwischen den Balken gelesen)
+              const img = cx.getImageData(0, 0, cv.width, cv.height), d = img.data;
+              let lo = 255, hi = 0; const g = new Uint8ClampedArray(d.length / 4);
+              for (let k = 0, j = 0; k < d.length; k += 4, j++) { const y = (d[k] * 3 + d[k + 1] * 6 + d[k + 2]) / 10; g[j] = y; if (y < lo) lo = y; if (y > hi) hi = y; }
+              const cap = lo + (hi - lo) * 0.8, span = Math.max(1, cap - lo);
+              for (let k = 0, j = 0; k < d.length; k += 4, j++) { const y = Math.min(255, Math.max(0, (Math.min(g[j], cap) - lo) * 255 / span)); d[k] = d[k + 1] = d[k + 2] = y; }
+              cx.putImageData(img, 0, 0);
+            }
+            try {
+              const src = new Z.HTMLCanvasElementLuminanceSource(cv);
+              const bin = mode === 1 ? new Z.GlobalHistogramBinarizer(src) : new Z.HybridBinarizer(src);
+              handle(reader.decode(new Z.BinaryBitmap(bin)).getText());
+            } catch (e) {}
             try { reader.reset(); } catch (e) {}
           }
-          loopRef.current = setTimeout(tick, 90);
+          loopRef.current = setTimeout(tick, 70);
         };
         tick();
       } catch (e) {
@@ -99,7 +114,7 @@ function BarcodeScanner({ onDetect, onClose }) {
     return () => { cancelled = true; stop(); document.body.classList.remove("ff-scanning"); };
   }, []);
   const toggleTorch = async () => {
-    try { await streamRef.current.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: !torch }] }); setTorch(!torch); } catch (e) {}
+    try { await streamRef.current.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: !torch }] }); setTorch(!torch); if (!torch && !doneRef.current) setStatus("Licht an – bei Spiegelung Handy leicht schräg halten"); } catch (e) {}
   };
   const close = () => { stop(); onClose(); };
   const ctrl = (active) => ({ flex: 1, height: 54, borderRadius: 16, border: `1px solid ${active ? "rgba(255,209,102,0.6)" : "rgba(255,255,255,0.14)"}`, background: active ? "rgba(255,209,102,0.18)" : "rgba(255,255,255,0.08)", color: active ? "#FFD166" : "#F0EDE8", fontSize: 14, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" });
