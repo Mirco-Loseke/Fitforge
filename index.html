@@ -112,6 +112,10 @@ else __ffInitFirebase();
 .wkBtn-danger{background:rgba(239,71,111,.1);border:1px solid rgba(239,71,111,.35);color:#EF476F;}
 .wkSheet{animation:wkSheetUp .32s cubic-bezier(.2,.9,.3,1.1);}
 @keyframes wkSheetUp{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.stepBtn{width:30px;align-self:stretch;border:none;background:rgba(255,255,255,.04);font-size:18px;font-weight:800;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0;-webkit-tap-highlight-color:transparent;transition:background .15s;}
+.stepBtn:active{background:rgba(255,255,255,.14);}
+.gpsHud{position:absolute;top:10px;left:10px;right:10px;z-index:1000;display:flex;gap:6px;pointer-events:none;}
+.gpsHud>div{flex:1;background:rgba(10,10,14,.78);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:7px 6px;text-align:center;}
 .ff-dark-tiles{filter:invert(1) hue-rotate(180deg) brightness(.95) contrast(.9) saturate(.6);}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:#0D0D0F;color:#F0EDE8;font-family:'DM Sans',sans-serif;}
@@ -5799,6 +5803,59 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
   };
 
   const fmtTimer=t=>{const m=Math.floor(t/60),s=t%60;return`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;};
+  // +/- Stepper für Satz-Felder
+  const STEP_SIZE = { weight: 2.5, reps: 1, km: 0.5, kcal: 10, incline: 0.5, tempo: 0.5 };
+  const bumpSet = (si, k, cur, dir) => {
+    const v = parseFloat(String(cur ?? "").replace(",", ".")) || 0;
+    const nv = Math.max(0, Math.round((v + dir * (STEP_SIZE[k] || 1)) * 100) / 100);
+    updSet(curEx, si, k, String(nv)); ffVibrate(8);
+  };
+  const renderSetField = (si, set, f) => (
+    <div key={f.key} style={{display:"flex", alignItems:"stretch", flex:1, minWidth:96, height:40, background:f.color+"0D", border:`1px solid ${f.color}26`, borderRadius:10, overflow:"hidden"}}>
+      {(f.key==="weight"||f.key==="reps") && <button className="stepBtn" style={{color:f.color}} onClick={()=>bumpSet(si, f.key, set[f.key], -1)}>−</button>}
+      <div style={{flex:1, minWidth:0, display:"flex", alignItems:"center", justifyContent:"center", gap:2}}>
+        <input inputMode="decimal" style={{width:"100%", minWidth:0, height:38, background:"transparent", color:f.color, padding:"0 2px", fontSize:14, fontWeight:800, border:"none", textAlign:"right", outline:"none"}} type="text" value={set[f.key]||""} onFocus={e=>e.target.select()} onChange={e=>updSet(curEx, si, f.key, e.target.value)} placeholder="0"/>
+        <span style={{fontSize:9, color:f.color+"99", fontWeight:800, paddingRight:4, flexShrink:0}}>{f.unit}</span>
+      </div>
+      {(f.key==="weight"||f.key==="reps") && <button className="stepBtn" style={{color:f.color}} onClick={()=>bumpSet(si, f.key, set[f.key], 1)}>+</button>}
+    </div>
+  );
+  // Wischen zwischen Übungen
+  const swipeRef = useRef(null);
+  const onSwipeStart = e => {
+    if (e.target.closest && e.target.closest("input,textarea,button,.leaflet-container")) { swipeRef.current = null; return; }
+    const t = e.touches[0]; swipeRef.current = { x: t.clientX, y: t.clientY };
+  };
+  const onSwipeEnd = e => {
+    const s0 = swipeRef.current; swipeRef.current = null; if (!s0) return;
+    const t = e.changedTouches[0]; const dx = t.clientX - s0.x, dy = t.clientY - s0.y;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+    if (dx < 0 && curEx < exercises.length - 1) { setCurEx(i => i + 1); ffVibrate(12); }
+    else if (dx > 0 && curEx > 0) { setCurEx(i => i - 1); ffVibrate(12); }
+  };
+  // Display wieder wachhalten, wenn man zur App zurückkehrt
+  useEffect(() => {
+    const h = () => { if (document.visibilityState === 'visible' && running) requestWakeLock(); };
+    document.addEventListener('visibilitychange', h);
+    return () => document.removeEventListener('visibilitychange', h);
+  }, [running]);
+  // GPS: Sprachansage + Vibration bei jedem Kilometer
+  const lastKmRef = useRef({});
+  useEffect(() => {
+    if (step !== 2 || !exercises[curEx]?.trackGPS) return;
+    const km = parseFloat(sets[curEx]?.[0]?.km || 0);
+    const whole = Math.floor(km);
+    const prev = lastKmRef.current[curEx] || 0;
+    if (whole > prev) {
+      lastKmRef.current[curEx] = whole;
+      const path = gpsData[curEx]?.path || [];
+      const secs = path.length ? (Date.now() - path[0].t) / 1000 : timer;
+      const pace = km > 0 ? secs / km : 0;
+      const pm = Math.floor(pace / 60), ps = Math.round(pace % 60);
+      ffVibrate([120, 80, 120]);
+      try { speak(`${whole} Kilometer. Durchschnitts-Pace ${pm} Minuten ${ps} Sekunden.`, voiceVolume); } catch (e) {}
+    }
+  }, [sets, curEx, step]);
   // KI-Coach: Übung im laufenden Training ersetzen
   useEffect(() => {
     if (step !== 2) return;
@@ -5878,9 +5935,10 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
   const goNext=()=>{
     const tSets = parseInt(totalSets) || 1;
     const tRounds = parseInt(totalRounds) || 1;
+    ffVibrate(15);
     if(curEx < exercises.length - 1) setCurEx(i=>i+1);
     else if(repeatRounds && curRound < tRounds){ setCurEx(0); setCurRound(r=>r+1); notify(`Durchgang ${curRound+1} gestartet! 💪`); }
-    else { setStep(3); setRunning(false); setEndTime(new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})); }
+    else { ffVibrate([80,60,80,60,200]); setStep(3); setRunning(false); setEndTime(new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})); }
   };
   const toggleSetDone=(ei,si)=>{
     if (ei === undefined || si === undefined) return;
@@ -6380,7 +6438,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
       {rest && step===2 && <RestRing rest={rest} onAdd={() => setRest(r => r && ({ end: Math.max(r.end, Date.now()) + 15000, total: r.total + 15 }))} onDone={() => setRest(null)} />}
       {prFx && <PRFlash fx={prFx} onDone={() => setPrFx(null)} />}
       {finishFx && <FinishCelebration fx={finishFx} onClose={() => setFinishFx(null)} />}
-      {step===2&&<div className="fadeIn">
+      {step===2&&<div className="fadeIn" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}>
         <div style={{marginBottom:18, display:"flex", gap:10}}>
           <div style={{flex:1, padding:"10px 14px", background:running?"linear-gradient(135deg,rgba(255,107,53,0.14),rgba(255,107,53,0.04))":"rgba(255,255,255,0.03)", borderRadius:16, border:running?"1px solid rgba(255,107,53,0.4)":"1px solid rgba(255,255,255,0.08)", boxShadow:running?"0 0 24px rgba(255,107,53,0.18), inset 0 1px 0 rgba(255,107,53,0.2)":"none", backdropFilter:"blur(10px)", WebkitBackdropFilter:"blur(10px)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", transition:"all 0.3s"}} onClick={()=>{
             if (!running && exercises[curEx]?.trackGPS && 'geolocation' in navigator) navigator.geolocation.getCurrentPosition(() => {}, () => {});
@@ -6464,9 +6522,16 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
               <span style={{color: "#FFD166"}}>{exercises[curEx + 1].name}</span>
             </div>
           )}
-          <div style={{width:"100%",height: isMobile ? 180 : 220, borderRadius:20,overflow:"hidden",marginBottom:16,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",position:"relative", boxShadow: "0 10px 30px rgba(0,0,0,0.3)"}}>
+          <div style={{width:"100%",height: curExData.trackGPS ? (isMobile ? 280 : 340) : (isMobile ? 180 : 220), borderRadius:20,overflow:"hidden",marginBottom:16,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",position:"relative", boxShadow: "0 10px 30px rgba(0,0,0,0.3)"}}>
             {curExData.trackGPS ? (
-              <div ref={mapRef} style={{width:"100%", height:"100%"}}></div>
+              <>
+                <div ref={mapRef} style={{width:"100%", height:"100%"}}></div>
+                <div className="gpsHud">
+                  {[[curSets[0]?.km || "0.00","km","#4CC9F0"],[fmtTimer(timer),"Zeit","#FF6B35"],[formatPace(parseFloat(curSets[0]?.currentSpeed || 0)),"Pace /km","#06D6A0"]].map(([v,l,c]) => (
+                    <div key={l}><div style={{fontSize:20,fontWeight:900,color:c,lineHeight:1.1,fontVariantNumeric:"tabular-nums"}}>{v}</div><div style={{fontSize:9,fontWeight:800,color:"#aaa",textTransform:"uppercase",letterSpacing:0.6}}>{l}</div></div>
+                  ))}
+                </div>
+              </>
             ) : (
               resolvePhoto(curExData)?<img src={resolvePhoto(curExData)} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:<div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:"#333"}}>{IC.dumbbell}</div>
             )}
@@ -6535,6 +6600,11 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
           )})()}
 
 
+          {exercises.length > 1 && (
+            <div style={{display:"flex",justifyContent:"center",gap:5,marginBottom:12}}>
+              {exercises.map((_,i) => <div key={i} onClick={()=>setCurEx(i)} style={{height:6,width:i===curEx?20:6,borderRadius:3,background:i===curEx?"#FF6B35":i<curEx?"#FF6B3555":"rgba(255,255,255,0.12)",transition:"all .25s",cursor:"pointer"}}/>)}
+            </div>
+          )}
           {!hiitMode && !curExData.trackGPS && (
              <div style={{marginBottom:15,borderBottom:"1px solid #1E1E24",paddingBottom:10,display:"flex",justifyContent:"space-between",fontSize:11,fontWeight:800,color:"#fff"}}>
 
@@ -6561,19 +6631,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
                     <div style={{...s.setN, background:set.done?"#06D6A0":"#1F1F24", color:set.done?"#000":"#666"}}>{si+1}</div>
                     
                     <div style={{display: "flex", gap: 8, flex: 1, flexWrap: "wrap"}}>
-                      {getExFields(curExData).map(f => (
-                        <div key={f.key} style={{position:"relative", display:"flex", alignItems:"center", flex: 1, minWidth: 60}}>
-                          <input 
-                            style={{width:"100%", height: 38, background: f.color+"08", color: f.color, padding: "0 28px 0 8px", borderRadius: 8, fontSize: 12, fontWeight: 800, border: `1px solid ${f.color}1F`, textAlign: "left", outline: "none"}} 
-                            type="text" 
-                            value={set[f.key]||""} 
-                            onFocus={e=>e.target.select()} 
-                            onChange={e=>updSet(curEx, si, f.key, e.target.value)} 
-                            placeholder="0"
-                          />
-                          <span style={{position:"absolute", right:8, fontSize:8, color:f.color+"66", pointerEvents:"none", fontWeight:800}}>{f.unit}</span>
-                        </div>
-                      ))}
+                      {getExFields(curExData).map(f => renderSetField(si, set, f))}
                     </div>
 
                     {curSets.length > 1 && (
@@ -6612,19 +6670,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
                       <div style={{...s.setN, background:set.done?"#06D6A0":"#1F1F24", color:set.done?"#000":"#666"}}>{siGlobal+1}</div>
                       
                       <div style={{display: "flex", gap: 8, flex: 1, flexWrap: "wrap"}}>
-                        {getExFields(curExData).map(f => (
-                          <div key={f.key} style={{position:"relative", display:"flex", alignItems:"center", flex: 1, minWidth: 60}}>
-                            <input 
-                              style={{width:"100%", height: 38, background: f.color+"08", color: f.color, padding: "0 28px 0 8px", borderRadius: 8, fontSize: 12, fontWeight: 800, border: `1px solid ${f.color}1F`, textAlign: "left", outline: "none"}} 
-                              type="text" 
-                              value={set[f.key]||""} 
-                              onFocus={e=>e.target.select()} 
-                              onChange={e=>updSet(curEx, siGlobal, f.key, e.target.value)} 
-                              placeholder="0"
-                            />
-                            <span style={{position:"absolute", right:8, fontSize:8, color:f.color+"66", pointerEvents:"none", fontWeight:800}}>{f.unit}</span>
-                          </div>
-                        ))}
+                        {getExFields(curExData).map(f => renderSetField(siGlobal, set, f))}
                       </div>
 
                       {safeTotalSets > 1 && (
@@ -6766,7 +6812,52 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
             ))}
           </div>
         </div>
-        <div style={{display: "flex", gap: 12}}><button style={{...s.primaryBtn, flex: 2}} onClick={save}>🎉 Training speichern</button><button style={{...s.primaryBtn, flex: 1, background: "#EF476F15", border: "2px solid #EF476F", color: "#EF476F"}} onClick={()=>{if(window.confirm("Möchtest du das Training wirklich verwerfen?")) {setStep(1); setTimer(0); setRunning(false); setActiveWorkout(null); notify("Training verworfen", "info");}}}>🗑️ Verwerfen</button></div>
+        {(() => {
+          const volOf = exs => (exs||[]).reduce((a,e)=>a+(e.sets||[]).reduce((b,x)=>b+(parseFloat(x.weight)||0)*(parseFloat(x.reps)||0),0),0);
+          const curVol = Object.values(sets||{}).flat().filter(x=>x&&x.done).reduce((b,x)=>b+(parseFloat(x.weight)||0)*(parseFloat(x.reps)||0),0);
+          const prevW = (data.workouts||[]).find(w => String(w.planId) === String(planId));
+          const prevVol = prevW ? volOf(prevW.exercises) : 0;
+          const diff = prevVol > 0 ? Math.round((curVol - prevVol) / prevVol * 100) : null;
+          const doneSets = Object.values(sets||{}).flat().filter(x=>x&&x.done).length;
+          const shareImg = async () => {
+            const c = document.createElement("canvas"); c.width = 1080; c.height = 1350; const g = c.getContext("2d");
+            const bg = g.createLinearGradient(0,0,0,1350); bg.addColorStop(0,"#1A1A22"); bg.addColorStop(1,"#0D0D0F"); g.fillStyle = bg; g.fillRect(0,0,1080,1350);
+            const glow = g.createRadialGradient(540,260,0,540,260,520); glow.addColorStop(0,"rgba(255,107,53,0.35)"); glow.addColorStop(1,"rgba(255,107,53,0)"); g.fillStyle = glow; g.fillRect(0,0,1080,800);
+            g.textAlign = "center"; g.fillStyle = "#FF6B35"; g.font = "900 54px 'DM Sans',sans-serif"; g.fillText("FITFORGE", 540, 150);
+            g.fillStyle = "#F0EDE8"; g.font = "900 96px 'DM Sans',sans-serif"; g.fillText("Workout done 💪", 540, 330);
+            g.fillStyle = "#888"; g.font = "600 44px 'DM Sans',sans-serif"; g.fillText((plan?.name || "Training") + " · " + new Date().toLocaleDateString("de-DE"), 540, 410);
+            const tiles = [[fmtTimer(timer),"DAUER","#FF6B35"],[String(doneSets),"SÄTZE","#A78BFA"],[curVol>=1000?(curVol/1000).toFixed(1)+" t":Math.round(curVol)+" kg","VOLUMEN","#4CC9F0"],[diff!==null?(diff>=0?"+":"")+diff+" %":String(exercises.length),diff!==null?"VS. LETZTES MAL":"ÜBUNGEN",diff!==null&&diff<0?"#EF476F":"#06D6A0"]];
+            tiles.forEach(([v,l,col],i) => {
+              const x = 90 + (i%2)*470, y = 520 + Math.floor(i/2)*330;
+              g.fillStyle = "rgba(255,255,255,0.05)"; g.strokeStyle = col + "66"; g.lineWidth = 3;
+              g.beginPath(); g.roundRect ? g.roundRect(x,y,430,290,40) : g.rect(x,y,430,290); g.fill(); g.stroke();
+              g.fillStyle = col; g.font = "900 96px 'DM Sans',sans-serif"; g.fillText(v, x+215, y+165);
+              g.fillStyle = "#999"; g.font = "800 32px 'DM Sans',sans-serif"; g.fillText(l, x+215, y+235);
+            });
+            const blob = await new Promise(r => c.toBlob(r, "image/png"));
+            const file = new File([blob], "fitforge-workout.png", { type: "image/png" });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: "FitForge Workout" }); } catch (e) {} }
+            else { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "fitforge-workout.png"; a.click(); }
+          };
+          return (<>
+            {diff !== null && (
+              <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",marginBottom:14,borderRadius:16,background:diff>=0?"rgba(6,214,160,0.08)":"rgba(239,71,111,0.08)",border:`1px solid ${diff>=0?"rgba(6,214,160,0.3)":"rgba(239,71,111,0.3)"}`}}>
+                <div style={{fontSize:26}}>{diff>=0?"📈":"📉"}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:20,fontWeight:900,color:diff>=0?"#06D6A0":"#EF476F"}}>{diff>=0?"+":""}{diff} % Volumen</div>
+                  <div style={{fontSize:12,color:"#888"}}>im Vergleich zum letzten Mal ({prevVol>=1000?(prevVol/1000).toFixed(1)+" t":Math.round(prevVol)+" kg"})</div>
+                </div>
+              </div>
+            )}
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <button className="wkBtn wkBtn-done" style={{width:"100%"}} onClick={save}>{IC.check} Training speichern</button>
+              <div style={{display:"flex",gap:10}}>
+                <button className="wkBtn wkBtn-ghost" style={{flex:1}} onClick={shareImg}>📸 Teilen</button>
+                <button className="wkBtn wkBtn-danger" style={{flex:1}} onClick={()=>{if(window.confirm("Möchtest du das Training wirklich verwerfen?")) {setStep(1); setTimer(0); setRunning(false); setActiveWorkout(null); notify("Training verworfen", "info");}}}>{IC.x} Verwerfen</button>
+              </div>
+            </div>
+          </>);
+        })()}
       </div>}
     </div>
   </div>);
