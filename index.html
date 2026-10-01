@@ -102,6 +102,17 @@ else __ffInitFirebase();
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'"/>
 <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/></noscript>
 <style>
+.wkBtn{height:54px;border-radius:16px;font-size:14px;font-weight:800;letter-spacing:.2px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border:none;transition:transform .12s ease,box-shadow .2s ease,filter .2s;font-family:'DM Sans',sans-serif;-webkit-tap-highlight-color:transparent;}
+.wkBtn:active{transform:scale(.96);filter:brightness(.92);}
+.wkBtn-done{background:linear-gradient(135deg,#06D6A0,#00B386);color:#04140F;box-shadow:0 8px 24px rgba(6,214,160,.35),inset 0 1px 0 rgba(255,255,255,.35);}
+.wkBtn-next{background:linear-gradient(135deg,#FF7A45,#FF4F1F);color:#fff;box-shadow:0 8px 24px rgba(255,107,53,.35),inset 0 1px 0 rgba(255,255,255,.3);}
+.wkBtn-hiit{background:linear-gradient(135deg,#FFD166,#FFB627);color:#1A1405;box-shadow:0 8px 24px rgba(255,209,102,.3),inset 0 1px 0 rgba(255,255,255,.4);}
+.wkBtn-ghost{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#F0EDE8;}
+.wkBtn-quit{height:44px;background:transparent;border:1px solid rgba(239,71,111,.25);color:#EF476F;font-size:13px;font-weight:700;opacity:.85;}
+.wkBtn-danger{background:rgba(239,71,111,.1);border:1px solid rgba(239,71,111,.35);color:#EF476F;}
+.wkSheet{animation:wkSheetUp .32s cubic-bezier(.2,.9,.3,1.1);}
+@keyframes wkSheetUp{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.ff-dark-tiles{filter:invert(1) hue-rotate(180deg) brightness(.95) contrast(.9) saturate(.6);}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:#0D0D0F;color:#F0EDE8;font-family:'DM Sans',sans-serif;}
 ::-webkit-scrollbar{width:5px;}
@@ -5685,7 +5696,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
     if (step === 2 && exercises[curEx]?.trackGPS && mapRef.current) {
       if (!mapInst.current) {
         mapInst.current = window.L.map(mapRef.current).setView([51.1657, 10.4515], 14);
-        window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { className: 'ff-dark-tiles', maxZoom: 19,
           attribution: '&copy; OSM'
         }).addTo(mapInst.current);
         const p = gpsData[curEx]?.path || [];
@@ -6636,19 +6647,19 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
             </>
           )}
 
-          <div style={{display:"flex", gap:10, marginTop:20, alignItems: "center"}}>
-            <button style={{...s.secBtn, width: 49, height: 50, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0}} onClick={() => {
+          <div style={{display:"flex", gap:10, marginTop:22, alignItems: "center"}}>
+            <button className="wkBtn wkBtn-ghost" style={{width: 54, flexShrink: 0, padding: 0}} onClick={() => {
               if (curEx > 0) setCurEx(i => i - 1);
               else notify("Erste Übung erreicht", "info");
             }} title="Zurück">{IC.arrowLeft}</button>
-            
+
             <div style={{flex: 1, display: "flex", gap: 10}}>
               {!hiitMode && (
                 (() => {
                   const tSetsNum = parseInt(totalSets) || 1;
                   const tRoundsNum = parseInt(totalRounds) || 1;
                   const setsInViewArray = (sets[curEx] || []).slice(repeatRounds?(curRound-1)*tSetsNum : 0, repeatRounds?curRound*tSetsNum : (sets[curEx]||[]).length);
-                  
+
                   const allDone = setsInViewArray.length > 0 && setsInViewArray.every(s => s.done);
                   const showFinishSet = !allDone && setsInViewArray.length > 0;
                   const isLast = (curEx >= exercises.length - 1) && (!repeatRounds || curRound >= tRoundsNum);
@@ -6656,8 +6667,7 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
                   return (
                     <div style={{display: "flex", gap: 10, width: "100%"}}>
                       {showFinishSet && (
-                        <button 
-                          style={{...s.primaryBtn, flex: 1.5, background: "#06D6A015", border: "2px solid #06D6A0", color: "#06D6A0", height: 50, padding: 0, fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center"}} 
+                        <button className="wkBtn wkBtn-done" style={{flex: 1.4}}
                           onClick={() => {
                             const idx = repeatRounds ? (curRound-1)*tSetsNum : 0;
                             const targetIdx = setsInViewArray.findIndex(s => !s.done);
@@ -6665,29 +6675,27 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
                             toggleSetDone(curEx, finalSi);
                           }}
                         >
-                           {setsInViewArray.length > 1 ? "Sätze fertig" : "Satz fertig"}
+                          {IC.check} {setsInViewArray.length > 1 ? "Satz fertig" : "Fertig"}
                         </button>
                       )}
-                      
-                      <button 
-                        style={{...s.primaryBtn, flex: 1, background: "#FF6B3515", border: "2px solid #FF6B35", color: "#FF6B35", height: 50, padding: 0, fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", width: !showFinishSet ? "100%" : "auto"}} 
-                        onClick={goNext}
-                      >
-                        {isLast ? "Training beenden" : "Nächste"}
+                      <button className={"wkBtn " + (showFinishSet ? "wkBtn-ghost" : "wkBtn-next")} style={{flex: 1, color: showFinishSet ? "#FF6B35" : undefined}} onClick={goNext}>
+                        {isLast ? "Abschließen" : "Weiter"} <span style={{fontSize:16,lineHeight:1}}>{isLast ? "🏁" : "→"}</span>
                       </button>
                     </div>
                   );
                 })()
               )}
-              
+
               {hiitMode && (
-                 <button style={{...s.primaryBtn, flex: 1, background: "#FFD16615", border: "2px solid #FFD166", color: "#FFD166", height: 50}} onClick={goNext}>
-                   Überspringen →
+                 <button className="wkBtn wkBtn-hiit" style={{flex: 1}} onClick={goNext}>
+                   Überspringen <span style={{fontSize:16}}>→</span>
                  </button>
               )}
             </div>
           </div>
-          <button style={{width:"100%",marginTop:15,background:"#EF476F15",border:"2px solid #EF476F",borderRadius:10,padding:12,color:"#EF476F"}} onClick={()=>setShowEndModal(true)}>Abbrechen</button>
+          <button className="wkBtn wkBtn-quit" style={{width:"100%",marginTop:14}} onClick={()=>setShowEndModal(true)}>
+            <span style={{width:10,height:10,borderRadius:2,background:"#EF476F",display:"inline-block"}}/> Training beenden
+          </button>
         </div>}
 
         {hiitConfig && (
@@ -6700,19 +6708,46 @@ function LogWorkout({user,setUser,data,setData,notify,prs,onSavePR,library,activ
           </div>
         )}
 
-        {showEndModal && ReactDOM.createPortal(
-          <div style={{...s.overlay2, zIndex: 1000}} onClick={()=>setShowEndModal(false)}>
-            <div style={{...s.modal, maxWidth:380, padding:25, borderRadius: 24, textAlign: "center", background:"rgba(16,16,22,0.97)",backdropFilter:"blur(32px) saturate(180%)",WebkitBackdropFilter:"blur(32px) saturate(180%)",border:"1px solid rgba(255,255,255,0.2)",boxShadow:"inset 0 1px 1px rgba(255,255,255,0.1), 0 32px 80px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.05)"}} onClick={e=>e.stopPropagation()}>
-              <div style={{width: 64, height: 64, background: "#EF476F20", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", color: "#EF476F"}}><span style={{fontSize: 28}}>⏹</span></div>
-              <h3 style={{...s.modalTitle, fontSize: 22, marginBottom: 10}}>Training beenden?</h3>
-              <p style={{fontSize: 14, color: "#888", marginBottom: 25, lineHeight: 1.5}}>Möchtest du das aktuelle Training abbrechen oder vorzeitig mit den bisherigen Fortschritten speichern?</p>
-              <div style={{display: "flex", flexDirection: "column", gap: 10}}>
-                <button style={{...s.primaryBtn, background: "#06D6A015", border: "2px solid #06D6A0", color: "#06D6A0", fontSize: 13, padding: "10px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8}} onClick={save}>Speichern & Beenden</button>
-                <button style={{...s.primaryBtn, background: "#EF476F15", border: "2px solid #EF476F", color: "#EF476F", fontSize: 13, padding: "10px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8}} onClick={()=>{setStep(1); setTimer(0); setRunning(false); setShowEndModal(false); setActiveWorkout(null); notify("Training verworfen", "info");}}>Abbrechen & Löschen</button>
-                <button style={{...s.secBtn, background: "#F0EDE810", border: "2px solid #F0EDE855", color: "#F0EDE8", fontSize: 13, marginTop: 5, padding: "10px", borderRadius: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 6}} onClick={()=>setShowEndModal(false)}>Zurück zum Training</button>
+        {showEndModal && ReactDOM.createPortal((() => {
+          const allSets = Object.values(sets || {}).flat().filter(Boolean);
+          const doneSets = allSets.filter(x => x.done).length;
+          const vol = allSets.filter(x => x.done).reduce((a,x) => a + (parseFloat(x.weight)||0)*(parseFloat(x.reps)||0), 0);
+          const pct = allSets.length ? Math.round(doneSets / allSets.length * 100) : 0;
+          const mm = Math.floor(timer/60), ss = timer%60;
+          const stat = (v,l,c) => (
+            <div style={{flex:1,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"12px 6px"}}>
+              <div style={{fontSize:19,fontWeight:900,color:c,letterSpacing:"-0.3px"}}>{v}</div>
+              <div style={{fontSize:10,color:"#777",fontWeight:700,textTransform:"uppercase",letterSpacing:0.6,marginTop:2}}>{l}</div>
+            </div>
+          );
+          return (
+          <div style={{...s.overlay2, zIndex: 1000, alignItems: isMobile ? "flex-end" : "center", background:"rgba(0,0,0,0.6)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)"}} onClick={()=>setShowEndModal(false)}>
+            <div className="wkSheet" style={{width:"100%", maxWidth:420, padding:"14px 22px calc(22px + env(safe-area-inset-bottom))", borderRadius: isMobile ? "28px 28px 0 0" : 28, textAlign:"center", background:"linear-gradient(180deg,rgba(26,26,32,0.98),rgba(14,14,18,0.98))", border:"1px solid rgba(255,255,255,0.09)", boxShadow:"0 -20px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08)", position:"relative", overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+              <div style={{position:"absolute",top:-80,left:"50%",transform:"translateX(-50%)",width:260,height:160,borderRadius:"50%",background:"#FF6B35",opacity:0.1,filter:"blur(50px)",pointerEvents:"none"}}/>
+              {isMobile && <div style={{width:40,height:4,borderRadius:2,background:"rgba(255,255,255,0.18)",margin:"0 auto 18px"}}/>}
+              <div style={{position:"relative",width:76,height:76,margin:"4px auto 14px"}}>
+                <svg width="76" height="76" viewBox="0 0 76 76" style={{transform:"rotate(-90deg)"}}>
+                  <defs><linearGradient id="wkEndG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#FF7A45"/><stop offset="1" stopColor="#06D6A0"/></linearGradient></defs>
+                  <circle cx="38" cy="38" r="32" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="6"/>
+                  <circle cx="38" cy="38" r="32" fill="none" stroke="url(#wkEndG)" strokeWidth="6" strokeLinecap="round" strokeDasharray={2*Math.PI*32} strokeDashoffset={2*Math.PI*32*(1-pct/100)} style={{transition:"stroke-dashoffset .8s ease"}}/>
+                </svg>
+                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:900,color:"#F0EDE8"}}>{pct}%</div>
+              </div>
+              <h3 style={{fontSize:22,fontWeight:900,color:"#F0EDE8",margin:"0 0 6px",letterSpacing:"-0.4px"}}>Training beenden?</h3>
+              <p style={{fontSize:13.5,color:"#8A8A92",margin:"0 0 18px",lineHeight:1.5}}>{doneSets>0 ? "Starke Arbeit bis hier – willst du deinen Fortschritt sichern?" : "Du hast noch keinen Satz abgeschlossen."}</p>
+              <div style={{display:"flex",gap:8,marginBottom:20}}>
+                {stat(`${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`,"Dauer","#FF6B35")}
+                {stat(`${doneSets}/${allSets.length}`,"Sätze","#06D6A0")}
+                {stat(vol>=1000?`${(vol/1000).toFixed(1)}t`:`${Math.round(vol)}kg`,"Volumen","#4CC9F0")}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <button className="wkBtn wkBtn-done" style={{width:"100%"}} onClick={save}>{IC.check} Speichern & beenden</button>
+                <button className="wkBtn wkBtn-ghost" style={{width:"100%"}} onClick={()=>setShowEndModal(false)}>Weiter trainieren</button>
+                <button className="wkBtn wkBtn-danger" style={{width:"100%",height:46,fontSize:13}} onClick={()=>{setStep(1); setTimer(0); setRunning(false); setShowEndModal(false); setActiveWorkout(null); notify("Training verworfen", "info");}}>{IC.x} Verwerfen</button>
               </div>
             </div>
-          </div>, document.body
+          </div>);
+        })(), document.body
         )}
       </div>}
 
@@ -6764,7 +6799,7 @@ function RouteMap({ path }) {
     if (mRef.current && path && path.length > 0) {
       if (!window.L) return;
       const map = window.L.map(mRef.current, { zoomControl: false, dragging: false, scrollWheelZoom: false }).setView(path[0], 14);
-      window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+      window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { className: 'ff-dark-tiles', maxZoom: 19, attribution: '&copy; OSM' }).addTo(map);
       
       const group = window.L.featureGroup().addTo(map);
       if (path.length >= 2) {
