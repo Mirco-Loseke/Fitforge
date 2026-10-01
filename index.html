@@ -4885,12 +4885,15 @@ function Nutrition({nutrition,setNutrition,user,setUser,notify,favFoods,setFavFo
     if(navigator.onLine===false){notify("Offline – Produkt unbekannt. Du kannst es selbst anlegen.","error");setNewProd({barcode:code});return;}
     setApiLoading(true);
     try{
-      const res=await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}&lc=de`);
-      const data=await res.json();
+      // Open Food Facts ist manchmal kurz überlastet → Wiederholung + Ersatz-Server, UPC auch mit führender 0
+      const offGet=async(host,c)=>{const r=await fetch(`https://${host}/api/v2/product/${c}.json?fields=${OFF_FIELDS}&lc=de`,{signal:AbortSignal.timeout?AbortSignal.timeout(8000):undefined});if(!r.ok)throw new Error("HTTP "+r.status);return r.json();};
+      let data=null;
+      for(const c of [code,...(code.length===12?["0"+code]:[])]){for(const host of ["world.openfoodfacts.org","world.openfoodfacts.net","world.openfoodfacts.org"]){try{data=await offGet(host,c);break;}catch(e){}}if(data&&data.status===1)break;}
+      if(!data)throw new Error("offline");
       if(data.status===1&&data.product&&data.product.nutriments&&Object.keys(data.product.nutriments).length){
         const p=offToProduct(data.product,code); cacheProduct(p); openProduct(p);
-      }else{ notify("Produkt nicht in der Datenbank – bitte einmal selbst anlegen 📝","info"); setNewProd({barcode:code}); }
-    }catch(e){ notify("Abfrage fehlgeschlagen – Produkt selbst anlegen?","error"); setNewProd({barcode:code}); }
+      }else{ notify(`Barcode ${code} erkannt, aber nicht in der Datenbank – bitte einmal selbst anlegen 📝`,"info"); setNewProd({barcode:code}); }
+    }catch(e){ notify(`Barcode ${code} erkannt, aber die Produktdatenbank antwortet gerade nicht – gleich nochmal scannen oder selbst anlegen`,"error"); setNewProd({barcode:code}); }
     setApiLoading(false);
   };
   const startScanner=()=>setScanning(true);

@@ -41,6 +41,8 @@ function BarcodeScanner({ onDetect, onClose }) {
         const track = stream.getVideoTracks()[0];
         try { const caps = track.getCapabilities?.(); if (caps?.torch) setTorch(false); if (caps?.focusMode?.includes?.("continuous")) track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}); } catch (e) {}
         setStatus("Barcode in den Rahmen halten");
+        // Nach 8 s ohne Treffer: Tipp für Dosen/Flaschen + Eingabefeld anbieten
+        setTimeout(() => { if (!cancelled && !doneRef.current) { setStatus("Klappt nicht? Dose/Flasche drehen, bis der Code flach im Rahmen liegt – oder Nummer eintippen"); setShowManual(true); } }, 8000);
         // 1) Native Erkennung (Android/Chrome) – schnell & zuverlässig
         let det = null;
         if ("BarcodeDetector" in window) {
