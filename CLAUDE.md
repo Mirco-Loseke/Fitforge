@@ -16,9 +16,9 @@
 3. Ein Modul = ein Thema (z. B. `barcode-scanner.jsx`, `gps-route.jsx`, `workout-logger.jsx`).
 4. Nach jeder Änderung: `npx vite build` muss durchlaufen.
 
-**Bereits ausgelagert:** `modules/barcode-scanner.jsx`
+**Bereits ausgelagert:** ai-client (ffAskAI, Cache, ffRichText), barcode-scanner, gps-route, daily-readiness (Tagesform-Coach), voice-log (Sprach-Logging), run-coach (Lauf-Ansagen), weekly-story (Wochen-Story)
 
-**Nächste Kandidaten:** GPS-Strecken (`RouteView`/`RouteMap`/`GpsAnalytics`), Rezepte & Einkaufsliste, Schlaf & Gesundheit, KI-Coach, `LogWorkout`.
+**Nächste Kandidaten:** Rezepte & Einkaufsliste, Schlaf & Gesundheit, KI-Coach-Chat, LogWorkout (groß – in Teilen), Dashboard.
 
 ## Firebase
 - Firestore-Regeln: `firestore.rules`, Storage-Regeln: `storage.rules` (Projekt `mircos-app`).

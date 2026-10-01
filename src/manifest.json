@@ -1,3 +1,9 @@
 [
-  "modules/barcode-scanner.jsx"
+  "modules/ai-client.jsx",
+  "modules/barcode-scanner.jsx",
+  "modules/gps-route.jsx",
+  "modules/daily-readiness.jsx",
+  "modules/voice-log.jsx",
+  "modules/run-coach.jsx",
+  "modules/weekly-story.jsx"
 ]

@@ -109,6 +109,11 @@ Bei Befehlen und kurzen Fragen halte "reply" knapp (Sprachsteuerung auf dem Hand
 Bei Analysen/Auswertungen gehört die KOMPLETTE Auswertung mit allen Abschnitten in "reply" (Zeilenumbrüche als \\n) – keine Einleitung wie "Hier ist deine Analyse" ohne Inhalt, keine weiteren JSON-Felder.`;
 
 const TASK_HINTS = {
+  readiness: `Aufgabe: Tagesform-Coach. context.tagesform enthält Score (0–100), Einstufung und Faktoren (Schlaf, HRV, Ruhepuls, Pause), dazu letzteTrainings, plaene, rekorde, ziel.
+Empfiehl, WIE heute trainiert werden soll: welcher Plan bzw. welche Muskelgruppe (nicht direkt nach den letzten Trainings dieselbe), Intensität (z. B. "Topsatz 3×5 bei 102,5 kg" oder "–10 % Gewicht"), oder Erholung.
+Format in "reply": 1 Satz Einschätzung, dann "• "-Stichpunkte mit 2–4 konkreten Übungen inkl. Gewicht×Wdh. (aus letzteTrainings/rekorde abgeleitet), zum Schluss 1 Satz Grund. Zahlen **fett**. Max. 90 Wörter, keine Aktionen.`,
+  story: `Aufgabe: Coach-Fazit für eine Instagram-artige Wochen-Story (context.woche: Trainings, Volumen, Vergleich Vorwoche in %, schwerster Satz).
+Schreibe 3 kurze, persönliche, motivierende Sätze (du-Form), mit 1–2 Zahlen **fett**, und als letzte Zeile "🎯 " + ein konkretes, messbares Ziel für nächste Woche. Max. 60 Wörter, keine Aktionen.`,
   plan: "Aufgabe: Erstelle einen passenden Trainingsplan als create_plan-Aktion.",
   meal: "Aufgabe: Schlage ein Gericht passend zu Ziel und heutigen Makros vor (suggest_meal).",
   progress: `Aufgabe: Progression fürs nächste Training. Nutze context.analyse.uebungen (e1RM-Verlauf), recentWorkouts und prs.
