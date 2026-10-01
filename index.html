@@ -2919,6 +2919,26 @@ function FitForge(){
     return () => window.removeEventListener("ff-cloud-conflict", onConflict);
   }, []);
 
+  // Waage (Apple Health "body") → Gewichtsverlauf. Jeder Tag wird nur einmal übernommen (data.hkBodyImported),
+  // manuell eingetragene oder gelöschte Tage bleiben unangetastet.
+  useEffect(() => {
+    if (!loaded || !cloudConfirmedRef.current["data"] || !health?.body) return;
+    const rows = Object.values(health.body).filter(b => b && b.date && b.weight);
+    if (!rows.some(b => !(data.hkBodyImported||[]).includes(b.date))) return;
+    setData(d => {
+      const done = new Set(d.hkBodyImported || []), tomb = new Set(d.deletedWeightDates || []);
+      const wh = [...(d.weightHistory || [])]; let added = 0;
+      rows.forEach(b => {
+        if (done.has(b.date)) return; done.add(b.date);
+        if (tomb.has(b.date) || wh.some(w => w.date === b.date)) return;
+        wh.push({ date: b.date, value: b.weight, source: "scale" }); added++;
+      });
+      if (added) setTimeout(() => showToast(`⚖️ Waage: ${added} Gewichtswert${added > 1 ? "e" : ""} übernommen`), 0);
+      wh.sort((a, b) => a.date.localeCompare(b.date));
+      return { ...d, weightHistory: wh, hkBodyImported: [...done].slice(-1000) };
+    });
+  }, [loaded, health, syncTick]);
+
   // Apple-Watch-Trainings in den Verlauf übernehmen. Erst NACH bestätigtem Cloud-Stand,
   // damit der Import in die echten Daten gemerged wird. Jede Health-ID wird genau einmal
   // verarbeitet (data.hkImported) – gelöschte Importe kommen also nicht wieder.
@@ -3731,7 +3751,7 @@ function FitForge(){
           {view==="history"&&<History data={data} setData={setData} selWO={selWO} setSelWO={setSelWO} notify={showToast} library={library} setWeeklyReport={setWeeklyReport} isMobile={isMobile} challenges={challenges}/>}
           {view==="gesundheit"&&<HealthPage health={health} data={data} isMobile={isMobile} notify={showToast}/>}
           {view==="stats"&&<Stats data={data} prs={prs} nutrition={nutrition} user={user}/>}
-          {view==="fortschritt"&&<ProgressPage data={data} setData={setData} user={user} notify={showToast} isMobile={isMobile} autoOpenAdd={autoOpenAdd==="fortschritt"}/>}
+          {view==="fortschritt"&&<ProgressPage health={health} data={data} setData={setData} user={user} notify={showToast} isMobile={isMobile} autoOpenAdd={autoOpenAdd==="fortschritt"}/>}
           {view==="nutrition"&&<Nutrition nutrition={nutrition} setNutrition={setNutrition} user={user} setUser={setUser} notify={showToast} favFoods={favFoods} setFavFoods={setFavFoods} isMobile={isMobile} autoOpenAdd={autoOpenAdd==="nutrition"} presetMealType={presetMealType}/>}
           {view==="goals"&&<ForgePointsPage user={user} setUser={setUser} isMobile={isMobile}/>}
           {view==="challenges"&&<ChallengesPage user={user} setUser={setUser} notify={showToast} isMobile={isMobile}/>}
@@ -4222,7 +4242,7 @@ function Dashboard({health,prs,data,user,onLog,onView,totalVol,thisWeek,todayNut
 
 const MEASUREMENT_TYPES = ["Bauchumfang (cm)", "Brustumfang (cm)", "Oberarm L (cm)", "Oberarm R (cm)", "Oberschenkel L (cm)", "Oberschenkel R (cm)", "Wade L (cm)", "Wade R (cm)"];
 
-function ProgressPage({data,setData,user,notify,isMobile,autoOpenAdd}){
+function ProgressPage({health,data,setData,user,notify,isMobile,autoOpenAdd}){
   const [showAddWeight,setShowAddWeight]=useState(!!autoOpenAdd);
   const [newWeight,setNewWeight]=useState(user.weight||"");
   const [weightDate,setWeightDate]=useState(todayStr());
@@ -4317,6 +4337,7 @@ function ProgressPage({data,setData,user,notify,isMobile,autoOpenAdd}){
         </button>
       </div>
     </div>
+    <BodyCompositionCard health={health} isMobile={isMobile}/>
 
     {compareMode && (
       <div style={isMobile ? { ...s.card, width: "100%", minWidth: 0, padding: 16, marginBottom: 22, border: "1px solid #FF6B35", maxWidth: "100%", boxSizing: "border-box" } : { ...s.card, marginBottom: 22, border: "1px solid #FF6B35" }} className="dropIn">
@@ -10028,6 +10049,15 @@ function HealthPage({health,data,isMobile,notify}){
           </>)}
 
           {step(5,"Automation: jeden Morgen",<><b>Automation</b> → <i>Tageszeit</i> 10:00, täglich → <b>Sofort ausführen</b> → „FitForge Schlaf & Tag“. Uhr nachts tragen und in der Health-App unter <i>Schlaf</i> einen Schlafplan aktivieren.</>)}
+
+          {step(6,"Waage (z. B. Starfit) – Kurzbefehl „FitForge Waage“",<>
+            Die Waagen-App muss in Apple Health schreiben dürfen (Health → Profil → Apps → Starfit → alles erlauben). Dann:<br/>
+            • <b>Health-Samples suchen</b>: <i>Gewicht</i>, Startdatum <i>in den letzten 1 Tagen</i>, Neueste zuerst, Limit 1<br/>
+            • genauso für <i>Körperfettanteil</i>, <i>Fettfreie Körpermasse</i> und <i>Body-Mass-Index</i> (was die Waage liefert)<br/>
+            • <b>Inhalte von URL abrufen</b> (wie oben) mit JSON {code("type")} = {code("body")}, {code("date")} = Startdatum des Gewichts, {code("weight")}, {code("bodyFat")}, {code("leanMass")}, {code("bmi")}<br/>
+            • <b>Automation</b>: Tageszeit 10:00 täglich (oder direkt nach dem Wiegen: <i>App „Starfit“ wird geschlossen</i>) → Sofort ausführen.<br/>
+            Gewicht landet automatisch im Gewichtsverlauf, alle Werte unter <i>Fortschritt</i>.
+          </>)}
 
           <div style={{fontSize:12,color:"#777",lineHeight:1.5,marginTop:4}}>💡 Überschneidet sich ein Watch-Training zeitlich mit einem in FitForge geloggten Training, werden Puls & Kalorien automatisch daran angehängt – kein Duplikat.</div>
         </div>}

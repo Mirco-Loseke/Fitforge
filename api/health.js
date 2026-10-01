@@ -7,6 +7,7 @@
 //   { type:"workout", name, start, end, kcal, km, hrAvg, hrMax }
 //   { type:"sleep",   samples: "<Stufe>;<Start>;<Ende>\n..."  (oder Array von {value,start,end}) }
 //   { type:"daily",   date, steps, restingHR, hrv, kcal }
+//   { type:"body",    date, weight, bodyFat, leanMass, bmi, muscleMass, water, boneMass, visceralFat, bmr }  (Waage)
 // Datumsangaben: ISO 8601 bevorzugt; deutsche Formate ("30.09.2026, 07:12") gehen auch.
 import { getAdmin, uidFromToken, cors } from "./_lib.js";
 
@@ -124,6 +125,22 @@ function parseDaily(it) {
   return out;
 }
 
+// Waage (z. B. Starfit → Apple Health): mehrere Werte pro Tag → letzter zählt
+function parseBody(it) {
+  const d = parseDate(it.date || it.start || it.startDate) || new Date();
+  const out = { date: typeof it.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(it.date) ? it.date : berlinDay(d), time: berlinTime(d), receivedAt: Date.now() };
+  const lastOf = (v) => { const a = nums(v); return a.length ? a[a.length - 1] : null; };
+  for (const k of ["weight", "bodyFat", "leanMass", "bmi", "muscleMass", "water", "boneMass", "visceralFat", "bmr"]) {
+    let v = lastOf(it[k]);
+    if (v == null) continue;
+    if ((k === "bodyFat" || k === "water") && v > 0 && v <= 1) v *= 100; // Health liefert Prozent teils als 0,18
+    if (k === "weight" && v > 400) v /= 1000;                              // Gramm statt kg
+    out[k] = Math.round(v * 10) / 10;
+  }
+  if (out.weight == null && out.bodyFat == null) throw new Error("body: weight/bodyFat fehlt");
+  return out;
+}
+
 export default async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -137,17 +154,18 @@ export default async function handler(req, res) {
   if (typeof body === "string") { try { body = JSON.parse(body); } catch { return res.status(400).json({ error: "Kein gültiges JSON" }); } }
   const items = Array.isArray(body) ? body : Array.isArray(body?.items) ? body.items : [body];
 
-  const add = { workouts: {}, sleep: {}, daily: {} }, errors = [];
+  const add = { workouts: {}, sleep: {}, daily: {}, body: {} }, errors = [];
   for (const it of items) {
     try {
       const t = String(it?.type || "").toLowerCase();
       if (t === "workout") { const w = parseWorkout(it); add.workouts[w.id] = w; }
       else if (t === "sleep") { const s = parseSleep(it); add.sleep[s.date] = s; }
       else if (t === "daily") { const d = parseDaily(it); add.daily[d.date] = { ...(add.daily[d.date] || {}), ...d }; }
+      else if (t === "body") { const b = parseBody(it); add.body[b.date] = { ...(add.body[b.date] || {}), ...b }; }
       else errors.push(`Unbekannter type "${it?.type}"`);
     } catch (e) { errors.push(e.message); }
   }
-  const n = Object.keys(add.workouts).length + Object.keys(add.sleep).length + Object.keys(add.daily).length;
+  const n = Object.keys(add.workouts).length + Object.keys(add.sleep).length + Object.keys(add.daily).length + Object.keys(add.body).length;
   if (!n) return res.status(400).json({ error: "Nichts Verwertbares empfangen", details: errors });
 
   try {
@@ -161,14 +179,16 @@ export default async function handler(req, res) {
         sleep: { ...(cur.sleep || {}), ...add.sleep },
         // Tageswerte feldweise mergen (Schritte am Abend, Ruhepuls am Morgen …)
         daily: { ...(cur.daily || {}) },
+        body: { ...(cur.body || {}) },
       };
       for (const [d, v] of Object.entries(add.daily)) next.daily[d] = { ...(next.daily[d] || {}), ...v };
+      for (const [d, v] of Object.entries(add.body)) next.body[d] = { ...(next.body[d] || {}), ...v };
       t.set(ref, { value: next, updatedAt: Date.now() });
     });
-    return res.status(200).json({ ok: true, saved: { workouts: Object.keys(add.workouts).length, sleep: Object.keys(add.sleep).length, daily: Object.keys(add.daily).length }, warnings: errors });
+    return res.status(200).json({ ok: true, saved: { workouts: Object.keys(add.workouts).length, sleep: Object.keys(add.sleep).length, daily: Object.keys(add.daily).length, body: Object.keys(add.body).length }, warnings: errors });
   } catch (e) {
     return res.status(500).json({ error: "Speichern fehlgeschlagen: " + e.message });
   }
 }
 
-export const _test = { parseWorkout, parseSleep, parseDaily, parseDate };
+export const _test = { parseWorkout, parseSleep, parseDaily, parseBody, parseDate };
