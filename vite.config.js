@@ -18,7 +18,10 @@ function precompileApp() {
       const html = readFileSync('index.html', 'utf8')
       const m = html.match(SRC_RE)
       if (!m) throw new Error('ff-src Block nicht gefunden')
-      const out = await transformWithEsbuild(m[2], 'app.jsx', {
+      // Ausgelagerte Module aus src/manifest.json vor den Hauptcode setzen
+      const mods = JSON.parse(readFileSync('src/manifest.json', 'utf8'))
+        .map(f => `\n// ── src/${f}\n` + readFileSync('src/' + f, 'utf8')).join('\n')
+      const out = await transformWithEsbuild(mods + '\n' + m[2], 'app.jsx', {
         loader: 'jsx', jsx: 'transform', jsxFactory: 'React.createElement', jsxFragment: 'React.Fragment',
         minify: true, keepNames: true, target: 'es2020',
       })

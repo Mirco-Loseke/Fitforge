@@ -1,0 +1,21 @@
+rules_version = '2';
+// FitForge – Storage-Regeln
+// Neue Uploads liegen unter fitforge/<uid>/<ordner>/… (siehe uploadToStorage in index.html).
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function isImage() { return request.resource.contentType.matches('image/.*') && request.resource.size < 10 * 1024 * 1024; }
+
+    // Eigene Bilder: schreiben/löschen nur der Besitzer.
+    // Lesen: Fortschrittsfotos nur der Besitzer, alles andere (Avatar, Übungs-/Planbilder) alle Eingeloggten.
+    match /fitforge/{uid}/{folder}/{rest=**} {
+      allow read: if signedIn() && (request.auth.uid == uid || folder != 'progress');
+      allow delete: if signedIn() && request.auth.uid == uid;
+      allow write: if signedIn() && request.auth.uid == uid && isImage();
+    }
+    // Alte Uploads ohne uid im Pfad (exercises/, plans/, avatar/): nur noch lesen
+    match /fitforge/{folder}/{file} {
+      allow read: if signedIn() && folder in ['exercises', 'plans', 'avatar'];
+    }
+  }
+}
