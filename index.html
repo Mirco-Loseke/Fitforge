@@ -9542,7 +9542,8 @@ function HealthPage({health,data,isMobile,notify}){
   const last = sleep[sleep.length-1];
   const last7 = sleep.slice(-7), last14 = sleep.slice(-14);
   const avg = (arr,k) => { const v=arr.map(x=>x[k]).filter(x=>x!=null&&x>0); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; };
-  const today = daily[daily.length-1];
+  // neuester Tag MIT Werten (leere Test-/Teil-Einträge überspringen)
+  const today = [...daily].reverse().find(d=>Object.keys(d).some(k=>!["date","receivedAt"].includes(k)&&d[k]!=null));
   const lastReceived = Math.max(0, ...[...sleep,...daily,...Object.values(health?.workouts||{})].map(x=>x.receivedAt||0));
   const hasData = sleep.length || daily.length || hkWorkouts.length;
   const [setupOpen,setSetupOpen] = useState(!hasData);

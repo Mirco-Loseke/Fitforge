@@ -214,7 +214,11 @@ export default async function handler(req, res) {
       const t = String(it?.type || "").toLowerCase();
       if (t === "workout") { const w = parseWorkout(it); add.workouts[w.id] = w; }
       else if (t === "sleep") { const s = parseSleep(it); add.sleep[s.date] = s; }
-      else if (t === "daily") { const d = parseDaily(it); add.daily[d.date] = { ...(add.daily[d.date] || {}), ...d }; }
+      else if (t === "daily") {
+        const d = parseDaily(it);
+        if (Object.keys(d).length <= 2) errors.push(`daily ${d.date}: keine Werte erkannt – sind die Felder im Kurzbefehl mit Variablen gefüllt? Empfangene Felder: ${Object.keys(it).join(", ")}`);
+        else add.daily[d.date] = { ...(add.daily[d.date] || {}), ...d };
+      }
       else if (t === "series") { for (const [d, v] of Object.entries(parseSeries(it))) add.daily[d] = { ...(add.daily[d] || {}), ...v }; }
       else if (t === "body") { const b = parseBody(it); add.body[b.date] = { ...(add.body[b.date] || {}), ...b }; }
       else errors.push(`Unbekannter type "${it?.type}"`);
@@ -240,7 +244,7 @@ export default async function handler(req, res) {
       for (const [d, v] of Object.entries(add.body)) next.body[d] = { ...(next.body[d] || {}), ...v };
       t.set(ref, { value: next, updatedAt: Date.now() });
     });
-    return res.status(200).json({ ok: true, saved: { workouts: Object.keys(add.workouts).length, sleep: Object.keys(add.sleep).length, daily: Object.keys(add.daily).length, body: Object.keys(add.body).length }, warnings: errors });
+    return res.status(200).json({ ok: true, saved: { workouts: Object.keys(add.workouts).length, sleep: Object.keys(add.sleep).length, daily: Object.keys(add.daily).length, body: Object.keys(add.body).length }, received: { daily: add.daily }, warnings: errors });
   } catch (e) {
     return res.status(500).json({ error: "Speichern fehlgeschlagen: " + e.message });
   }
