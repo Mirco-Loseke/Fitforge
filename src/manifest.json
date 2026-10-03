@@ -1,6 +1,7 @@
 [
   "modules/ai-client.jsx",
   "modules/ai-coach-insights.jsx",
+  "modules/ai-coach.jsx",
   "modules/barcode-scanner.jsx",
   "modules/gps-route.jsx",
   "modules/daily-readiness.jsx",

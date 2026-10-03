@@ -16,9 +16,9 @@
 3. Ein Modul = ein Thema (z. B. `barcode-scanner.jsx`, `gps-route.jsx`, `workout-logger.jsx`).
 4. Nach jeder Änderung: `npx vite build` muss durchlaufen.
 
-**Bereits ausgelagert:** ai-client (ffAskAI, Cache, ffRichText), ai-coach-insights (Vollkontext, Chat-Diagramme, Chatverlauf), barcode-scanner, gps-route, daily-readiness (Tagesform-Coach), voice-log (Sprach-Logging), run-coach (Lauf-Ansagen), weekly-story (Wochen-Story), body-composition (Waagen-Werte)
+**Bereits ausgelagert:** ai-client (ffAskAI, Cache, ffRichText), ai-coach (KI-Chat AssistantSheet, Trainingsanalyse, Kontext), ai-coach-insights (Vollkontext, Monatswerte, Streaming-Parser, Chat-Diagramme, Chatverlauf), coach-memory, coach-nudges (proaktive Hinweise), wellbeing-checkin (Befinden), quick-meals (Essen wie gestern), health-metrics (alle Health-Tageswerte), barcode-scanner, gps-route, daily-readiness (Tagesform-Coach), voice-log (Sprach-Logging), run-coach (Lauf-Ansagen), weekly-story (Wochen-Story), body-composition (Waagen-Werte)
 
-**Nächste Kandidaten:** Rezepte & Einkaufsliste, Schlaf & Gesundheit, KI-Coach-Chat, LogWorkout (groß – in Teilen), Dashboard.
+**Nächste Kandidaten:** Rezepte & Einkaufsliste, Schlaf & Gesundheit (HealthPage), LogWorkout (groß – in Teilen), Dashboard.
 
 ## Firebase
 - Firestore-Regeln: `firestore.rules`, Storage-Regeln: `storage.rules` (Projekt `mircos-app`).
