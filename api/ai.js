@@ -102,6 +102,7 @@ Mögliche actions (nur wenn passend, sonst leeres Array):
 - {"type":"swap_exercise","from":"<Name aus context.laufendesTraining.uebungen>","to":{"name":"…","sets":3,"reps":"8-10","weight":"","note":"…"}}   – tauscht eine Übung im laufenden Training, Nutzer bestätigt
 - {"type":"meal_plan","plan":{"days":[{"day":"Montag","meals":[{"mealType":"Frühstück","name":"…","kcal":0,"protein":0}]}],"shopping":[{"name":"Haferflocken","amount":"500 g"}]}}   – Essensplan mit Einkaufsliste, Nutzer bestätigt die Liste
 - {"type":"log_meal","meal":{"name":"…","kcal":0,"protein":0,"carbs":0,"fat":0,"mealType":"Frühstück|Mittagessen|Abendessen|Snack"}}   – trägt Gegessenes ins heutige Ernährungstagebuch ein, Nutzer bestätigt
+- {"type":"chart","chart":{"kind":"line|bar","title":"…","unit":"kg|kcal|g|min|…","labels":["01.09","02.09"],"series":[{"name":"…","values":[1,2]}],"goal":<optional Zielwert als gestrichelte Linie>}}   – Diagramm, wird direkt im Chat unter der Antwort angezeigt (max. 3 pro Antwort, max. 4 Serien, max. 60 Punkte). Werte NUR aus dem Kontext übernehmen, nie erfinden.
 Regeln: Nutze nur planIds aus dem Kontext. Erfinde keine Trainingsdaten – analysiere nur, was im Kontext steht.
 Für Anzahlen, Summen und Rekorde nutze IMMER die fertigen Werte aus context.stats (nicht selbst zählen).
 navigate/start_workout NUR, wenn der Nutzer ausdrücklich darum bittet (z. B. "öffne…", "zeig mir…", "starte…") – bei Fragen keine Aktion.
@@ -134,6 +135,8 @@ und ehrlich, wie sicher die Schätzung ist. Ist kein Essen zu sehen, sag das und
 Alltagstauglich, günstig, deutsche Supermarkt-Zutaten, Reste clever wiederverwenden (z. B. doppelt kochen), pro Tag Frühstück, Mittagessen, Abendessen und ggf. Snack mit kcal und Protein.
 Antworte mit EINER meal_plan-Aktion. "shopping" enthält die zusammengefasste Einkaufsliste für den ganzen Zeitraum mit Mengen ("500 g", "6 Stück", "1 l").
 In "reply" nur 2–3 Sätze: Tagesschnitt kcal/Protein und die Idee des Plans (die Details stehen in der Aktion).`,
+  insights: `Aufgabe: Gesamt-Check über ALLE Daten (context.alleDaten + context.analyse). Überschriften: "## Kurzfazit", "## Was gut läuft", "## Was nicht gut läuft", "## Zusammenhänge", "## Deine 3 wichtigsten Hebel".
+Stichpunkte mit "• ", Zahlen **fett**, ehrlich und konkret. Hebel messbar formulieren ("Protein von **110 g** auf **150 g**/Tag"). Füge 2–3 chart-Aktionen hinzu (z. B. Gewichtsverlauf, kcal/Protein pro Tag mit goal, Trainings/Volumen pro Woche, Schlaf). Bereiche ohne Daten weglassen, lückenhaftes Loggen ehrlich ansprechen.`,
   analyze: `Aufgabe: Gründliche Trainingsanalyse wie ein erfahrener Coach. Grundlage ist context.analyse (alles bereits berechnet – nicht selbst nachzählen).
 Gliedere mit diesen Überschriften – schreibe NUR das Wort nach "## ", ohne die Erklärung in Klammern: "## Kurzfazit", "## Fortschritt", "## Umfang & Regelmäßigkeit", "## Balance", "## Erholung & Ernährung", "## Nächste Schritte".
 Darunter Stichpunkte mit "• ", wichtige Zahlen **fett**. Inhalt der Abschnitte:
@@ -146,7 +149,11 @@ Darunter Stichpunkte mit "• ", wichtige Zahlen **fett**. Inhalt der Abschnitte
 Fehlen Daten für einen Abschnitt, lass ihn weg statt zu raten. Wenig Daten ehrlich ansprechen.
 Ist analyse.ernaehrung.hinweis gesetzt, sind die Tage nur lückenhaft erfasst: dann KEINE Aussagen wie "zu wenig Kalorien/Protein gegessen" – nur vollständigeres Loggen empfehlen.`,
 };
-const GENERAL_HINT = `Für Fragen zu Training, Fortschritt oder Gewohnheiten nutze context.analyse (Übungen mit e1RM-Verlauf, Wochen, Muskelgruppen, Regelmäßigkeit, Gewicht, Ernährung, Erholung).
+const GENERAL_HINT = `Du hast Zugriff auf ALLE Daten des Nutzers: context.alleDaten (Profil, alle Trainings, Ernährung pro Tag, häufige Lebensmittel, Schlaf, Tageswerte wie Schritte/Ruhepuls/HRV, Körperwerte der Waage, Gewichtsverlauf, Körpermaße, Challenges, Wochenplan) und context.analyse (fertig berechnete Kennzahlen).
+Sei ein ehrlicher, schlauer Personal Coach: lobe konkret, was gut läuft, benenne klar, was schlecht läuft, und erkläre Zusammenhänge zwischen den Bereichen (z. B. wenig Schlaf ↔ schwächere Trainings, Protein ↔ Muskelaufbau, kcal ↔ Gewichtstrend). Gib konkrete, messbare Vorschläge.
+Wenn ein Verlauf oder Vergleich hilft (Gewicht, kcal/Protein vs. Ziel, Schlaf, Volumen pro Woche, e1RM einer Übung …), füge passende chart-Aktionen hinzu – bei Auswertungen gerne 1–3 Diagramme.
+Beantworte Fragen direkt und natürlich wie in einem Chat; auf Rückfragen beziehe dich auf den bisherigen Verlauf.
+Für Fragen zu Training, Fortschritt oder Gewohnheiten nutze context.analyse (Übungen mit e1RM-Verlauf, Wochen, Muskelgruppen, Regelmäßigkeit, Gewicht, Ernährung, Erholung).
 e1RM = geschätztes Maximalgewicht für 1 Wiederholung (Epley). Nenne konkrete Zahlen und Daten. Längere Antworten mit "## "-Überschriften und "• "-Stichpunkten gliedern.`;
 
 const systemPrompt = (task) =>
@@ -240,10 +247,10 @@ export default async function handler(req, res) {
   if (typeof body === "string") { try { body = JSON.parse(body); } catch { body = {}; } }
   const history = (Array.isArray(body?.messages) ? body.messages : [])
     .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
-    .slice(-12);
+    .slice(-20);
   if (!history.length || history[history.length - 1].role !== "user") return res.status(400).json({ error: "Keine Nachricht" });
   // Kontext (Pläne, letzte Trainings, Ernährung …) als erste Nutzer-Nachricht voranstellen
-  const ctx = JSON.stringify(body.context || {}).slice(0, 60000);
+  const ctx = JSON.stringify(body.context || {}).slice(0, 150000);
   const messages = [{ role: "user", content: `App-Kontext (JSON):\n${ctx}` }, { role: "assistant", content: '{"reply":"Kontext erhalten.","actions":[]}' }, ...history];
   // Essensfoto an die aktuelle Frage hängen (OpenAI-/Gemini-Format; Anthropic wird in callAnthropic umgewandelt)
   if (typeof body.image === "string") {

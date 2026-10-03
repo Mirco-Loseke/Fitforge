@@ -16,7 +16,7 @@
 3. Ein Modul = ein Thema (z. B. `barcode-scanner.jsx`, `gps-route.jsx`, `workout-logger.jsx`).
 4. Nach jeder Änderung: `npx vite build` muss durchlaufen.
 
-**Bereits ausgelagert:** ai-client (ffAskAI, Cache, ffRichText), barcode-scanner, gps-route, daily-readiness (Tagesform-Coach), voice-log (Sprach-Logging), run-coach (Lauf-Ansagen), weekly-story (Wochen-Story), body-composition (Waagen-Werte)
+**Bereits ausgelagert:** ai-client (ffAskAI, Cache, ffRichText), ai-coach-insights (Vollkontext, Chat-Diagramme, Chatverlauf), barcode-scanner, gps-route, daily-readiness (Tagesform-Coach), voice-log (Sprach-Logging), run-coach (Lauf-Ansagen), weekly-story (Wochen-Story), body-composition (Waagen-Werte)
 
 **Nächste Kandidaten:** Rezepte & Einkaufsliste, Schlaf & Gesundheit, KI-Coach-Chat, LogWorkout (groß – in Teilen), Dashboard.
 

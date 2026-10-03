@@ -3766,7 +3766,7 @@ function FitForge(){
           }} latestWeight={(()=>{const lw=[...(data.weightHistory||[])].sort((a,b)=>b.date.localeCompare(a.date))[0];return lw?.value||parseFloat(user.weight)||null;})()}/>}
         </div>
       </main>
-      <AssistantSheet open={aiOpen} onClose={()=>setAiOpen(false)} init={aiInit} data={data} user={user} prs={prs} nutrition={nutrition} view={view} health={health} library={library} activeWorkout={activeWorkout} notify={showToast} isMobile={isMobile}
+      <AssistantSheet open={aiOpen} onClose={()=>setAiOpen(false)} init={aiInit} data={data} user={user} prs={prs} nutrition={nutrition} view={view} health={health} library={library} activeWorkout={activeWorkout} challenges={challenges} weekPlans={weekPlans} notify={showToast} isMobile={isMobile}
         onAction={(a)=>{
           if(a.type==='navigate'&&a.view){setView(a.view);setPresetPlanId(null);setAutoOpenAdd(null);closeAll();}
           else if(a.type==='start_workout'){const p=(data.plans||[]).find(x=>String(x.id)===String(a.planId));if(!p)return showToast('Plan nicht gefunden','error');setActiveWorkout(null);setPresetPlanId(p.id);setView('log');closeAll();}
@@ -9636,7 +9636,7 @@ function buildTrainingAnalytics({ data, user, nutrition, health, library }) {
   return { heute: today, uebungen, wochen, muskelSaetzeLetzte28Tage: muskelSaetze, regelmaessigkeit, gewicht, ernaehrung, erholung };
 }
 
-function buildAIContext({ data, user, prs, nutrition, view, health, library, activeWorkout }){
+function buildAIContext({ data, user, prs, nutrition, view, health, library, activeWorkout, challenges, weekPlans }){
   const today = todayStr();
   // Fertig berechnete Kennzahlen – kleine Modelle verzählen sich sonst in langen Listen
   const ws = data.workouts || [];
@@ -9645,6 +9645,7 @@ function buildAIContext({ data, user, prs, nutrition, view, health, library, act
   const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   return {
     analyse: buildTrainingAnalytics({ data, user, nutrition, health, library }),
+    alleDaten: ffBuildFullData({ data, user, nutrition, health, challenges, weekPlans }),
     stats: { trainingsGesamt: ws.length, letzte7Tage: ws.filter(w => w.date >= weekAgo).length, proMonat: byMonth, letztesTraining: [...ws].sort((a, b) => b.date.localeCompare(a.date))[0]?.date || null },
     view,
     uhrzeit: new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
@@ -9679,8 +9680,9 @@ function CoachText({ text }) {
   })}</>;
 }
 
-function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view, health, library, activeWorkout, onAction, notify, isMobile }){
-  const [msgs, setMsgs] = useState([]);
+function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view, health, library, activeWorkout, challenges, weekPlans, onAction, notify, isMobile }){
+  const [msgs, setMsgs] = useState(ffChatLoad);
+  useEffect(() => { ffChatSave(msgs); }, [msgs]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
@@ -9738,7 +9740,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
     try {
       const idt = await firebase.auth().currentUser.getIdToken();
       const r = await fetch("/api/ai", { signal: AbortSignal.timeout ? AbortSignal.timeout(70000) : undefined, method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + idt },
-        body: JSON.stringify({ task, ...(img ? { image: img } : {}), messages: next.map(m => ({ role: m.role, content: m.content })), context: buildAIContext({ data, user, prs, nutrition, view, health, library, activeWorkout }), preferModel: (()=>{try{return localStorage.getItem("ff_ai_model");}catch(e){return null;}})() }) });
+        body: JSON.stringify({ task, ...(img ? { image: img } : {}), messages: next.map(m => ({ role: m.role, content: m.content })), context: buildAIContext({ data, user, prs, nutrition, view, health, library, activeWorkout, challenges, weekPlans }), preferModel: (()=>{try{return localStorage.getItem("ff_ai_model");}catch(e){return null;}})() }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 501 || r.status === 404) { setAiState("off"); setMsgs(m => [...m, { role: "assistant", content: "🔌 Die KI ist noch nicht verbunden. Sobald ein Modell eingerichtet ist, kann ich Pläne erstellen, Gerichte vorschlagen und Trainings analysieren. Sprachbefehle wie „öffne Verlauf“ oder „starte <Planname>“ funktionieren schon jetzt." }]); }
       else if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
@@ -9781,6 +9783,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
     ["🗓️ Wochenrückblick", "Mach mir einen Wochenrückblick der letzten 7 Tage mit einem Ziel für nächste Woche.", "week"],
     ["🏋️ Plan erstellen", "Erstelle mir einen Trainingsplan passend zu meinen bisherigen Trainings.", "plan"],
     ["🍽️ Gericht vorschlagen", "Schlag mir ein Gericht passend zu meinen heutigen Makros vor.", "meal"],
+    ["🧠 Gesamt-Check: Was läuft gut, was schlecht?", "Schau dir ALLE meine Daten an (Training, Ernährung, Schlaf, Körperwerte) und sag mir ehrlich: Was läuft gut, was schlecht, und was sind die 3 wichtigsten Hebel zur Verbesserung? Mit Diagrammen.", "insights"],
     ["📊 Komplette Trainingsanalyse", "Mach eine komplette Analyse meines Trainings: Fortschritt, Regelmäßigkeit, Balance, Erholung und nächste Schritte.", "analyze"],
     ["💪 Wo mache ich Fortschritte?", "Bei welchen Übungen werde ich stärker, wo stagniere ich? Mit Zahlen.", "analyze"],
     ["⚖️ Was trainiere ich zu wenig?", "Welche Muskelgruppen trainiere ich zu wenig und wie gleiche ich das aus?", "analyze"],
@@ -9789,7 +9792,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
   const bubble = (m, i) => (
     <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%" }}>
       <div style={{ padding: "10px 13px", borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", background: m.role === "user" ? "linear-gradient(135deg,#FF6B35,#FF8C60)" : "rgba(255,255,255,0.06)", color: m.role === "user" ? "#fff" : "#E8E5E0", fontSize: 14, lineHeight: 1.5, wordBreak: "break-word" }}>{m.image && <img src={m.image} alt="" style={{ display: "block", maxWidth: "100%", maxHeight: 200, borderRadius: 10, marginBottom: 6 }} />}{m.role === "assistant" ? <CoachText text={m.content} /> : m.content}</div>
-      {(m.actions||[]).map((a, j) => a.type === "create_plan" && a.plan ? (
+      {(m.actions||[]).map((a, j) => a.type === "chart" && (a.chart || a.labels) ? <FFChart key={j} chart={a.chart || a} /> : a.type === "create_plan" && a.plan ? (
         <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.08)" }}>
           <div style={{ fontWeight: 800, color: "#F0EDE8", marginBottom: 6 }}>📋 {a.plan.name}</div>
           {(a.plan.exercises||[]).map((e, k) => <div key={k} style={{ fontSize: 12, color: "#bbb", padding: "2px 0" }}>• {e.name}{e.sets ? ` – ${e.sets}×${e.reps||""}` : ""}</div>)}
@@ -9846,6 +9849,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
           <div><div style={{ fontWeight: 800, fontSize: 16, color: "#F0EDE8" }}>✨ FitForge Coach</div><div style={{ fontSize: 11, color: aiState === "off" ? "#FFD166" : "#666" }}>{aiState === "off" ? "KI noch nicht verbunden · Sprachbefehle aktiv" : "Frag mich oder sag, was ich tun soll"}</div></div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {msgs.length > 0 && <button onClick={() => { setShowQuick(v => !v); setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 50); }} aria-label="Vorschläge" style={{ ...s.secBtn, padding: "7px 12px", fontSize: 12, borderColor: "rgba(167,139,250,0.45)", color: "#A78BFA", background: showQuick ? "rgba(167,139,250,0.18)" : "rgba(167,139,250,0.08)" }}>✨ Vorschläge</button>}
+            {msgs.length > 0 && !busy && <button onClick={() => { setMsgs([]); setDoneCards({}); }} aria-label="Neuer Chat" title="Neuer Chat" style={{ ...s.secBtn, padding: "7px 10px", fontSize: 12 }}>🗑️</button>}
             <button onClick={onClose} aria-label="Schließen" style={{ ...s.iconCircle, border: "none", background: "rgba(255,255,255,0.06)", color: "#aaa" }}>{IC.x}</button>
           </div>
         </div>
