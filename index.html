@@ -3743,7 +3743,7 @@ function FitForge(){
         {undoConfirmItem&&<UndoConfirmModal item={undoConfirmItem} onConfirm={()=>undoChecklistItem(undoConfirmItem)} onCancel={()=>setUndoConfirmItem(null)}/>}
         {shareModalItem&&<ShareWithFriendsModal item={shareModalItem} user={user} notify={showToast} onClose={()=>setShareModalItem(null)}/>}
         <div key={animK} className="pageEnter">
-          {view==="dashboard"&&<Dashboard health={health} prs={prs} library={library} data={data} user={user} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday} challenges={challenges}/>}
+          {view==="dashboard"&&<Dashboard health={health} prs={prs} library={library} data={data} user={user} setUser={setUser} nutrition={nutrition} onLog={()=>{setActiveWorkout(null); setPresetPlanId(null); setView("log");}} onView={setView} streak={streak} totalVol={totalVol} thisWeek={thisWeek} todayNut={todayNut} isMobile={isMobile} checklist={checklist} onChecklistItemClick={onChecklistItemClick} waterGoal={waterGoal} waterTotal={waterTotalToday} waterLog={todayWaterLog} onAddWater={addWaterToday} onDelWater={delWaterToday} challenges={challenges}/>}
           {view==="plans"&&<Plans data={data} setData={setData} onNew={()=>setPlanModal(true)} onEdit={p=>{setEditPlan(p);setPlanModal(true);}} notify={showToast} library={library}/>}
           {view==="library"&&<LibraryPage library={library} setLibrary={setLibrary} notify={showToast}/>}
           {view==="wochenplan"&&<WochenplanPage weekPlans={weekPlans} setWeekPlans={setWeekPlans} data={data} user={user} library={library} notify={showToast} favFoods={favFoods} nutrition={nutrition}/>}
@@ -3770,6 +3770,8 @@ function FitForge(){
         onAction={(a)=>{
           if(a.type==='navigate'&&a.view){setView(a.view);setPresetPlanId(null);setAutoOpenAdd(null);closeAll();}
           else if(a.type==='start_workout'){const p=(data.plans||[]).find(x=>String(x.id)===String(a.planId));if(!p)return showToast('Plan nicht gefunden','error');setActiveWorkout(null);setPresetPlanId(p.id);setView('log');closeAll();}
+          else if(a.type==='remember'||a.type==='forget'){setUser(u=>({...u,coachMemory:ffMemoryApply(u.coachMemory,a),updatedAt:Date.now()}));}
+          else if(a.type==='memory_delete'){setUser(u=>({...u,coachMemory:(u.coachMemory||[]).filter(m=>m.id!==a.id),updatedAt:Date.now()}));}
           else if(a.type==='save_plan'&&a.plan){setData(d=>({...d,plans:[...(d.plans||[]),a.plan]}));}
           else if(a.type==='set_targets'){const t={};(a.targets||[]).forEach(x=>{if(x?.name)t[x.name.toLowerCase().trim()]={name:x.name,weight:x.weight??"",reps:x.reps??"",sets:x.sets||null,note:x.note||"",date:todayStr()};});setUser(u=>({...u,aiTargets:{...(u.aiTargets||{}),...t},updatedAt:Date.now()}));}
           else if(a.type==='shopping_add'&&(a.items||[]).length){setUser(u=>({...u,shoppingList:addRecipeToShopping(u.shoppingList||[],{name:'KI-Essensplan',ingredients:a.items.filter(x=>x?.name).map(x=>({name:String(x.name),amount:String(x.amount||'')}))},1),updatedAt:Date.now()}));}
@@ -4056,7 +4058,7 @@ function MuscleHeatmap({ data, library, isMobile }) {
   );
 }
 
-function Dashboard({health,prs,data,user,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick,waterGoal,waterTotal,waterLog,onAddWater,onDelWater,challenges,library}){
+function Dashboard({health,prs,data,user,setUser,nutrition,onLog,onView,totalVol,thisWeek,todayNut,isMobile,checklist,onChecklistItemClick,waterGoal,waterTotal,waterLog,onAddWater,onDelWater,challenges,library}){
   const cwDays = new Set(thisWeek.map(w => new Date(w.date).toDateString())).size;
   const cwSessions = thisWeek.length;
   const last3=[...data.workouts].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,3);
@@ -4120,6 +4122,8 @@ function Dashboard({health,prs,data,user,onLog,onView,totalVol,thisWeek,todayNut
           })()}
         </div>
       </div>
+      <CoachNudgesCard data={data} user={user} nutrition={nutrition} health={health} library={library} onView={onView}/>
+      <WellbeingCheckin user={user} setUser={setUser}/>
       <ReadinessCard health={health} data={data} user={user} prs={prs} isMobile={isMobile}/>
       <WeeklyStoryCard data={data} prs={prs} user={user} isMobile={isMobile}/>
       {(()=>{
@@ -5019,6 +5023,7 @@ function Nutrition({nutrition,setNutrition,user,setUser,notify,favFoods,setFavFo
             <button onClick={startScanner} style={{...s.primaryBtn,justifyContent:"center",padding:"14px 10px",fontSize:14}}><svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M7 21H5a2 2 0 01-2-2v-2M21 17v2a2 2 0 01-2 2h-2M7 8v8M10 8v8M13 8v8M16 8v8"/></svg> Barcode scannen</button>
             <button onClick={()=>{setSearchMode("search");setTimeout(()=>document.getElementById("ff-food-search")?.focus(),50);document.getElementById("ff-food-search")?.scrollIntoView({behavior:"smooth",block:"center"});}} style={{...s.secBtn,justifyContent:"center",padding:"14px 10px",fontSize:14}}>🔍 Suchen</button>
           </div>
+          <QuickRepeatMeals nutrition={nutrition} setNutrition={setNutrition} selDate={selDate} notify={notify}/>
           {recentFoods.length>0 && <div style={{marginBottom:18}}>
             <div style={{fontSize:11,fontWeight:800,color:"#777",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>🕐 Zuletzt gegessen</div>
             <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none"}}>
@@ -9656,6 +9661,7 @@ function buildAIContext({ data, user, prs, nutrition, view, health, library, act
     } : null,
     bibliothek: (library||[]).filter(l => l?.name).slice(0, 200).map(l => l.muscles?.length ? l.name + " (" + l.muscles.join(", ") + ")" : l.name),
     kiZiele: user.aiTargets || undefined,
+    kiGedaechtnis: (user.coachMemory || []).map(m => m.text),
     user: { name: user.firstName, weight: user.weight, height: user.height, goal: user.goal, age: user.age },
     plans: (data.plans||[]).map(p => ({ id: p.id, name: p.name, types: p.types, exercises: (p.exercises||[]).map(e => typeof e === "string" ? e : e.name) })),
     recentWorkouts: [...(data.workouts||[])].sort((a,b)=>b.date.localeCompare(a.date)).slice(0, 15).map(w => ({
@@ -9721,7 +9727,9 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
 
   const runActions = (actions) => (actions||[]).forEach(a => {
     if (a.type === "navigate" || a.type === "start_workout") { onAction(a); onClose(); }
+    else if (a.type === "remember" || a.type === "forget") onAction(a); // Gedächtnis sofort, wird im Chat als Chip angezeigt
   });
+  const [showMemory, setShowMemory] = useState(false);
 
   const send = async (text, task) => {
     const img = photo;
@@ -9740,11 +9748,41 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
     try {
       const idt = await firebase.auth().currentUser.getIdToken();
       const r = await fetch("/api/ai", { signal: AbortSignal.timeout ? AbortSignal.timeout(70000) : undefined, method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + idt },
-        body: JSON.stringify({ task, ...(img ? { image: img } : {}), messages: next.map(m => ({ role: m.role, content: m.content })), context: buildAIContext({ data, user, prs, nutrition, view, health, library, activeWorkout, challenges, weekPlans }), preferModel: (()=>{try{return localStorage.getItem("ff_ai_model");}catch(e){return null;}})() }) });
-      const j = await r.json().catch(() => ({}));
+        body: JSON.stringify({ task, stream: true, ...(img ? { image: img } : {}), messages: next.map(m => ({ role: m.role, content: m.content })), context: { ...buildAIContext({ data, user, prs, nutrition, view, health, library, activeWorkout, challenges, weekPlans }), zeitraumDetails: ffRangeDetails(q, { data, nutrition, health }) }, preferModel: (()=>{try{return localStorage.getItem("ff_ai_model");}catch(e){return null;}})() }) });
       if (r.status === 501 || r.status === 404) { setAiState("off"); setMsgs(m => [...m, { role: "assistant", content: "🔌 Die KI ist noch nicht verbunden. Sobald ein Modell eingerichtet ist, kann ich Pläne erstellen, Gerichte vorschlagen und Trainings analysieren. Sprachbefehle wie „öffne Verlauf“ oder „starte <Planname>“ funktionieren schon jetzt." }]); }
-      else if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
-      else { setAiState("ready"); try { if (j.model) localStorage.setItem("ff_ai_model", j.model); } catch(e) {} setMsgs(m => [...m, { role: "assistant", content: j.reply || "…", actions: j.actions }]); runActions(j.actions); }
+      else if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ("HTTP " + r.status)); }
+      else {
+        setAiState("ready");
+        // Streaming (NDJSON: {"d":"…"} … {"done":true,reply,actions,model}) – Text erscheint, während die KI schreibt
+        let j = null;
+        if (/ndjson/.test(r.headers.get("content-type") || "") && r.body?.getReader) {
+          const reader = r.body.getReader(), dec = new TextDecoder();
+          let buf = "", raw = "", shown = false;
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const lines = buf.split("\n"); buf = lines.pop();
+            for (const ln of lines) {
+              if (!ln.trim()) continue;
+              let ev; try { ev = JSON.parse(ln); } catch (e) { continue; }
+              if (ev.error) throw new Error(ev.error);
+              if (ev.done) { j = ev; continue; }
+              if (ev.d) {
+                raw += ev.d;
+                const txt = ffPartialReply(raw);
+                if (!txt) continue;
+                setMsgs(m => shown ? [...m.slice(0, -1), { role: "assistant", content: txt, streaming: true }] : [...m, { role: "assistant", content: txt, streaming: true }]);
+                shown = true;
+              }
+            }
+          }
+          if (!j) throw new Error("Antwort unvollständig – bitte nochmal versuchen");
+          setMsgs(m => shown ? m.slice(0, -1) : m);
+        } else j = await r.json().catch(() => ({}));
+        try { if (j.model) localStorage.setItem("ff_ai_model", j.model); } catch(e) {}
+        setMsgs(m => [...m, { role: "assistant", content: j.reply || "…", actions: j.actions }]); runActions(j.actions);
+      }
     } catch(e) { setMsgs(m => [...m, { role: "assistant", content: (e.name === "TimeoutError" || e.name === "AbortError") ? "⏳ Die KI ist gerade stark ausgelastet und hat zu lange gebraucht. Bitte gleich nochmal versuchen." : "⚠️ " + e.message }]); }
     setBusy(false);
   };
@@ -9792,7 +9830,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
   const bubble = (m, i) => (
     <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%" }}>
       <div style={{ padding: "10px 13px", borderRadius: m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", background: m.role === "user" ? "linear-gradient(135deg,#FF6B35,#FF8C60)" : "rgba(255,255,255,0.06)", color: m.role === "user" ? "#fff" : "#E8E5E0", fontSize: 14, lineHeight: 1.5, wordBreak: "break-word" }}>{m.image && <img src={m.image} alt="" style={{ display: "block", maxWidth: "100%", maxHeight: 200, borderRadius: 10, marginBottom: 6 }} />}{m.role === "assistant" ? <CoachText text={m.content} /> : m.content}</div>
-      {(m.actions||[]).map((a, j) => a.type === "chart" && (a.chart || a.labels) ? <FFChart key={j} chart={a.chart || a} /> : a.type === "create_plan" && a.plan ? (
+      {(m.actions||[]).map((a, j) => (a.type === "remember" || a.type === "forget") && (a.fact || a.text) ? <div key={j} style={{ marginTop: 6, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 12, background: "rgba(76,201,240,0.1)", border: "1px solid rgba(76,201,240,0.25)", fontSize: 11, color: "#4CC9F0", cursor: "pointer" }} onClick={() => setShowMemory(true)}>🧠 {a.type === "remember" ? "Gemerkt" : "Vergessen"}: {a.fact || a.text}</div> : a.type === "chart" && (a.chart || a.labels) ? <FFChart key={j} chart={a.chart || a} /> : a.type === "create_plan" && a.plan ? (
         <div key={j} style={{ marginTop: 8, padding: 12, borderRadius: 14, border: "1px solid rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.08)" }}>
           <div style={{ fontWeight: 800, color: "#F0EDE8", marginBottom: 6 }}>📋 {a.plan.name}</div>
           {(a.plan.exercises||[]).map((e, k) => <div key={k} style={{ fontSize: 12, color: "#bbb", padding: "2px 0" }}>• {e.name}{e.sets ? ` – ${e.sets}×${e.reps||""}` : ""}</div>)}
@@ -9849,6 +9887,7 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
           <div><div style={{ fontWeight: 800, fontSize: 16, color: "#F0EDE8" }}>✨ FitForge Coach</div><div style={{ fontSize: 11, color: aiState === "off" ? "#FFD166" : "#666" }}>{aiState === "off" ? "KI noch nicht verbunden · Sprachbefehle aktiv" : "Frag mich oder sag, was ich tun soll"}</div></div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {msgs.length > 0 && <button onClick={() => { setShowQuick(v => !v); setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 50); }} aria-label="Vorschläge" style={{ ...s.secBtn, padding: "7px 12px", fontSize: 12, borderColor: "rgba(167,139,250,0.45)", color: "#A78BFA", background: showQuick ? "rgba(167,139,250,0.18)" : "rgba(167,139,250,0.08)" }}>✨ Vorschläge</button>}
+            <button onClick={() => setShowMemory(v => !v)} aria-label="Coach-Gedächtnis" title="Was der Coach über dich weiß" style={{ ...s.secBtn, padding: "7px 10px", fontSize: 12, background: showMemory ? "rgba(76,201,240,0.18)" : undefined }}>🧠{(user.coachMemory||[]).length ? " " + user.coachMemory.length : ""}</button>
             {msgs.length > 0 && !busy && <button onClick={() => { setMsgs([]); setDoneCards({}); }} aria-label="Neuer Chat" title="Neuer Chat" style={{ ...s.secBtn, padding: "7px 10px", fontSize: 12 }}>🗑️</button>}
             <button onClick={onClose} aria-label="Schließen" style={{ ...s.iconCircle, border: "none", background: "rgba(255,255,255,0.06)", color: "#aaa" }}>{IC.x}</button>
           </div>
@@ -9858,12 +9897,13 @@ function AssistantSheet({ open, onClose, init, data, user, prs, nutrition, view,
             <div style={{ color: "#888", fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>Zum Beispiel: <i>„Starte Push Pull Legs“</i>, <i>„Öffne Ernährung“</i>, <i>„Wie war mein Training diese Woche?“</i></div>
             {quick.map(([l, p, t, edit]) => <button key={l} onClick={() => edit === "photo" ? fileRef.current?.click() : edit ? (setInput(p), setPendingTask(t)) : send(p, t)} style={{ ...s.secBtn, justifyContent: "flex-start", textAlign: "left" }}>{l}</button>)}
           </>}
+          {showMemory && <CoachMemoryPanel memory={user.coachMemory} onDelete={id => onAction({ type: "memory_delete", id })} onAdd={fact => onAction({ type: "remember", fact })} />}
           {msgs.map(bubble)}
           {msgs.length > 0 && showQuick && <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, borderRadius: 14, background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.2)" }}>
             <div style={{ fontSize: 11, color: "#A78BFA", fontWeight: 700 }}>Was soll ich für dich tun?</div>
             {quick.map(([l, p, t, edit]) => <button key={l} onClick={() => { setShowQuick(false); edit === "photo" ? fileRef.current?.click() : edit ? (setInput(p), setPendingTask(t)) : send(p, t); }} style={{ ...s.secBtn, justifyContent: "flex-start", textAlign: "left" }}>{l}</button>)}
           </div>}
-          {busy && <div style={{ alignSelf: "flex-start", color: "#888", fontSize: 13 }}>✨ denkt nach…</div>}
+          {busy && !msgs[msgs.length - 1]?.streaming && <div style={{ alignSelf: "flex-start", color: "#888", fontSize: 13 }}>✨ denkt nach…</div>}
           <div ref={endRef} />
         </div>
         {photo && <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px 0" }}>
@@ -10002,6 +10042,8 @@ function HealthPage({health,data,isMobile,notify}){
         </div>
       )}
 
+      <HealthMetricsSection health={health} isMobile={isMobile}/>
+
       {hkWorkouts.length>0 && (
         <div style={card}>
           <div style={h3}>⌚ Watch-Trainings</div>
@@ -10061,6 +10103,16 @@ function HealthPage({health,data,isMobile,notify}){
             • <b>Inhalte von URL abrufen</b> (wie oben) mit JSON {code("type")} = {code("body")}, {code("date")} = Startdatum des Gewichts, {code("weight")}, {code("bodyFat")}, {code("leanMass")}, {code("bmi")}<br/>
             • <b>Automation</b>: Tageszeit 10:00 täglich (oder direkt nach dem Wiegen: <i>App „Starfit“ wird geschlossen</i>) → Sofort ausführen.<br/>
             Gewicht landet automatisch im Gewichtsverlauf, alle Werte unter <i>Fortschritt</i>.
+          </>)}
+
+          {step(7,"Mehr Werte: VO₂max, Blutsauerstoff, Blutdruck & Co.",<>
+            Im Kurzbefehl „FitForge Schlaf & Tag“ einfach weitere Felder ins {code("daily")}-JSON schreiben – jeweils <b>Health-Samples suchen</b> (gestern) und entweder den Wert oder die ganze Liste mit Endung {code("List")} schicken (z. B. {code("hrvList")}). Die App rechnet Summe bzw. Durchschnitt selbst.<br/>
+            <div style={{marginTop:8,display:"flex",flexWrap:"wrap",gap:4}}>{FF_HEALTH_GROUPS.flatMap(([,ms])=>ms).map(([k,l])=><span key={k} title={l} style={{fontSize:11,padding:"2px 7px",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#bbb"}}><b style={{color:"#FFD166",fontFamily:"monospace"}}>{k}</b> {l}</span>)}</div>
+          </>)}
+
+          {step(8,"Verlauf importieren (z. B. das letzte Jahr)",<>
+            Einmalig einen Kurzbefehl „FitForge Verlauf“ anlegen: <b>Health-Samples suchen</b> (z. B. <i>Ruhepuls</i>, Startdatum <i>in den letzten 365 Tagen</i>) → <b>Wiederholen mit jedem</b>: Text {code("Wert;Startdatum")} (ISO 8601) → <b>Text kombinieren</b> mit <i>Neue Zeile</i> → <b>Inhalte von URL abrufen</b> mit JSON {code("type")} = {code("series")}, {code("metric")} = {code("restingHR")}, {code("samples")} = kombinierter Text.<br/>
+            Für jeden gewünschten Wert wiederholen (Schlüssel siehe oben). Mehrere Werte pro Tag werden automatisch zusammengefasst – erneutes Senden überschreibt nur, nichts wird doppelt gezählt.
           </>)}
 
           <div style={{fontSize:12,color:"#777",lineHeight:1.5,marginTop:4}}>💡 Überschneidet sich ein Watch-Training zeitlich mit einem in FitForge geloggten Training, werden Puls & Kalorien automatisch daran angehängt – kein Duplikat.</div>

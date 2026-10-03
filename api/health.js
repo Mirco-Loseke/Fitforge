@@ -6,7 +6,9 @@
 // Body (JSON), einzeln oder als Array bzw. { items: [...] }:
 //   { type:"workout", name, start, end, kcal, km, hrAvg, hrMax }
 //   { type:"sleep",   samples: "<Stufe>;<Start>;<Ende>\n..."  (oder Array von {value,start,end}) }
-//   { type:"daily",   date, steps, restingHR, hrv, kcal }
+//   { type:"daily",   date, <Wert>: Zahl  |  <Wert>List: "72\n75\n80" }   – Schlüssel siehe METRICS (steps, restingHR, hrv, vo2max, spo2 …)
+//   { type:"series",  metric:"<Schlüssel aus METRICS>", samples:"<Wert>;<Datum>\n..." (oder Array von {value,date}) }
+//                     – Verlauf/Massenimport: Werte werden pro Tag zusammengefasst (Summe, Ø, Min, Max oder letzter)
 //   { type:"body",    date, weight, bodyFat, leanMass, bmi, muscleMass, water, boneMass, visceralFat, bmr }  (Waage)
 // Datumsangaben: ISO 8601 bevorzugt; deutsche Formate ("30.09.2026, 07:12") gehen auch.
 import { getAdmin, uidFromToken, cors } from "./_lib.js";
@@ -115,13 +117,65 @@ function parseSleep(it) {
   };
 }
 
+// Tageswerte: Schlüssel → [Zusammenfassung pro Tag, Nachkommastellen, Umrechnung, Aliase]
+// Gleiche Schlüssel wie FF_HEALTH_GROUPS in src/modules/health-metrics.jsx (Anzeige).
+const pct = (v) => (v > 0 && v <= 1 ? v * 100 : v);
+const toKm = (v) => (v > 300 ? v / 1000 : v); // Meter statt km geschickt
+const METRICS = {
+  steps: ["sum", 0], distanceKm: ["sum", 2, toKm, ["km", "distance"]], flights: ["sum", 0, null, ["floors"]],
+  kcal: ["sum", 0, null, ["activeKcal", "activeEnergy"]], basalKcal: ["sum", 0, null, ["restingKcal", "basalEnergy"]],
+  exerciseMin: ["sum", 0], standHours: ["sum", 0, null, ["standH"]], daylightMin: ["sum", 0],
+  restingHR: ["avg", 0], walkingHR: ["avg", 0], hrAvg: ["avg", 0, null, ["hr", "heartRate"]], hrMin: ["min", 0], hrMax: ["max", 0], hrv: ["avg", 0],
+  vo2max: ["last", 1], walkingSpeed: ["avg", 1], cycleKm: ["sum", 2, toKm], swimM: ["sum", 0],
+  spo2: ["avg", 0, pct, ["oxygen", "bloodOxygen"]], respRate: ["avg", 1], bodyTemp: ["avg", 1], wristTemp: ["avg", 2],
+  bpSys: ["avg", 0, null, ["systolic"]], bpDia: ["avg", 0, null, ["diastolic"]], glucose: ["avg", 0],
+  waterMl: ["sum", 0, (v) => (v > 0 && v < 10 ? v * 1000 : v), ["water"]], caffeineMg: ["sum", 0, null, ["caffeine"]], mindfulMin: ["sum", 0], noiseDb: ["avg", 0],
+};
+const aggregate = (vals, how) => !vals.length ? null
+  : how === "sum" ? vals.reduce((a, b) => a + b, 0)
+  : how === "avg" ? vals.reduce((a, b) => a + b, 0) / vals.length
+  : how === "min" ? Math.min(...vals) : how === "max" ? Math.max(...vals) : vals[vals.length - 1];
+const roundTo = (v, dec) => Math.round(v * 10 ** dec) / 10 ** dec;
+const metricKey = (name) => {
+  const n = String(name || "").replace(/List$/, "");
+  return METRICS[n] ? n : Object.keys(METRICS).find(k => (METRICS[k][3] || []).includes(n)) || null;
+};
+
 function parseDaily(it) {
   const d = parseDate(it.date) || new Date();
   const out = { date: typeof it.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(it.date) ? it.date : berlinDay(d), receivedAt: Date.now() };
-  const steps = num(it.steps) ?? (nums(it.stepsList).reduce((a, b) => a + b, 0) || null);
-  const hrvL = nums(it.hrvList);
-  const vals = { steps, restingHR: num(it.restingHR), hrv: num(it.hrv) ?? (hrvL.length ? hrvL.reduce((a, b) => a + b, 0) / hrvL.length : null), kcal: num(it.kcal), exerciseMin: num(it.exerciseMin) };
-  for (const [k, v] of Object.entries(vals)) if (v != null) out[k] = Math.round(v);
+  for (const [field, raw] of Object.entries(it)) {
+    const k = metricKey(field);
+    if (!k || raw == null || raw === "") continue;
+    const [how, dec, conv] = METRICS[k];
+    // Listen ("72\n75\n80" oder xyzList) passend zusammenfassen, Einzelwert direkt übernehmen
+    const isList = /List$/.test(field) || Array.isArray(raw) || (typeof raw === "string" && /[\n;|]/.test(raw));
+    let vals = isList ? nums(raw) : [num(raw)].filter(x => x != null);
+    if (conv) vals = vals.map(conv);
+    const v = aggregate(vals, isList ? how : "last");
+    if (v != null && isFinite(v)) out[k] = roundTo(v, dec);
+  }
+  return out;
+}
+
+// Verlauf eines Werts (z. B. 365 Tage Ruhepuls) → pro Tag (Europe/Berlin) zusammenfassen
+function parseSeries(it) {
+  const k = metricKey(it.metric);
+  if (!k) throw new Error(`series: unbekannter metric "${it.metric}"`);
+  const [how, dec, conv] = METRICS[k];
+  let rows = it.samples;
+  if (typeof rows === "string") rows = rows.split(/\n+/).map(l => { const [value, date] = l.split(/\s*;\s*/); return { value, date }; });
+  if (!Array.isArray(rows)) throw new Error("series: samples fehlt");
+  const byDay = {};
+  for (const r of rows) {
+    const dt = parseDate(r.date || r.start || r.startDate); let v = num(r.value);
+    if (!dt || v == null) continue;
+    if (conv) v = conv(v);
+    (byDay[berlinDay(dt)] = byDay[berlinDay(dt)] || []).push(v);
+  }
+  const out = {};
+  for (const [day, vals] of Object.entries(byDay)) out[day] = { date: day, [k]: roundTo(aggregate(vals, how), dec), receivedAt: Date.now() };
+  if (!Object.keys(out).length) throw new Error(`series ${k}: keine lesbaren Werte`);
   return out;
 }
 
@@ -161,6 +215,7 @@ export default async function handler(req, res) {
       if (t === "workout") { const w = parseWorkout(it); add.workouts[w.id] = w; }
       else if (t === "sleep") { const s = parseSleep(it); add.sleep[s.date] = s; }
       else if (t === "daily") { const d = parseDaily(it); add.daily[d.date] = { ...(add.daily[d.date] || {}), ...d }; }
+      else if (t === "series") { for (const [d, v] of Object.entries(parseSeries(it))) add.daily[d] = { ...(add.daily[d] || {}), ...v }; }
       else if (t === "body") { const b = parseBody(it); add.body[b.date] = { ...(add.body[b.date] || {}), ...b }; }
       else errors.push(`Unbekannter type "${it?.type}"`);
     } catch (e) { errors.push(e.message); }
@@ -191,4 +246,4 @@ export default async function handler(req, res) {
   }
 }
 
-export const _test = { parseWorkout, parseSleep, parseDaily, parseBody, parseDate };
+export const _test = { parseWorkout, parseSleep, parseDaily, parseSeries, parseBody, parseDate };

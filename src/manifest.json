@@ -7,5 +7,10 @@
   "modules/voice-log.jsx",
   "modules/run-coach.jsx",
   "modules/weekly-story.jsx",
-  "modules/body-composition.jsx"
+  "modules/body-composition.jsx",
+  "modules/health-metrics.jsx",
+  "modules/wellbeing-checkin.jsx",
+  "modules/coach-memory.jsx",
+  "modules/coach-nudges.jsx",
+  "modules/quick-meals.jsx"
 ]

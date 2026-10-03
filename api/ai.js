@@ -68,7 +68,7 @@ async function geminiModelList() {
 }
 // Fehler, bei denen ein anderes Modell helfen kann (kein Freikontingent, nicht freigeschaltet, unbekannt)
 const modelUnusable = (e) => [403, 404, 500, 503, 504].includes(e.status) || /high demand|overloaded|unavailable/i.test(e.message || "") || (e.status === 429 && /limit:\s*0|free.?tier|not.*available|quota.*model/i.test(e.message || "")) || (e.status === 400 && /model/i.test(e.message || ""));
-async function callGemini({ system, messages, prefer }) {
+async function callGemini({ system, messages, prefer, onDelta }) {
   let models = await geminiModelList();
   // Von der App gemerktes, zuletzt funktionierendes Modell zuerst (überlebt Neustarts der Server-Instanz)
   if (prefer && /^gemini-[\w.-]+$/.test(prefer) && !process.env.AI_MODEL) models = [prefer, ...models.filter(m => m !== prefer)];
@@ -78,12 +78,12 @@ async function callGemini({ system, messages, prefer }) {
     const left = deadline - Date.now();
     if (left < 5000) break;
     try {
-      const out = await callOpenAICompatible({ system, messages, base: GEMINI_BASE, model, timeoutMs: Math.min(40000, left) });
+      const out = await callOpenAICompatible({ system, messages, base: GEMINI_BASE, model, timeoutMs: Math.min(onDelta ? 55000 : 40000, left), onDelta });
       if (!process.env.AI_MODEL) geminiWorking = model;
       return { ...out, model };
     } catch (e) {
       lastErr = e;
-      if (!modelUnusable(e)) throw e;   // z. B. echtes Rate-Limit → nicht weiterprobieren
+      if (e.streamed || !modelUnusable(e)) throw e;   // Text schon gesendet bzw. echtes Rate-Limit → nicht weiterprobieren
       if (geminiWorking === model) geminiWorking = null;
     }
   }
@@ -103,7 +103,11 @@ Mögliche actions (nur wenn passend, sonst leeres Array):
 - {"type":"meal_plan","plan":{"days":[{"day":"Montag","meals":[{"mealType":"Frühstück","name":"…","kcal":0,"protein":0}]}],"shopping":[{"name":"Haferflocken","amount":"500 g"}]}}   – Essensplan mit Einkaufsliste, Nutzer bestätigt die Liste
 - {"type":"log_meal","meal":{"name":"…","kcal":0,"protein":0,"carbs":0,"fat":0,"mealType":"Frühstück|Mittagessen|Abendessen|Snack"}}   – trägt Gegessenes ins heutige Ernährungstagebuch ein, Nutzer bestätigt
 - {"type":"chart","chart":{"kind":"line|bar","title":"…","unit":"kg|kcal|g|min|…","labels":["01.09","02.09"],"series":[{"name":"…","values":[1,2]}],"goal":<optional Zielwert als gestrichelte Linie>}}   – Diagramm, wird direkt im Chat unter der Antwort angezeigt (max. 3 pro Antwort, max. 4 Serien, max. 60 Punkte). Werte NUR aus dem Kontext übernehmen, nie erfinden.
-Regeln: Nutze nur planIds aus dem Kontext. Erfinde keine Trainingsdaten – analysiere nur, was im Kontext steht.
+- {"type":"remember","fact":"<kurzer dauerhafter Fakt über den Nutzer>"}   – merken, wenn der Nutzer etwas Bleibendes erzählt (Verletzung/Beschwerden, Vorlieben/Abneigungen beim Essen oder Training, Equipment, Zeitplan, Ziele). Nicht für Einmaliges, nichts doppelt merken, was schon in context.kiGedaechtnis steht.
+- {"type":"forget","fact":"<Fakt aus context.kiGedaechtnis>"}   – wenn etwas nicht mehr stimmt (z. B. "Knie ist wieder gut").
+Regeln: Berücksichtige context.kiGedaechtnis IMMER (z. B. keine Übungen, die eine gemerkte Verletzung belasten).
+Für Fragen zu Zeiträumen nutze context.alleDaten.monate (Monatswerte der ganzen Historie) und context.zeitraumDetails (Tagesdetails, falls die Frage einen Monat nennt).
+Nutze nur planIds aus dem Kontext. Erfinde keine Trainingsdaten – analysiere nur, was im Kontext steht.
 Für Anzahlen, Summen und Rekorde nutze IMMER die fertigen Werte aus context.stats (nicht selbst zählen).
 navigate/start_workout NUR, wenn der Nutzer ausdrücklich darum bittet (z. B. "öffne…", "zeig mir…", "starte…") – bei Fragen keine Aktion.
 Bei Befehlen und kurzen Fragen halte "reply" knapp (Sprachsteuerung auf dem Handy).
@@ -149,7 +153,7 @@ Darunter Stichpunkte mit "• ", wichtige Zahlen **fett**. Inhalt der Abschnitte
 Fehlen Daten für einen Abschnitt, lass ihn weg statt zu raten. Wenig Daten ehrlich ansprechen.
 Ist analyse.ernaehrung.hinweis gesetzt, sind die Tage nur lückenhaft erfasst: dann KEINE Aussagen wie "zu wenig Kalorien/Protein gegessen" – nur vollständigeres Loggen empfehlen.`,
 };
-const GENERAL_HINT = `Du hast Zugriff auf ALLE Daten des Nutzers: context.alleDaten (Profil, alle Trainings, Ernährung pro Tag, häufige Lebensmittel, Schlaf, Tageswerte wie Schritte/Ruhepuls/HRV, Körperwerte der Waage, Gewichtsverlauf, Körpermaße, Challenges, Wochenplan) und context.analyse (fertig berechnete Kennzahlen).
+const GENERAL_HINT = `Du hast Zugriff auf ALLE Daten des Nutzers: context.alleDaten (Profil, alle Trainings, Ernährung pro Tag, häufige Lebensmittel, Schlaf, Tageswerte wie Schritte/Ruhepuls/HRV, Körperwerte der Waage, Gewichtsverlauf, Körpermaße, Challenges, Wochenplan, tägliches Befinden 1–5, Monatswerte der ganzen Historie) und context.analyse (fertig berechnete Kennzahlen).
 Sei ein ehrlicher, schlauer Personal Coach: lobe konkret, was gut läuft, benenne klar, was schlecht läuft, und erkläre Zusammenhänge zwischen den Bereichen (z. B. wenig Schlaf ↔ schwächere Trainings, Protein ↔ Muskelaufbau, kcal ↔ Gewichtstrend). Gib konkrete, messbare Vorschläge.
 Wenn ein Verlauf oder Vergleich hilft (Gewicht, kcal/Protein vs. Ziel, Schlaf, Volumen pro Woche, e1RM einer Übung …), füge passende chart-Aktionen hinzu – bei Auswertungen gerne 1–3 Diagramme.
 Beantworte Fragen direkt und natürlich wie in einem Chat; auf Rückfragen beziehe dich auf den bisherigen Verlauf.
@@ -169,9 +173,27 @@ function flattenText(v, title) {
   return "";
 }
 
+// Echte Zeilenumbrüche/Tabs innerhalb von JSON-Strings escapen (manche Modelle schreiben sie roh)
+function escapeRawInStrings(t) {
+  let out = "", inStr = false, esc = false;
+  for (const c of t) {
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      else if (c === "\n") { out += "\\n"; continue; }
+      else if (c === "\r") continue;
+      else if (c === "\t") { out += "\\t"; continue; }
+    } else if (c === '"') inStr = true;
+    out += c;
+  }
+  return out;
+}
+
 function parseModelJson(text) {
   const t = String(text || "").trim();
-  const candidates = [t, t.replace(/^```(?:json)?\s*|\s*```$/g, ""), (t.match(/\{[\s\S]*\}/) || [""])[0]];
+  const obj = (t.match(/\{[\s\S]*\}/) || [""])[0];
+  const candidates = [t, t.replace(/^```(?:json)?\s*|\s*```$/g, ""), obj, escapeRawInStrings(obj)];
   for (const c of candidates) {
     try {
       const j = JSON.parse(c);
@@ -209,15 +231,49 @@ async function callAnthropic({ system, messages }) {
   return parseModelJson(text);
 }
 
-async function callOpenAICompatible({ system, messages, base, model, timeoutMs }) {
+async function callOpenAICompatible({ system, messages, base, model, timeoutMs, onDelta }) {
   base = (base || process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   model = model || process.env.AI_MODEL;
   const send = (jsonMode) => fetch(`${base}/chat/completions`, {
     signal: AbortSignal.timeout(timeoutMs || 25000), // hängende/überlastete Modelle nicht ewig abwarten
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.AI_API_KEY}` },
-    body: JSON.stringify({ model, messages: [{ role: "system", content: system }, ...messages], ...(jsonMode ? { response_format: { type: "json_object" } } : {}) }),
+    body: JSON.stringify({ model, messages: [{ role: "system", content: system }, ...messages], ...(jsonMode ? { response_format: { type: "json_object" } } : {}), ...(onDelta ? { stream: true } : {}) }),
   });
+  if (onDelta) {
+    // Streaming (SSE): Textstücke sofort weiterreichen, am Ende komplett parsen
+    let r;
+    try {
+      r = await send(true);
+      if (r.status === 400) r = await send(false);
+    } catch (e) {
+      if (e.name === "TimeoutError" || e.name === "AbortError") throw Object.assign(new Error(`Zeitüberschreitung bei ${model}`), { status: 504 });
+      throw e;
+    }
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      const body = Array.isArray(j) ? j[0] : j;
+      throw Object.assign(new Error(body?.error?.message || `HTTP ${r.status}`), { status: r.status });
+    }
+    let full = "", buf = "";
+    const dec = new TextDecoder();
+    try {
+      for await (const chunk of r.body) {
+        buf += dec.decode(chunk, { stream: true });
+        const lines = buf.split("\n"); buf = lines.pop();
+        for (const ln of lines) {
+          const m = ln.match(/^data:\s*(.*)$/);
+          if (!m || m[1] === "[DONE]") continue;
+          let ev; try { ev = JSON.parse(m[1]); } catch { continue; }
+          const d = ev?.choices?.[0]?.delta?.content;
+          if (d) { full += d; onDelta(d); }
+        }
+      }
+    } catch (e) {
+      throw Object.assign(new Error(e.name === "TimeoutError" || e.name === "AbortError" ? "Antwort hat zu lange gedauert" : e.message), { status: 504, streamed: !!full, friendly: true });
+    }
+    return parseModelJson(full);
+  }
   let r;
   try {
     r = await send(true);
@@ -259,14 +315,29 @@ export default async function handler(req, res) {
     messages[messages.length - 1] = { role: "user", content: [{ type: "text", text: last.content }, { type: "image_url", image_url: { url: body.image } }] };
   }
 
+  // Streaming (body.stream): Antwort als NDJSON – {"d":"Textstück"} … {"done":true,reply,actions,model}.
+  // Header gehen erst mit dem ersten Textstück raus → Fehler davor bleiben normale JSON-Fehler.
+  let started = false;
+  const onDelta = body.stream ? (d) => {
+    if (!started) {
+      started = true;
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("X-Accel-Buffering", "no");
+    }
+    res.write(JSON.stringify({ d }) + "\n");
+  } : null;
   try {
     const system = systemPrompt(body.task);
     const provider = providerName();
     const out = provider === "anthropic" ? await callAnthropic({ system, messages })
-      : provider === "gemini" ? await callGemini({ system, messages, prefer: typeof body.preferModel === "string" ? body.preferModel : null })
-      : await callOpenAICompatible({ system, messages });
+      : provider === "gemini" ? await callGemini({ system, messages, prefer: typeof body.preferModel === "string" ? body.preferModel : null, onDelta })
+      : await callOpenAICompatible({ system, messages, onDelta });
+    if (started) { res.write(JSON.stringify({ done: true, ...out }) + "\n"); return res.end(); }
     return res.status(200).json(out);
   } catch (e) {
+    if (started || res.headersSent) { try { res.write(JSON.stringify({ error: e.friendly ? e.message : "KI-Antwort abgebrochen – bitte nochmal versuchen" }) + "\n"); } catch {} return res.end(); }
     if (e instanceof Anthropic.RateLimitError) return res.status(429).json({ error: "Zu viele Anfragen – kurz warten" });
     if (e instanceof Anthropic.AuthenticationError) return res.status(500).json({ error: "KI-Schlüssel ungültig" });
     if (e instanceof Anthropic.APIError) return res.status(502).json({ error: `KI-Fehler ${e.status}` });

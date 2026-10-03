@@ -34,13 +34,77 @@ function ffBuildFullData({ data, user, nutrition, health, challenges, weekPlans 
     heuteGegessen: heute ? (heute.meals || []).map(m => ({ name: m.name, typ: m.mealType, kcal: m.kcal ?? m.calories, p: m.protein })) : [],
     haeufigeLebensmittel,
     schlaf: vals(health?.sleep).map(s => ({ d: s.date, min: s.asleepMin, tief: s.deepMin, rem: s.remMin, wach: s.awakeMin, insBett: s.bedtime, auf: s.wakeTime })),
-    tageswerte: vals(health?.daily).map(x => ({ d: x.date, schritte: x.steps, ruhepuls: x.restingHR, hrv: x.hrv, aktivKcal: x.kcal })),
+    // alle importierten Health-Tageswerte (Schlüssel siehe FF_HEALTH_GROUPS in health-metrics.jsx)
+    tageswerte: vals(health?.daily).map(({ receivedAt, date, ...x }) => ({ d: date, ...x })),
+    befinden1bis5: Object.entries(user.wellbeing || {}).filter(([d]) => d >= since60).sort().map(([d, v]) => ({ d, energie: v.energy, stimmung: v.mood, muskelkater: v.soreness, stress: v.stress })),
+    monate: ffMonthlySummary({ data, nutrition, health, user }),
     koerperwerte: vals(health?.body).map(b => ({ d: b.date, kg: b.weight, fettPct: b.bodyFat, muskelKg: b.muscleMass, wasserPct: b.water, viszeral: b.visceralFat, bmr: b.bmr })),
     gewichtsverlauf: [...(data?.weightHistory || [])].filter(h => h?.date).sort((a, b) => a.date.localeCompare(b.date)).slice(-60).map(h => ({ d: h.date, kg: h.value })),
     koerpermasse: (data?.measurements || []).slice(-20),
     challenges: (challenges || []).slice(0, 15).map(c => ({ name: c.name || c.title, status: c.status, fortschritt: c.progress, ziel: c.goal || c.target })),
     wochenplan: weekPlans && Object.keys(weekPlans).length ? Object.fromEntries(Object.entries(weekPlans).sort().slice(-2)) : undefined,
   };
+}
+
+// Monatswerte über die GESAMTE Historie → Vergleiche wie "Mai vs. September" ohne Riesenkontext
+function ffMonthlySummary({ data, nutrition, health, user }) {
+  const M = {};
+  const b = (d) => (M[d.slice(0, 7)] = M[d.slice(0, 7)] || { trainings: 0, minuten: 0, volKg: 0, km: 0, kcalT: [], protT: [], gewicht: [], schlaf: [], schritte: [], ruhepuls: [], energie: [] });
+  const push = (arr, v) => { const n = parseFloat(v); if (isFinite(n) && n > 0) arr.push(n); };
+  (data?.workouts || []).forEach(w => { if (!w?.date) return; const x = b(w.date); x.trainings++; x.minuten += w.duration || 0; (w.exercises || []).forEach(e => (e.sets || []).forEach(s => { x.volKg += (parseFloat(s.weight) || 0) * (parseInt(s.reps) || 0); x.km += parseFloat(s.km) || 0; })); });
+  Object.entries(nutrition || {}).forEach(([d, v]) => { if ((v?.meals || []).length >= 2) { push(b(d).kcalT, v.calories); push(b(d).protT, v.protein); } });
+  (data?.weightHistory || []).forEach(h => h?.date && push(b(h.date).gewicht, h.value));
+  Object.values(health?.sleep || {}).forEach(x => x?.date && push(b(x.date).schlaf, x.asleepMin));
+  Object.values(health?.daily || {}).forEach(x => { if (!x?.date) return; push(b(x.date).schritte, x.steps); push(b(x.date).ruhepuls, x.restingHR); });
+  Object.entries(user?.wellbeing || {}).forEach(([d, v]) => push(b(d).energie, v?.energy));
+  const avg = (a, dec = 0) => a.length ? ffR(a.reduce((x, y) => x + y, 0) / a.length, dec) : undefined;
+  return Object.entries(M).sort().slice(-24).map(([m, x]) => ({
+    monat: m, trainings: x.trainings, minuten: x.minuten || undefined, volKg: Math.round(x.volKg) || undefined, km: ffR(x.km, 1) || undefined,
+    kcalSchnitt: avg(x.kcalT), proteinSchnitt: avg(x.protT), geloggteEssTage: x.kcalT.length || undefined,
+    gewichtSchnitt: avg(x.gewicht, 1), schlafMinSchnitt: avg(x.schlaf), schritteSchnitt: avg(x.schritte), ruhepulsSchnitt: avg(x.ruhepuls), energieSchnitt: avg(x.energie, 1),
+  }));
+}
+
+// Nennt die Frage einen Monat/Zeitraum außerhalb der letzten 90 Tage → Tagesdetails genau dafür mitschicken
+const FF_MONTHS = ["januar", "februar", "märz", "april", "mai", "juni", "juli", "august", "september", "oktober", "november", "dezember"];
+function ffRangeDetails(q, { data, nutrition, health }) {
+  const t = String(q || "").toLowerCase();
+  const now = new Date(), months = new Set();
+  FF_MONTHS.forEach((name, i) => {
+    if (!new RegExp("\\b" + name.slice(0, 3) + (name.length > 3 ? "(" + name.slice(3) + ")?" : "") + "\\b").test(t)) return;
+    const yr = (t.match(new RegExp(name.slice(0, 3) + "\\w*\\s+(20\\d\\d)")) || [])[1] || (i > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear());
+    months.add(`${yr}-${String(i + 1).padStart(2, "0")}`);
+  });
+  (t.match(/20\d\d-\d\d/g) || []).forEach(m => months.add(m));
+  if (/letzt\w* jahr|vorjahr/.test(t)) months.add(String(now.getFullYear() - 1));
+  if (!months.size) return undefined;
+  const inR = d => d && [...months].some(m => d.startsWith(m));
+  return {
+    zeitraum: [...months],
+    trainings: (data?.workouts || []).filter(w => inR(w.date)).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 80).map(w => ({ d: w.date, name: w.name, min: w.duration, uebungen: (w.exercises || []).map(e => ({ n: e.name, s: (e.sets || []).map(s => [s.weight, s.reps].filter(x => x !== "" && x != null).join("×")).filter(Boolean) })) })),
+    ernaehrung: Object.entries(nutrition || {}).filter(([d, v]) => inR(d) && (v?.meals || []).length).sort().map(([d, v]) => ({ d, kcal: v.calories, p: v.protein, mahlzeiten: (v.meals || []).length })),
+    schlaf: Object.values(health?.sleep || {}).filter(x => inR(x?.date)).map(x => ({ d: x.date, min: x.asleepMin })),
+    tageswerte: Object.values(health?.daily || {}).filter(x => inR(x?.date)).map(({ receivedAt, date, ...x }) => ({ d: date, ...x })),
+    gewicht: (data?.weightHistory || []).filter(h => inR(h?.date)).map(h => ({ d: h.date, kg: h.value })),
+  };
+}
+
+// Aus einer noch unvollständigen JSON-Antwort {"reply":"…  den bisherigen Text holen (für Streaming)
+function ffPartialReply(raw) {
+  const t = String(raw || "");
+  const m = t.match(/"reply"\s*:\s*"/);
+  if (!m) return /^\s*[{`]/.test(t) ? "" : t; // kein JSON → Rohtext anzeigen
+  let i = m.index + m[0].length, out = "";
+  for (; i < t.length; i++) {
+    const c = t[i];
+    if (c === "\\") {
+      const n = t[i + 1]; if (n == null) break;
+      if (n === "u") { const h = t.slice(i + 2, i + 6); if (h.length < 4) break; out += String.fromCharCode(parseInt(h, 16)); i += 5; }
+      else { out += n === "n" ? "\n" : n === "t" ? "\t" : n; i++; }
+    } else if (c === '"') break;
+    else out += c;
+  }
+  return out;
 }
 
 // ── Diagramm ──
